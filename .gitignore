@@ -1,0 +1,16 @@
+# ignore the modules folder
+node_modules
+package-lock.json
+
+config/.env
+.env
+
+# ignore output folder
+output/*.*
+
+#ignore the logs folder
+logs
+logs/*.*
+
+#ignore java sction of project as it is already obsolete
+WebCrawler/
