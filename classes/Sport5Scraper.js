@@ -27,9 +27,8 @@ var logger = log4js.getLogger("Sport5Scraper");
 
 class Sport5Scraper {
 
-    constructor(addToSeriesList){
+    constructor(){
         this._sport5JSONObj = {};
-        this.addToSeriesList = addToSeriesList;
     }
 
     async crawl(isDoWriteFile = false){

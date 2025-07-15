@@ -29,9 +29,8 @@ var logger = log4js.getLogger("LiveTV");
 
 class LiveTV {
 
-    constructor(addToSeriesList) {
+    constructor() {
         this._liveTVJSONObj = {};
-        this.addToSeriesList = addToSeriesList;
     }
 
     /********************************************************************
@@ -55,6 +54,7 @@ class LiveTV {
 
         logger.info("LiveTV=> Done Crawling");
         if (isDoWriteFile){
+            logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
     }
@@ -82,7 +82,6 @@ class LiveTV {
                         description: "שידור חי כאן 11",
                         streams: 
                             {
-                                //url: "https://kan11w.media.kan.org.il/hls/live/2105694/2105694/source1_600/chunklist.m3u8",
                                 url: "https://kan11.media.kan.org.il/hls/live/2024514/2024514/master.m3u8",
                                 type: "tv",
                                 name: "שידור חי כאן 11",
@@ -107,7 +106,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         }
-        this.addToSeriesList(itemKanLive);
         logger.debug("crawlDigitalLive => Added Kan 11 Live TV - " + kanLiveObj.name);
 
         var idKanKidsLive = "il_kanTV_05";
@@ -155,7 +153,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(itemKanKidsLive)
         logger.debug("crawlDigitalLive => Added Hinukhit Live TV");
 
         var idMakanLive = "il_kanTV_07";
@@ -204,7 +201,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(itemMakan);
         logger.debug("crawlDigitalLive => Added Makan Live TV");
     }
 
@@ -262,7 +258,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(itemKnesset);
         logger.debug("crawlKnesset => Added Knesset Live TV");
 
     }
@@ -320,7 +315,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item12Live);
         logger.debug("crawlMakoLive => Added Mako Live TV");
     }
 
@@ -377,7 +371,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item13Live);
         logger.debug("crawlMakoLive => Added Mako Live TV");
 
     }
@@ -435,7 +428,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item14Live);
         logger.debug("crawlMakoLive => Added 14 Live TV");
 
     }
@@ -487,7 +479,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList (itemYnet);
         logger.debug("crawlMakoLive => Added YNet Live TV");
     }
 
@@ -539,7 +530,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item24Eng);
         logger.debug("crawlMakoLive => Added i24 English Live TV");
 
         /* i24 News Hebrew Live */
@@ -588,7 +578,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item24Heb);
         logger.debug("crawlDigitalLive => Added i24 Hebrew Live TV");
 
         
@@ -638,7 +627,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item24Frn);
         logger.debug("crawlDigitalLive => Added i24 French Live TV");
 
         /* i24 News Arabic Live */
@@ -687,7 +675,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item24Arb);
         logger.debug("crawlDigitalLive => Added i24 Arabic Live TV");
     }
 
@@ -738,7 +725,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item24);
         logger.debug("crawlDigitalLive => Added 24 Live");
     }
 
@@ -789,7 +775,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(itemWalla);
         logger.debug("crawlwalla => Added Walla Live");
     }
     crawl10Live(){
@@ -839,7 +824,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         };
-        this.addToSeriesList(item);
         logger.debug("crawlwalla => Added Walla Live");
     }
     crawlSport5(){
@@ -889,7 +873,6 @@ class LiveTV {
             type: "tv", 
             subtype: "t"
         }
-        this.addToSeriesList(itemSport5);
         logger.debug("crawlDigitalLive => Added Sport 5 Live");
     }
 

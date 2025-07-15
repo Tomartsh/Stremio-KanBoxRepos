@@ -32,9 +32,8 @@ var logger = log4js.getLogger("KanKidsScraper");
 
 class KanKidsScraper {
 
-    constructor(addToSeriesList) {
+    constructor() {
         this._kanKidsJSONObj = {};
-        this.addToSeriesList = addToSeriesList
         this.isRunning = false;
     }
 
@@ -45,22 +44,8 @@ class KanKidsScraper {
         logger.info("Done Crawling");      
         logger.info("crawl => writing series to master list");
 
-        for (const key in this._kanKidsJSONObj) {
-            this.addToSeriesList({
-                id: key,
-                name: this._kanKidsJSONObj[key]["name"],
-                poster: this._kanKidsJSONObj[key]["meta"]["poster"], 
-                description: this._kanKidsJSONObj[key]["meta"]["description"], 
-                link: this._kanKidsJSONObj[key]["link"], 
-                background: this._kanKidsJSONObj[key]["meta"]["background"], 
-                genres: this._kanKidsJSONObj[key]["meta"]["genres"],
-                meta: this._kanKidsJSONObj[key]["meta"],
-                type: "series", 
-                subtype: "k"
-            });
-        }
-
-        if (isDoWriteFile){
+         if (isDoWriteFile){
+            logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
         this.isRunning = false;

@@ -1,0 +1,43 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Repos Run",
+            "outputCapture": "std",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/main.js",
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Stremio - Install",
+            "outputCapture": "std",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/main.js",
+            "args": ["--", "--install"]
+        },
+        {
+            "name": "Launch via npm",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "runtimeExecutable": "npm",
+            "outputCapture": "std",
+            "runtimeArgs": ["run-script", "debug"],
+            "program": "${workspaceFolder}/server.js",
+            "sourceMaps": false,
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+          }
+    ]
+}

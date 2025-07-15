@@ -4,17 +4,17 @@ module.exports = {
     MAX_RETRIES: 5,  
     MAX_CONCURRENT_REQUESTS: 2,
     UPDATE_LIST: true, // update the series list as well as creating the JSON object  
-    URL_ZIP_FILES: [
-        "stremio-kandigital.zip",
-        "stremio-kanarchive.zip",
-        "stremio-kankids.zip",
-        "stremio-kanteens.zip",
-        "stremio-kanpodcasts.zip",
-        "stremio-live.zip",
-        "stremio-reshet.zip",
-        "stremio-kan88.zip",
-        "stremio-mako.zip"
-    ],
+    //URL_ZIP_FILES: [
+    //   "stremio-kandigital.zip",
+    //    "stremio-kanarchive.zip",
+    //    "stremio-kankids.zip",
+    //    "stremio-kanteens.zip",
+    //    "stremio-kanpodcasts.zip",
+    //    "stremio-live.zip",
+    //    "stremio-reshet.zip",
+    //    "stremio-kan88.zip",
+    //     "stremio-mako.zip"
+    // ],
     SAVE_MODE: "local", // "local", "github", or "both"
     SAVE_FOLDER: "output",
     PREFIX: "il_",

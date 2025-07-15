@@ -34,11 +34,10 @@ log4js.configure({
 var logger = log4js.getLogger("MakoScraper");
 
 class MakoScraper{
-    constructor(addToSeriesList){
+    constructor(){
         this._makoJSONObj = {};
         this._devideId = "";
         this.seriesId = 100;
-        this.addToSeriesList = addToSeriesList;
     }
 
     async crawl(isDoWriteFile = false){
@@ -50,6 +49,7 @@ class MakoScraper{
         await this.getSeries();
 
         if (isDoWriteFile){
+            logger.info("crawl => writing JSON file");
             this.writeJSON(this._makoJSONObj);
         }
         logger.debug("crawl() => Exiting");
@@ -283,22 +283,8 @@ class MakoScraper{
                 makoStreams: streams
             }
         }
-        var item = {
-            id: id, 
-            name: title, 
-            poster: poster, 
-            description: description, 
-            link: seriesUrl,
-            background: background, 
-            genres: genres,
-            meta: this._makoJSONObj[id].meta,
-            type: "series", 
-            subtype: "m"
-        }
-        this.addToSeriesList(item);
+
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + title + " Link: " + seriesUrl);
-        
-        
     }
 
     generateDeviceID(){

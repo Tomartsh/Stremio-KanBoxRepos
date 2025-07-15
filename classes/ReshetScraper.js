@@ -21,17 +21,16 @@ var logger = log4js.getLogger("ReshetScraper");
 
 class ReshetScraper {
 
-    constructor(addToSeriesList){
+    constructor(){
         this._reshetJSONObj = {};
         this._buildId = "";
         this._videos = [];
-        this.addToSeriesList = addToSeriesList;
-        
     }
 
     async crawl(isDoWriteFile = false){
         await this.crawlVOD();
         if (isDoWriteFile){
+            logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
     }
