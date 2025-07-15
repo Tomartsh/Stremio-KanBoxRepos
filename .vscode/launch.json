@@ -7,23 +7,13 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Repos Run",
+            "name": "Scraper General",
             "outputCapture": "std",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "program": "${workspaceFolder}/main.js",
-        },
-        {
-            "type": "node",
-            "request": "launch",
-            "name": "Stremio - Install",
-            "outputCapture": "std",
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "program": "${workspaceFolder}/main.js",
-            "args": ["--", "--install"]
+            "envFile": "${workspaceFolder}/config/.env"
         },
         {
             "name": "Launch via npm",
