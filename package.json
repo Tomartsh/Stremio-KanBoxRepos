@@ -3,10 +3,20 @@
     "adm-zip": "^0.5.16",
     "axios": "^1.10.0",
     "dotenv": "^17.2.0",
+    "express": "^5.1.0",
     "https": "^1.0.0",
     "log4js": "^6.9.1",
     "node-cron": "^4.2.1",
     "node-html-parser": "^7.0.1",
     "uuid": "^11.1.0"
-  }
+  },
+  "name": "stremio-kanboxrepos",
+  "version": "1.0.0",
+  "description": "Repos for the Stremio-KanBox addon",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Nino Uziel (Nino.Uziel@gmail.com)",
+  "license": "ISC"
 }
