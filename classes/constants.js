@@ -4,24 +4,14 @@ module.exports = {
     MAX_RETRIES: 5,  
     MAX_CONCURRENT_REQUESTS: 2,
     UPDATE_LIST: true, // update the series list as well as creating the JSON object  
-    //URL_ZIP_FILES: [
-    //   "stremio-kandigital.zip",
-    //    "stremio-kanarchive.zip",
-    //    "stremio-kankids.zip",
-    //    "stremio-kanteens.zip",
-    //    "stremio-kanpodcasts.zip",
-    //    "stremio-live.zip",
-    //    "stremio-reshet.zip",
-    //    "stremio-kan88.zip",
-    //     "stremio-mako.zip"
-    // ],
-    SAVE_MODE: "local", // "local", "github", or "both"
+
+    SAVE_MODE: "both", // "local", "github", or "both"
     SAVE_FOLDER: "output",
     PREFIX: "il_",
     LOG4JS_LEVEL: "debug",
     MAX_LOG_SIZE: 10  * 1024 * 1024, // = 5Mb
     LOG_BACKUP_FILES: 3, // keep 5 backup files'
-    LOG_FILENAME: "logs/Stremio_addon.log",
+    LOG_FILENAME: "logs/Stremio-Repos.log",
     HEADERS: {
         "Content-Type": "text/html; charset=utf-8",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0",
@@ -29,11 +19,11 @@ module.exports = {
         "Accept-Encoding": "gzip, deflate, br, zstd",
         "Charset": "UTF-8"
     },
-    URL_JSON_BASE: "https://tomartsh.github.io/Stremio-KanBoxAddon/output/", 
-    URLS_ASSETS_BASE: "https://tomartsh.github.io/Stremio-KanBoxAddon/assets/",
+    URL_JSON_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/output/", 
+    URLS_ASSETS_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/assets/",
 
     //Kan constants
-    url_JSON_File: "https://tomartsh.github.io/Stremio_Addon_Files/stremio-kanbox.zip",
+    //url_JSON_File: "https://tomartsh.github.io/Stremio_Addon_Files/stremio-kanbox.zip",
     KAN_URL_ADDRESS: "https://www.kan.org.il/lobby/kan-box",
     KAN_DIGITAL_IMAGE_PREFIX: "https://www.kan.org.il",
     KAN_BASE_URL: "https://www.kan.org.il",
