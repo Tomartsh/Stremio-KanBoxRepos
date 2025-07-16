@@ -15,6 +15,7 @@
   "description": "Repos for the Stremio-KanBox addon",
   "main": "main.js",
   "scripts": {
+    "start": "node main.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Nino Uziel (Nino.Uziel@gmail.com)",
