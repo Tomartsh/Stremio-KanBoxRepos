@@ -238,20 +238,6 @@ class ReshetScraper {
         }
 
         this._reshetJSONObj[id] = jsonObj;
-            var item = {
-                id: id, 
-                name: seriesTitle, 
-                poster: imgUrl, 
-                description: seriesDescription, 
-                link: seriesPage,
-                background: imgUrl, 
-                genres: genres,
-                meta: jsonObj.meta,
-                type: type, 
-                subtype: subType
-            }
-
-        this.addToSeriesList(item);
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
     }
 
