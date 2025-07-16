@@ -187,9 +187,24 @@ async function writeJSONToFile(jsonObj, fileName){
 
 async function uploadToGitHub(fileContent, fileName, commitMessage) {
     logger.trace("uploadToGitHub => Entering");
-     const GITHUB_API_URL = 'https://api.github.com';
+    
+    //Check the environemtn variables are in place
+    if (!process.env.REPO_TOKEN_SECRET) {
+        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
+    }
+    if (!process.env.BRANCH_SECRET) {
+        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
+    }
+    if (!process.env.REPO_OWNER_SECRET) {
+        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
+    }
+    if (!process.env.REPO_NAME_SECRET) {
+        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
+    }
+    
+    const GITHUB_API_URL = 'https://api.github.com';
     const githubFilePath = `${SAVE_FOLDER}/${fileName}`;
-    const url = `${GITHUB_API_URL}/repos/${REPO_OWNER}/${REPO_NAME}/contents/${githubFilePath}`;
+    const url = `${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`;
     logger.debug("uploadToGitHub => URL is: " + url);
       
     try {
@@ -197,7 +212,7 @@ async function uploadToGitHub(fileContent, fileName, commitMessage) {
         let sha = null;
         try {
             const response = await axios.get(url, {
-                headers: { Authorization: `Bearer ${GITHUB_TOKEN}` },
+                headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}` },
             });
             sha = response.data.sha;
         } catch (error) {
@@ -211,11 +226,11 @@ async function uploadToGitHub(fileContent, fileName, commitMessage) {
         const response = await axios.put(url, {
             message: commitMessage,
             content: fileContent.toString('base64'),
-            branch: GITHUB_BRANCH,
+            branch: process.env.BRANCH_SECRET,
             ...(sha ? { sha } : {}),
         }, {
             headers: {
-                Authorization: `Bearer ${GITHUB_TOKEN}`,
+                Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`,
                 "User-Agent": "Node.js",
                 Accept: 'application/vnd.github.v3+json',
             },

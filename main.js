@@ -5,6 +5,10 @@ const axios = require('axios');
 const cron = require('node-cron');
 const log4js = require("log4js"); 
 
+//Express setup (setup is done before calling classes in order to make env variables available to them)
+const app = express();  
+const PORT = process.env.PORT || 49699; //set the port if does not exist
+
 const utils = require("./classes/utilities.js");
 const {fetchData} = require("./classes/utilities.js");
 const constants = require("./classes/constants.js");
@@ -38,10 +42,6 @@ log4js.configure({
 });
 
 var logger = log4js.getLogger("main");
-
-//Express setup
-const app = express();  
-const PORT = process.env.PORT || 49699; //set the port if does not exist
 
 app.get('/run', async (req, res) => {
  	const { scraper } = req.query;
