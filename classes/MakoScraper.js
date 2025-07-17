@@ -69,6 +69,10 @@ class MakoScraper{
             var id = PREFIX + "mako_" + this.seriesId;
 
             var seasons = await fetchData(seriesUrl + URL_MAKO_SUFFIX, true);
+            if (seasons == undefined){ //if the link is bad do not cripple the process
+                logger.error(`getSeries => Cannot get series at url: ${seriesUrl}${URL_MAKO_SUFFIX}. Moving to next series`);    
+                continue; 
+            } 
             genres = seasons["seo"]["schema"]["genre"]; //get the genres
             description = seasons["seo"]["description"];
             background = seasons ["hero"]["pics"][0]["picUrl"];
@@ -94,6 +98,7 @@ class MakoScraper{
                 //for each season get the episodes
                 var seasonEpisodesPage = await fetchData(seasonUrl + URL_MAKO_SUFFIX, true); 
                 if (seasonEpisodesPage == undefined){continue;}
+                logger.debug(`getSeries => seasonEpisodesPage link:  ${seasonUrl}${URL_MAKO_SUFFIX}`); 
                 var videosEpisodes = await this.getEpisodes(seasonEpisodesPage, id, seasonId);
                 
                 if (videosEpisodes == null) {
@@ -118,7 +123,7 @@ class MakoScraper{
             episodes = season[0]["vods"];
             channelId = season[0]["channelId"];
         } else {
-            episodes = season["menu"][0]["vods"];
+            episodes = season?.menu[0]?.vods;
             channelId = season["channelId"];
         }
           
