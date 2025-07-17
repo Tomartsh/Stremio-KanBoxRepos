@@ -230,7 +230,7 @@ async function uploadToGitHub(fileContent, fileName, commitMessage) {
             },
         });
 
-        logger.debug(`uploadToGitHub => Uploaded: ${githubFilePath} → ${response.data.content.html_url}`);
+        logger.info(`uploadToGitHub => Uploaded: ${githubFilePath} → ${response.data.content.html_url}`);
     } catch (error) {
         logger.error("uploadToGitHub => Error uploading file:", error.response ? error.response.data : error.message);
     }
