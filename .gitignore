@@ -9,3 +9,6 @@ config/.env
 logs
 logs/*.*
 
+#ignore backup folder
+backups
+backups/*.*
