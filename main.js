@@ -47,50 +47,54 @@ app.get('/run', async (req, res) => {
  	const { scraper } = req.query;
 	logger.debug("request for: " + scraper);
 
+	
+	if (!scraper) { return res.status(400).send("Missing ?scraper= parameter");}
+
+	logger.info(`Triggered scraper: ${scraper}`);
+
+	res.send(`✅ ${scraper} started`);
+
 	try {
-		if (!scraper) { return res.status(400).send("Missing ?scraper= parameter");}
-
-		logger.info(`Triggered scraper: ${scraper}`);
-
+		// Run the scraper based on the provided name
 		switch (scraper) {
-		case "kanDigital":
-			await new KanDigitalscraper().crawl(true);
-			break;
-		case "kanArchive":
-			await new KanArchivescraper().crawl(true);
-			break;
-		case "kanKids":
-			await new KanKidscraper().crawl(true);
-			break;
-		case "kanTeens":
-			await new KanTeensscraper().crawl(true);
-			break;
-		case "kanPodcasts":
-			await new KanPodcastsscraper().crawl(true);
-			break;
-		case "kan88":
-			await new Kan88scraper().crawl(true);
-			break;
-		case "mako":
-			await new Makoscraper().crawl(true);
-			break;
-		case "reshet":
-			await new Reshetscraper().crawl(true);
-			break;
-		case "livetv":
-			await new LiveTV().crawl(true);
-			break;
+			case "kanDigital":
+				await new KanDigitalscraper().crawl(true);
+				break;
+			case "kanArchive":
+				await new KanArchivescraper().crawl(true);
+				break;
+			case "kanKids":
+				await new KanKidscraper().crawl(true);
+				break;
+			case "kanTeens":
+				await new KanTeensscraper().crawl(true);
+				break;
+			case "kanPodcasts":
+				await new KanPodcastsscraper().crawl(true);
+				break;
+			case "kan88":
+				await new Kan88scraper().crawl(true);
+				break;
+			case "mako":
+				await new Makoscraper().crawl(true);
+				break;
+			case "reshet":
+				await new Reshetscraper().crawl(true);
+				break;
+			case "livetv":
+				await new LiveTV().crawl(true);
+				break;
 
-		default:
-			logger.debug("scraper " + scraper  + " unknown");
-			return res.status(404).send("Unknown scraper: " + scraper);
+			default:
+				logger.debug("scraper " + scraper  + " unknown");
+				return res.status(404).send("Unknown scraper: " + scraper);
+		}
+
+		res.send(`✅ ${scraper} completed successfully`);
+	} catch (err) {
+		logger.error(`❌ Error running ${scraper}:`, err);
+		res.status(500).send("Scraper failed – see logs");
 	}
-
-    res.send(`✅ ${scraper} completed successfully`);
-  } catch (err) {
-    logger.error(`❌ Error running ${scraper}:`, err);
-    res.status(500).send("Scraper failed – see logs");
-  }
 });
 
 // Health check
@@ -107,4 +111,3 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   logger.info(`🚀 Scraper server listening at http://localhost:${PORT}`);
 });
-
