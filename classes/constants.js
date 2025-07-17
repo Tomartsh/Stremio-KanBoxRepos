@@ -5,7 +5,7 @@ module.exports = {
     MAX_CONCURRENT_REQUESTS: 2,
     UPDATE_LIST: true, // update the series list as well as creating the JSON object  
 
-    SAVE_MODE: "both", // "local", "github", or "both"
+    SAVE_MODE: "github", // "local", "github", or "both"
     SAVE_FOLDER: "output",
     PREFIX: "il_",
     LOG4JS_LEVEL: "info",
