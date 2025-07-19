@@ -7,7 +7,7 @@ const log4js = require("log4js");
 
 //Express setup (setup is done before calling classes in order to make env variables available to them)
 const app = express();  
-const PORT = process.env.PORT || 49699; //set the port if does not exist
+const PORT = process.env.PORT || 49999; //set the port if does not exist
 
 const utils = require("./classes/utilities.js");
 const {fetchData} = require("./classes/utilities.js");
@@ -44,6 +44,7 @@ log4js.configure({
 var logger = log4js.getLogger("main");
 
 app.get('/run', async (req, res) => {
+	
  	const { scraper } = req.query;
 	logger.debug("request for: " + scraper);
 
@@ -90,10 +91,10 @@ app.get('/run', async (req, res) => {
 				return res.status(404).send("Unknown scraper: " + scraper);
 		}
 
-		res.send(`✅ ${scraper} completed successfully`);
+		//res.send(`✅ ${scraper} completed successfully`);
 	} catch (err) {
 		logger.error(`❌ Error running ${scraper}:`, err);
-		res.status(500).send("Scraper failed – see logs");
+		res.status(500).send("Scraper failed – see logs for error " + err.message);
 	}
 });
 
