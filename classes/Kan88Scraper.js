@@ -262,15 +262,15 @@ class Kan88Scraper {
             episodeName = streamElement.querySelector("h2.title").text.trim();
             episodeName = episodeName.replace(/^פרק \d+:/, '').trim();
         } else {
-            logger.trace("getPodcastStreams => No name for the episode !");
+            logger.debug("getPodcastStreams => No name for the episode !");
         }
         var description = "";
         if (streamElement.querySelector("div.item-content.hide-content") != null) {
-            streamElement.querySelector("div.item-content.hide-content").text.trim();
+            description = streamElement.querySelector("div.item-content.hide-content").text.trim();
         }else {
-            logger.trace("getPodcastStreams => No description for the episode !");
+            logger.debug("getPodcastStreams => No description for the episode !");
         }
-        var urlRawElem = streamElement.querySelector("figure");
+        var urlRawElem = streamElement.querySelector("button.btn-play");
         var urlRaw
         if (urlRawElem != undefined ){
             urlRaw = urlRawElem.getAttribute("data-player-src");
@@ -280,7 +280,7 @@ class Kan88Scraper {
             return streams;
         }
         var url = urlRaw.substring(0,urlRaw.indexOf("?"));
-        logger.trace("getPodcastStreams => Podcast stream name: " + episodeName + " description: " + description);
+        logger.debug("getPodcastStreams => Podcast stream name: " + episodeName + " description: " + description);
         
         var streams = [
             {
