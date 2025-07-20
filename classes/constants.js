@@ -3,8 +3,8 @@ module.exports = {
     REQUEST_TIMEOUT: 7000,
     MAX_RETRIES: 5,  
     MAX_CONCURRENT_REQUESTS: 2,
-    UPDATE_LIST: true, // update the series list as well as creating the JSON object  
-
+    UPDATE_LIST: true, // update the series list as well as creating the JSON object  telnet localhost
+    
     SAVE_MODE: "github", // "local", "github", or "both"
     SAVE_FOLDER: "output",
     PREFIX: "il_",
