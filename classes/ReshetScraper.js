@@ -52,11 +52,13 @@ class ReshetScraper {
             var picUrl = series["poster"];
             var title = series["title"];
             var seriesReshetId = series["id"];
-            seriesUrl = seriesUrl.substring(0,seriesUrl.length -1);
+            logger.debug(`crawlVOD() => seriesReshetId: ${seriesReshetId} seriesUrl: ${seriesUrl} `);
+            seriesUrl = seriesUrl.substring(0,seriesUrl.length -1);            
             var seriesReshetName = seriesUrl.substring(seriesUrl.lastIndexOf("/") + 1);
+            logger.debug(`crawlVOD() => seriesReshetName: ${seriesReshetName}`);
             var videos = await this.getEpisodes(seriesReshetName, id)
             if (videos == "-1"){
-                logger.debug("crawl() => Invalid KulturaId. Skipping");
+                logger.error("crawl() => Invalid KulturaId or page non existing. Skipping");
                 //writeLog("DEBUG","ReshetScraper-crawl() => Invalid KulturaId. Skipping");
                 continue;
             }
@@ -69,11 +71,15 @@ class ReshetScraper {
     }
 
     async getEpisodes(seriesReshetName, id){
-        logger.debug("ReshetScraper-getEpisodes() => Entering");
+        logger.debug("getEpisodes() => Entering");
         //writeLog("TRACE","ReshetScraper-getEpisodes() => Entering");
         var link = URL_RESHET_BASE + "/_next/data/" + this._buildId + "/he/all-shows/" + seriesReshetName + ".json?all=all-shows&all=" + seriesReshetName;
         logger.debug("getEpisodes() => link used " + link);
         var seriesJson =  await fetchData(link, true);
+        if (seriesJson == undefined){ 
+            logger.error(`getEpisodes() => page not found at ${link}`);
+            return "-1";
+        }
         var grids = seriesJson["pageProps"]["page"]["Content"]["PageGrid"];
         var videos = [];
 
