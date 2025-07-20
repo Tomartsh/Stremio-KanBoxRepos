@@ -7,6 +7,14 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "Scraper Run",
+            "program": "${workspaceFolder}/main.js",
+            "envFile": "${workspaceFolder}/config/.env",
+            "skipFiles": ["<node_internals>/**"],
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "Scraper General",
             "outputCapture": "std",
             "skipFiles": [
@@ -14,7 +22,7 @@
             ],
             "program": "${workspaceFolder}/main.js",
             "envFile": "${workspaceFolder}/config/.env",
-            "runtimeArgs": ["--inspect-brk"]
+            "runtimeExecutable": "node"
         },
         {
             "name": "Launch via npm",
