@@ -19,25 +19,7 @@
                 "Kan",
                 "כאן"
             ],
-            "videos": [
-                {
-                    "id": "il_kan_kids_1000:1:1",
-                    "name": "הגינה של תמרי 🌸 בקרוב!",
-                    "season": 1,
-                    "episode": 1,
-                    "description": "תמרי מזמינה אתכם לגינה שבה כולם פורחים",
-                    "thumbnail": "https://www.kankids.org.il/media/magbtqjc/1920x1080_169_hd.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/930693/",
-                    "streams": [
-                        {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_1zg91lkg/format/applehttp/protocol/https/desiredFileName.m3u8",
-                            "type": "series",
-                            "name": "הגינה של תמרי 🌸 בקרוב!",
-                            "description": "תמרי מזמינה אתכם לגינה שבה כולם פורחים 🌸 החל מ-27.7 בכאן חינוכית ובכאן BOX"
-                        }
-                    ]
-                }
-            ]
+            "videos": []
         }
     },
     "il_kan_kids_1001": {
@@ -63,205 +45,205 @@
             "videos": [
                 {
                     "id": "il_kan_kids_1001:1:1",
-                    "name": "פרק 13 - מרגלים",
+                    "name": "פרק 25 - מונית",
                     "season": 1,
                     "episode": 1,
-                    "description": "מכשיר השליטה במבוגרים מתקלקל כשבינגו מפסיקה לשחק במשחק הריגול של בלואי",
-                    "thumbnail": "https://www.kankids.org.il/media/rjgkvubi/בלואי-פרק-13.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/830165/",
+                    "description": "בלואי מנהלת תחנת מוניות. הנוסע הראשון הוא אבא איש העסקים שממהר לשדה\"ת",
+                    "thumbnail": "https://www.kankids.org.il/media/cjandk2o/בלואי-פרק-25.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840216/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_d694sfm9/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_hu5jowey/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 13 - מרגלים",
-                            "description": "כשבינגו מפסיקה לשחק במשחק הריגול של בלואי, מכשיר השליטה שלהן במבוגרים מתקלקל! בלואי מבינה את החשיבות של בינגו וצריכה להחזיר אותה לקבוצה"
+                            "name": "פרק 25 - מונית",
+                            "description": "בלואי מנהלת תחנת מוניות. הנוסע הראשון שלה הוא אבא איש העסקים שממהר לשדה התעופה. אך בעקבות עיקובים לא צפויים, אבא עשוי לפספס את הטיסה שלו!"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:2",
-                    "name": "פרק 14 - מזמינים אוכל",
+                    "name": "פרק 26 - חוף הים",
                     "season": 1,
                     "episode": 2,
-                    "description": "בלואי ובינגו מחפשות איך לבדר את עצמן ותוך כדי בודקות את הסבלנות של אבא",
-                    "thumbnail": "https://www.kankids.org.il/media/zdrbnqk0/בלואי-פרק-14.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/830169/",
+                    "description": "בלואי נתקלת במספר מפגשים מרגשים בהרפתקת היחיד הראשונה שלה",
+                    "thumbnail": "https://www.kankids.org.il/media/tzingryt/בלואי-פרק-26.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840218/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_9fh59bs2/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_fevjg5st/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 14 - מזמינים אוכל",
-                            "description": "כשעליהן לחכות לאוכל שלהן חמש דקות במסעדה, בלואי ובינגו מאבדות סבלנות ומחפשות איך לבדר את עצמן ותוך כדי בודקות את הסבלנות של אבא"
+                            "name": "פרק 26 - חוף הים",
+                            "description": "כשאימא יוצאת לטיול לבדה לאורך החוף, בלואי רצה לתפוס אותה. במהלך הדרך היא נתקלת במספר מפגשים שמרגשים ובוחנים אותה בהרפתקת היחיד הראשונה שלה"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:3",
-                    "name": "פרק 15 - פרפרים",
+                    "name": "פרק 27 - פיראטים",
                     "season": 1,
                     "episode": 3,
-                    "description": "כיף לשחק \"פרפרים\" בחצר, עד שבלואי בורחת עם ג'ודו ומשאירה את בינגו לבד",
-                    "thumbnail": "https://www.kankids.org.il/media/sccbm144/בלואי-פרק-15.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/830175/",
+                    "description": "זוהי הרפתקה בים הפתוח כשבלואי, בינגו ומיסי משחקות בשודדי ים על הנדנדה",
+                    "thumbnail": "https://www.kankids.org.il/media/hosoheeu/בלואי-פרק-27.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840224/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_im9zu1fi/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_mzk94wms/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 15 - פרפרים",
-                            "description": "כיף לשחק \"פרפרים\" בחצר, עד שבלואי בורחת עם ג'ודו ומשאירה את בינגו לבדה. כעת, בינגו המסכנה עצובה ובלואי צריכה לתקן את המצב"
+                            "name": "פרק 27 - פיראטים",
+                            "description": "זוהי הרפתקה בים הפתוח כשבלואי, בינגו ומיסי משחקות בשודדי ים על הנדנד, אבל הן יצטרכו למצוא את האומץ שלהן כדי לעמוד בפני סערות פראיות והתקפות לווייתנים"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:4",
-                    "name": "פרק 16 - כדור יוגה",
+                    "name": "פרק 28 - סבתות",
                     "season": 1,
                     "episode": 4,
-                    "description": "אימא מלמדת את בינגו להשתמש בנביחה הבוגרת שלה כדי להציב גבולות במשחקים",
-                    "thumbnail": "https://www.kankids.org.il/media/vwfjjmro/בלואי-פרק-16.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/832781/",
+                    "description": "האם סבתות יכולות לרקוד את ריקוד הפלוס? בלואי ובינגו מתקשרות לננה",
+                    "thumbnail": "https://www.kankids.org.il/media/31rharzi/בלואי-פרק-28.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840232/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_grz5zg7g/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_n0169aol/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 16 - כדור יוגה",
-                            "description": "בינגו אוהבת להשתולל עם אבא, אבל לפעמים הוא שוכח שבינגו קטנה יותר מאחותה. אימא מלמדת את בינגו להשתמש בנביחה הבוגרת שלה כדי להציב גבולות במשחקים שלהם"
+                            "name": "פרק 28 - סבתות",
+                            "description": "משחק ה\"סבתות\" מהנה עד שבינגו ובלואי לא מסוגלות להסכים בנוגע לשאלה אחת פשוטה: האם סבתות יכולות לרקוד את ריקוד הפלוס? עליהן לצלצל לננה כדי למצוא את התשובה"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:5",
-                    "name": "פרק 17 - קליפסו",
+                    "name": "פרק 29 - הנחל",
                     "season": 1,
                     "episode": 5,
-                    "description": "בלואי וחבריה משחקים בביה\"ס במגוון משחקים, כולם מלבד פרצל המסתורי",
-                    "thumbnail": "https://www.kankids.org.il/media/fyxavmyq/בלואי-פרק-17.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/832784/",
+                    "description": "אבא משועמם ממגרש המשחקים המקומי ולוקח את הילדות למסע לנחל המקומי",
+                    "thumbnail": "https://www.kankids.org.il/media/rbhpyqmg/בלואי-פרק-29.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840285/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_nq40q5c9/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_eop0tsjd/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 17 - קליפסו",
-                            "description": "בלואי וחבריה משחקים בביה\"ס במגוון משחקים. המורה קליפסו שומרת על תלמידיה עם הכוונה נבונה ושירים... כולם מלבד פרצל המסתורי"
+                            "name": "פרק 29 - הנחל",
+                            "description": "אבא משועמם ממגרש המשחקים המקומי הצפוף ולוקח את הילדות למסע לנחל המקומי. כשהיא לא באזור הנוחות שלה, בלואי מגלה את יופיו של העולם הטבעי"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:6",
-                    "name": "פרק 18 - הרופא",
+                    "name": "פרק 30 - פיות",
                     "season": 1,
                     "episode": 6,
-                    "description": "האני תקועה בתור לד\"ר בינגו, בלואי פקידת הקבלה אומרת לה להתאזר בסבלנות",
-                    "thumbnail": "https://www.kankids.org.il/media/mafcfzij/בלואי-פרק-18.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/832787/",
+                    "description": "פיות מגיעות לביתה של בלואי! יש מדבקות בכל מקום, ואימא קיבלה זקן",
+                    "thumbnail": "https://www.kankids.org.il/media/hx4dhkf2/בלואי-פרק-30.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840293/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_rpgdvubu/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_cznorcj6/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 18 - הרופא",
-                            "description": "האני תקועה בתור לד\"ר בינגו בזמן שהמקרים המעניינים יותר נכנסים לפניה. בלואי פקידת הקבלה אומרת לה להתאזר בסבלנות, חלק מהמקרים האלה יכולים להיות ממש \"מסובכים\"!"
+                            "name": "פרק 30 - פיות",
+                            "description": "פיות מגיעות לביתה של בלואי! זנבות נקלעים, יש מדבקות בכל מקום, ואימא קיבלה זקן. כעת המשפחה צריכה לעבוד יחדיו ולמצוא את הפיות השובבות"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:7",
-                    "name": "פרק 19 - מכונת מזל",
+                    "name": "פרק 31 - עבודה",
                     "season": 1,
                     "episode": 7,
-                    "description": "אימא ואבא יוצרים מכונת מזל בבית, אבל אבא לא מתכוון להקל על הזכייה",
-                    "thumbnail": "https://www.kankids.org.il/media/jgdaasbv/בלואי-פרק-19.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/832789/",
+                    "description": "אבא משחק במשחק \"עבודה\" עם בלואי ובינגו  ומגלה שבלואי קשוחה למדי כבוסית",
+                    "thumbnail": "https://www.kankids.org.il/media/ejbpkdax/בלואי-פרק-31.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840795/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_80dvbnbj/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_sxemdgsv/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 19 - מכונת מזל",
-                            "description": "כאשר בלואי ובינגו לא מצליחות לזכות בפרס במכונת מזל, אימא ואבא יוצרים מכונה משלהם בבית, אבל אבא לא מתכוון להקל על הזכייה"
+                            "name": "פרק 31 - עבודה",
+                            "description": "אבא משחק במשחק \"עבודה\" ושוכר את בינגו ובלואי למפעל צינורות הניקוז שלו. אבל כשבלואי הופכת להיות הבוסית, אבא מגלה שהיא קשוחה למדי, במיוחד כשמדובר בחוקים האוסרים על ריקודים!"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:8",
-                    "name": "פרק 20 - הולכים לשוק",
+                    "name": "פרק 32 - באמפי וכלב הציד הזקן",
                     "season": 1,
                     "episode": 8,
-                    "description": "בלואי ואינדי מבקרות בשוק. הן מגלות שהבחירה לרכישה המושלמת קשה למדי",
-                    "thumbnail": "https://www.kankids.org.il/media/2gdb2jtp/בלואי-פרק-20.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/836784/",
+                    "description": "בינגו חולה בבית חולים. בלואי ואבא שלחו לה סרטון כדי להרים את מצב רוחה",
+                    "thumbnail": "https://www.kankids.org.il/media/ofogqyde/בלואי-פרק-32.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840797/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_rxe9blno/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_r671jdbw/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 20 - הולכים לשוק",
-                            "description": "כשבלואי מבקרת בשוק עם חמישה דולרים שקיבלה מפיית השיניים, האפשריות הן אינסופיות. אבל כאשר היא ואינדי מחפשות את הרכישה המושלמת ברחבי הדוכנים, היא מגלה שהבחירה קשה למדי"
+                            "name": "פרק 32 - באמפי וכלב הציד הזקן",
+                            "description": "בינגו חולה בבית חולים, אז בלואי ואבא שלחו לה סרטון ביתי כדי להרים את מצב רוחה. הסרט מספר את סיפור המסע של ברניקוס לרפא את הכלב שלה בשם באמפי"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:9",
-                    "name": "פרק 21 - ההרים הכחולים",
+                    "name": "פרק 33 - טרמפולינה",
                     "season": 1,
                     "episode": 9,
-                    "description": "כל המשפחה משחקת במשחק בובות ידיים וחוקרת את הארץ מעבר להרים הכחולים",
-                    "thumbnail": "https://www.kankids.org.il/media/5kvofvby/בלואי-פרק-21.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/836788/",
+                    "description": "אבא צריך ללכת לעבודה, בלואי ובינגו מנסות לגרום לו להמשיך לשחק איתן",
+                    "thumbnail": "https://www.kankids.org.il/media/0bpfkuyi/בלואי-פרק-33.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840800/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_x4mcwzfy/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_x9wtbi0l/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 21 - ההרים הכחולים",
-                            "description": "בלואי, בינגו, אימא ואבא משחקים במשחק בובות ידיים וחוקרים את הארץ מעבר להרים הכחולים, שם הם מערימים על שועל ערמומי ומוצאים את המיטות הרכות בעולם"
+                            "name": "פרק 33 - טרמפולינה",
+                            "description": "כשאבא צריך להפסיק לשחק עם הבנות וללכת לעבודה, בלואי ובינגו מנסות לגרום לו להמשיך לשחק איתן על הטרמפולינה ככל שאפשר"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:10",
-                    "name": "פרק 22- הבריכה",
+                    "name": "פרק 34 - המזבלה",
                     "season": 1,
                     "episode": 10,
-                    "description": "בלואי ואבא מקניטים את אמא שהיא מגזימה עם האריזה לבילוי בבריכה",
-                    "thumbnail": "https://www.kankids.org.il/media/zplhucua/בלואי-פרק-22.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/836791/",
+                    "description": "בלואי מגלה שאבא זורק את ציוריה הישנים ומפקפקת בכך שהוא האבא הטוב בעולם",
+                    "thumbnail": "https://www.kankids.org.il/media/2fyfoq1r/בלואי-פרק-34.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840809/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_tpr7d6jd/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_rv5rrdc3/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 22- הבריכה",
-                            "description": "בזמן שאימא אורזת לבילוי בבריכה, בלואי ואבא מקניטים אותה על כך שהיא מגזימה עם האריזה. אבל כשהם מגיעים לא מוכנים, הם מבינים שקצת תכנון משמעותי מאוד"
+                            "name": "פרק 34 - המזבלה",
+                            "description": "בטיול למזבלה אבא טוען שהוא הכי טוב בהכול. אבל בלואי מגלה שאבא זורק את הציורים הישנים שלה ומפקפקת בכך שהוא באמת האבא הכי טוב בעולם"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:11",
-                    "name": "פרק 23 - חנויות",
+                    "name": "פרק 35 - גן חיות",
                     "season": 1,
                     "episode": 11,
-                    "description": "אין כמו משחק \"חנויות\" בשביל בלואי וחבריה, אם הם יצליחו להתחיל!",
-                    "thumbnail": "https://www.kankids.org.il/media/zt4jaxy2/בלואי-פרק-23.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/836797/",
+                    "description": "כשאבא הגורילה, חוטף את בינגו, השומרת בלואי צריכה ללכוד את החיה הפראית",
+                    "thumbnail": "https://www.kankids.org.il/media/oauorfsa/בלואי-פרק-35.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840811/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_ynbnup9u/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_fkfcxkvu/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 23 - חנויות",
-                            "description": "אין כמו משחק \"חנויות\" בשביל בלואי וחבריה, אם הם יצליחו להתחיל! כאשר בלואי מפקפקת בחוקים ומשנה את התפקידים, הם עשויים להיות כאן כל היום!"
+                            "name": "פרק 35 - גן חיות",
+                            "description": "גן החיות בחצר של בלואי מכיל מגוון חיות נפלאות, במיוחד אבא הגורילה הכחולה הגדולה. אבל כשהוא חוטף את בינגו ובורח, השומרת בלואי צריכה ללכוד את החיה הפראית"
                         }
                     ]
                 },
                 {
                     "id": "il_kan_kids_1001:1:12",
-                    "name": "פרק 24 - בעגלה",
+                    "name": "פרק 36 - תרמילאים",
                     "season": 1,
                     "episode": 12,
-                    "description": "בלואי מתה להגיע למתקנים בפארק. סבלנותה עומדת במבחן כשאבא עוצר לשיחה",
-                    "thumbnail": "https://www.kankids.org.il/media/ynunouyp/בלואי-פרק-24.jpg",
-                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/836808/",
+                    "description": "אימא ואבא יוצאים להרפתקה ומשתמשים בילדים בתור תרמילים חצופים!",
+                    "thumbnail": "https://www.kankids.org.il/media/a14lpzsh/בלואי-פרק-36.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/s1/840813/",
                     "streams": [
                         {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_jy977rao/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_3rt1srvb/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
-                            "name": "פרק 24 - בעגלה",
-                            "description": "אבא לוקח את בלואי ובינגו לסיבוב עגלה בפארק ובלואי מתה להגיע למתקני הטיפוס. אבל הסבלנות שלה עומדת במבחן כאשר אבא ממשיך לעצור לשוחח עם מבוגרים"
+                            "name": "פרק 36 - תרמילאים",
+                            "description": "אימא ואבא יוצאים להרפתקה ומשתמשים בילדים בתור תרמילים חצופים! כיף לטייל ולאכול אוכל רחוב, עד שהם מאבדים את הדרכונים!"
                         }
                     ]
                 }
