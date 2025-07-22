@@ -8422,6 +8422,24 @@
                         }
                     ],
                     "released": "1989-01-19T00:00:00.000Z"
+                },
+                {
+                    "id": "il_kan_archive_671183:1:40",
+                    "name": "פרק 40 - חורבן הבית",
+                    "season": 1,
+                    "episode": 40,
+                    "description": "בפרק מיוחד לט' באב, מוני וגידי שבים לרגעי חורבן בית המקדש השני",
+                    "thumbnail": "https://www.kan.org.il/media/qf5fpbev/זהו-זה-תשעה-באב.jpg",
+                    "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-671183/931703/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_7x41fkbg/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 40 - חורבן הבית",
+                            "description": "בפרק מיוחד לט' באב, מוני וגידי מגלמים את יוחנן החכם ורבן יוסף בן יחזקאל בהר הבית של שנת 70 לפנה\"ס, ברגעי חורבן בית המקדש השני. צמד הדודאים מגיעים לשיר, ודודו גבע מדבר על המהפכה הקוביסטית של פיקאסו"
+                        }
+                    ],
+                    "released": "1984-08-06T00:00:00.000Z"
                 }
             ]
         }
@@ -19353,14 +19371,8 @@
                     "thumbnail": "https://www.kan.org.il/media/0wkmkfje/toses0171093.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-671135/s1/674696/",
                     "streams": [
-                        {
-                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_vvuypoha/format/applehttp/protocol/https/desiredFileName.m3u8",
-                            "type": "series",
-                            "name": "פרק 83 - מנחים חדשים",
-                            "description": "צוות התכנית החדש בא לעשות שלום ומראיין נערות ערביות על החוויה שלהן בתקופת האינתיפאדה"
-                        }
-                    ],
-                    "released": "1993-10-16T00:00:00.000Z"
+                        {}
+                    ]
                 },
                 {
                     "id": "il_kan_archive_671135:1:38",
@@ -27250,9 +27262,27 @@
             "videos": [
                 {
                     "id": "il_kan_archive_670851:1:1",
-                    "name": "פרק 1 - אין מקום לשניים על עמוד החשמל",
+                    "name": "רוק אנד רול עברי",
                     "season": 1,
                     "episode": 1,
+                    "description": "להקות הקצב או הלהקות הצבאיות: איך השפיעה מהפכת הרוק בעולם על ישראל?",
+                    "thumbnail": "https://www.kan.org.il/media/tnllj04w/screenshot-2025-06-15-175938.jpg",
+                    "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/920634/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_t2qov6o8/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "רוק אנד רול עברי",
+                            "description": "להקות הקצב או הלהקות הצבאיות: איך השפיעה מהפכת הרוק בעולם על ישראל?"
+                        }
+                    ],
+                    "released": "2025-06-15T00:00:00.000Z"
+                },
+                {
+                    "id": "il_kan_archive_670851:1:2",
+                    "name": "פרק 1 - אין מקום לשניים על עמוד החשמל",
+                    "season": 1,
+                    "episode": 2,
                     "description": "שורשי הרוק הישראלי: מתחילת שנות ה-60 ועד להקת \"אחרית הימים\"",
                     "thumbnail": "https://www.kan.org.il/media/yadcbdad/tapuzim01.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674401/",
@@ -27267,10 +27297,10 @@
                     "released": "1998-03-07T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:2",
+                    "id": "il_kan_archive_670851:1:3",
                     "name": "פרק 2 - אני ואתה נשנה את העולם",
                     "season": 1,
-                    "episode": 2,
+                    "episode": 3,
                     "description": "על ימי הרוק המהפכניים של אריק איינשטיין",
                     "thumbnail": "https://www.kan.org.il/media/ahxpsrig/tapuzim02.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674398/",
@@ -27285,10 +27315,10 @@
                     "released": "1998-11-17T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:3",
+                    "id": "il_kan_archive_670851:1:4",
                     "name": "פרק 3 - היה נחמד",
                     "season": 1,
-                    "episode": 3,
+                    "episode": 4,
                     "description": "סיפורה של להקת \"כוורת\"",
                     "thumbnail": "https://www.kan.org.il/media/2mnpygsa/3.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674392/",
@@ -27303,10 +27333,10 @@
                     "released": "1998-11-21T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:4",
+                    "id": "il_kan_archive_670851:1:5",
                     "name": "פרק 4 - עצמאי בשטח",
                     "season": 1,
-                    "episode": 4,
+                    "episode": 5,
                     "description": "תחילת שנות השבעים מבשרת על בואם של זמרים-יוצרים חדשים ופורצי דרך",
                     "thumbnail": "https://www.kan.org.il/media/x1sjc3up/4.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674389/",
@@ -27321,10 +27351,10 @@
                     "released": "1998-11-28T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:5",
+                    "id": "il_kan_archive_670851:1:6",
                     "name": "פרק 5 - קצת אחר",
                     "season": 1,
-                    "episode": 5,
+                    "episode": 6,
                     "description": "על גיבורי השוליים של הרוק הישראלי משלהי שנות ה-60 לשלהי שנות ה-70",
                     "thumbnail": "https://www.kan.org.il/media/evvh24uo/tapuzim05.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674386/",
@@ -27339,10 +27369,10 @@
                     "released": "1998-12-05T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:6",
+                    "id": "il_kan_archive_670851:1:7",
                     "name": "פרק 6 - תנו לי רוקנרול",
                     "season": 1,
-                    "episode": 6,
+                    "episode": 7,
                     "description": "על ה\"רוקיזציה\" של הפופ הישראלי בשנות ה-80",
                     "thumbnail": "https://www.kan.org.il/media/yoqe3owy/tapuzim06.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674383/",
@@ -27357,10 +27387,10 @@
                     "released": "1998-12-12T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:7",
+                    "id": "il_kan_archive_670851:1:8",
                     "name": "פרק 7 - אינקובטור",
                     "season": 1,
-                    "episode": 7,
+                    "episode": 8,
                     "description": "כיצד פרצו רמי פורטיס, ברי סחרוף ודני דותן מהשוליים לזרם המרכזי?",
                     "thumbnail": "https://www.kan.org.il/media/0z0jz4wc/tapuzim07.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674380/",
@@ -27375,10 +27405,10 @@
                     "released": "1998-12-19T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:8",
+                    "id": "il_kan_archive_670851:1:9",
                     "name": "פרק 8 - אל תקרא לי מותק",
                     "season": 1,
-                    "episode": 8,
+                    "episode": 9,
                     "description": "יוצרות בולטות ובועטות מספרות את סיפורן של נשות הרוק הישראלי",
                     "thumbnail": "https://www.kan.org.il/media/huzb2cbk/8.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/676104/",
@@ -27393,10 +27423,10 @@
                     "released": "1998-12-26T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:9",
+                    "id": "il_kan_archive_670851:1:10",
                     "name": "פרק 9 - יהיה טוב",
                     "season": 1,
-                    "episode": 9,
+                    "episode": 10,
                     "description": "על שלמה ארצי, יהודה פוליקר ודויד ברוזה כגיבורי קונצנזוס",
                     "thumbnail": "https://www.kan.org.il/media/mbnjcgn2/tapuzim09.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674377/",
@@ -27411,10 +27441,10 @@
                     "released": "1999-01-02T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:10",
+                    "id": "il_kan_archive_670851:1:11",
                     "name": "פרק 10 - נגד הרוח",
                     "season": 1,
-                    "episode": 10,
+                    "episode": 11,
                     "description": "כיצד הפך שלום חנוך לאחת הדמויות המובילות ברוק הישראלי?",
                     "thumbnail": "https://www.kan.org.il/media/avndtxgj/shalom.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674419/",
@@ -27429,10 +27459,10 @@
                     "released": "1999-01-09T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:11",
+                    "id": "il_kan_archive_670851:1:12",
                     "name": "פרק 11 - למה לי פוליטיקה עכשיו",
                     "season": 1,
-                    "episode": 11,
+                    "episode": 12,
                     "description": "כיצד השפיעה מלחמת לבנון על הדור החדש של הרוק הישראלי?",
                     "thumbnail": "https://www.kan.org.il/media/k0ibuabr/11.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674374/",
@@ -27447,10 +27477,10 @@
                     "released": "1999-01-16T00:00:00.000Z"
                 },
                 {
-                    "id": "il_kan_archive_670851:1:12",
+                    "id": "il_kan_archive_670851:1:13",
                     "name": "פרק 12 - סוף העולם",
                     "season": 1,
-                    "episode": 12,
+                    "episode": 13,
                     "description": "על המהפכה השלישית של הרוק הישראלי בשנות ה-90 - עד להתפוצצות הבועה",
                     "thumbnail": "https://www.kan.org.il/media/1t1f2j44/tapuzim12.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-670851/674404/",
