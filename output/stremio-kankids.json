@@ -1,12 +1,12 @@
 {
-    "il_kan_kids_1002": {
-        "id": "il_kan_kids_1002",
+    "il_kan_kids_1000": {
+        "id": "il_kan_kids_1000",
         "name": "הגינה של תמרי",
         "link": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/",
         "type": "series",
         "subtype": "k",
         "meta": {
-            "id": "il_kan_kids_1002",
+            "id": "il_kan_kids_1000",
             "type": "series",
             "name": "הגינה של תמרי",
             "link": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/",
@@ -19,17 +19,35 @@
                 "Kan",
                 "כאן"
             ],
-            "videos": []
+            "videos": [
+                {
+                    "id": "il_kan_kids_1000:1:1",
+                    "name": "הגינה של תמרי 🌸 בקרוב!",
+                    "season": 1,
+                    "episode": 1,
+                    "description": "תמרי מזמינה אתכם לגינה שבה כולם פורחים",
+                    "thumbnail": "https://www.kankids.org.il/media/magbtqjc/1920x1080_169_hd.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/930693/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_1zg91lkg/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "הגינה של תמרי 🌸 בקרוב!",
+                            "description": "תמרי מזמינה אתכם לגינה שבה כולם פורחים 🌸 החל מ-27.7 בכאן חינוכית ובכאן BOX"
+                        }
+                    ]
+                }
+            ]
         }
     },
-    "il_kan_kids_1003": {
-        "id": "il_kan_kids_1003",
+    "il_kan_kids_1001": {
+        "id": "il_kan_kids_1001",
         "name": "בלואי",
         "link": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/",
         "type": "series",
         "subtype": "k",
         "meta": {
-            "id": "il_kan_kids_1003",
+            "id": "il_kan_kids_1001",
             "type": "series",
             "name": "בלואי",
             "link": "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/",
@@ -44,7 +62,7 @@
             ],
             "videos": [
                 {
-                    "id": "il_kan_kids_1003:1:1",
+                    "id": "il_kan_kids_1001:1:1",
                     "name": "פרק 25 - מונית",
                     "season": 1,
                     "episode": 1,
@@ -61,7 +79,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:2",
+                    "id": "il_kan_kids_1001:1:2",
                     "name": "פרק 26 - חוף הים",
                     "season": 1,
                     "episode": 2,
@@ -78,7 +96,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:3",
+                    "id": "il_kan_kids_1001:1:3",
                     "name": "פרק 27 - פיראטים",
                     "season": 1,
                     "episode": 3,
@@ -95,7 +113,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:4",
+                    "id": "il_kan_kids_1001:1:4",
                     "name": "פרק 28 - סבתות",
                     "season": 1,
                     "episode": 4,
@@ -112,7 +130,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:5",
+                    "id": "il_kan_kids_1001:1:5",
                     "name": "פרק 29 - הנחל",
                     "season": 1,
                     "episode": 5,
@@ -129,7 +147,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:6",
+                    "id": "il_kan_kids_1001:1:6",
                     "name": "פרק 30 - פיות",
                     "season": 1,
                     "episode": 6,
@@ -146,7 +164,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:7",
+                    "id": "il_kan_kids_1001:1:7",
                     "name": "פרק 31 - עבודה",
                     "season": 1,
                     "episode": 7,
@@ -163,7 +181,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:8",
+                    "id": "il_kan_kids_1001:1:8",
                     "name": "פרק 32 - באמפי וכלב הציד הזקן",
                     "season": 1,
                     "episode": 8,
@@ -180,7 +198,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:9",
+                    "id": "il_kan_kids_1001:1:9",
                     "name": "פרק 33 - טרמפולינה",
                     "season": 1,
                     "episode": 9,
@@ -197,7 +215,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:10",
+                    "id": "il_kan_kids_1001:1:10",
                     "name": "פרק 34 - המזבלה",
                     "season": 1,
                     "episode": 10,
@@ -214,7 +232,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:11",
+                    "id": "il_kan_kids_1001:1:11",
                     "name": "פרק 35 - גן חיות",
                     "season": 1,
                     "episode": 11,
@@ -231,7 +249,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1003:1:12",
+                    "id": "il_kan_kids_1001:1:12",
                     "name": "פרק 36 - תרמילאים",
                     "season": 1,
                     "episode": 12,
@@ -250,14 +268,14 @@
             ]
         }
     },
-    "il_kan_kids_1004": {
-        "id": "il_kan_kids_1004",
+    "il_kan_kids_1002": {
+        "id": "il_kan_kids_1002",
         "name": "צ'רלי ולולה",
         "link": "https://www.kankids.org.il/content/kids/ktantanim-main/charlie_and_lola/",
         "type": "series",
         "subtype": "k",
         "meta": {
-            "id": "il_kan_kids_1004",
+            "id": "il_kan_kids_1002",
             "type": "series",
             "name": "צ'רלי ולולה",
             "link": "https://www.kankids.org.il/content/kids/ktantanim-main/charlie_and_lola/",
@@ -272,7 +290,7 @@
             ],
             "videos": [
                 {
-                    "id": "il_kan_kids_1004:1:1",
+                    "id": "il_kan_kids_1002:1:1",
                     "name": "פרק 1 - אני לעולם לא אוכל עגבנייה",
                     "season": 1,
                     "episode": 1,
@@ -289,7 +307,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:2",
+                    "id": "il_kan_kids_1002:1:2",
                     "name": "פרק 2 - אני יכולה לעשות כל דבר שבעולם, ממש בעצמי",
                     "season": 1,
                     "episode": 2,
@@ -306,7 +324,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:3",
+                    "id": "il_kan_kids_1002:1:3",
                     "name": "פרק 3 - אני לא עייפה ואני לא הולכת לישון",
                     "season": 1,
                     "episode": 3,
@@ -323,7 +341,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:4",
+                    "id": "il_kan_kids_1002:1:4",
                     "name": "פרק 4 - אבל זה הספר שלי",
                     "season": 1,
                     "episode": 4,
@@ -340,7 +358,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:5",
+                    "id": "il_kan_kids_1002:1:5",
                     "name": "פרק 5 - יש רק שמש אחת וזאת אני",
                     "season": 1,
                     "episode": 5,
@@ -357,7 +375,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:6",
+                    "id": "il_kan_kids_1002:1:6",
                     "name": "פרק 6 - אנחנו באמת מבטיחות שנוכל לשמור על הכלב שלך",
                     "season": 1,
                     "episode": 6,
@@ -374,7 +392,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:7",
+                    "id": "il_kan_kids_1002:1:7",
                     "name": "פרק 7 - ניצחתי. לא! אני ניצחתי",
                     "season": 1,
                     "episode": 7,
@@ -391,7 +409,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:8",
+                    "id": "il_kan_kids_1002:1:8",
                     "name": "פרק 8 - אני אוהבת את שיערי בדיוק כמו שהוא",
                     "season": 1,
                     "episode": 8,
@@ -408,7 +426,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:9",
+                    "id": "il_kan_kids_1002:1:9",
                     "name": "פרק 9 - אני באמת באמת,לא מרגישה טוב",
                     "season": 1,
                     "episode": 9,
@@ -418,7 +436,7 @@
                     "streams": []
                 },
                 {
-                    "id": "il_kan_kids_1004:1:10",
+                    "id": "il_kan_kids_1002:1:10",
                     "name": "פרק 10 - אני ממהרת! אני כבר כמעט מוכנה",
                     "season": 1,
                     "episode": 10,
@@ -435,7 +453,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:11",
+                    "id": "il_kan_kids_1002:1:11",
                     "name": "פרק 11-  בו! הבהלתי אותך",
                     "season": 1,
                     "episode": 11,
@@ -452,7 +470,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:12",
+                    "id": "il_kan_kids_1002:1:12",
                     "name": "פרק 12-  הפיקניק הכי הכי נפלא בעולם",
                     "season": 1,
                     "episode": 12,
@@ -469,7 +487,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:13",
+                    "id": "il_kan_kids_1002:1:13",
                     "name": "פרק 13-  זה לא אני",
                     "season": 1,
                     "episode": 13,
@@ -486,7 +504,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:14",
+                    "id": "il_kan_kids_1002:1:14",
                     "name": "פרק 14-  זה סוד",
                     "season": 1,
                     "episode": 14,
@@ -503,7 +521,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:15",
+                    "id": "il_kan_kids_1002:1:15",
                     "name": "פרק 15- אני אוהבת לנסוע לסבא וסבתא אבל...",
                     "season": 1,
                     "episode": 15,
@@ -520,7 +538,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:16",
+                    "id": "il_kan_kids_1002:1:16",
                     "name": "פרק 16-  שן מתנדנדת",
                     "season": 1,
                     "episode": 16,
@@ -537,7 +555,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:17",
+                    "id": "il_kan_kids_1002:1:17",
                     "name": "פרק 17- לחייך",
                     "season": 1,
                     "episode": 17,
@@ -554,7 +572,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:18",
+                    "id": "il_kan_kids_1002:1:18",
                     "name": "פרק 18- עכבישים",
                     "season": 1,
                     "episode": 18,
@@ -571,7 +589,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:19",
+                    "id": "il_kan_kids_1002:1:19",
                     "name": "פרק 19- אני הכי הכי אוהבת שלג",
                     "season": 1,
                     "episode": 19,
@@ -588,7 +606,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:20",
+                    "id": "il_kan_kids_1002:1:20",
                     "name": "פרק 20-  לא תאהבי את המתנה הזאת כמוני",
                     "season": 1,
                     "episode": 20,
@@ -605,7 +623,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:21",
+                    "id": "il_kan_kids_1002:1:21",
                     "name": "פרק 21- אני צריכה לקחת את הכול",
                     "season": 1,
                     "episode": 21,
@@ -622,7 +640,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:22",
+                    "id": "il_kan_kids_1002:1:22",
                     "name": "פרק 22-  גם אני רוצה לנגן",
                     "season": 1,
                     "episode": 22,
@@ -639,7 +657,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:23",
+                    "id": "il_kan_kids_1002:1:23",
                     "name": "פרק 23- אני יותר מדי עסוקה",
                     "season": 1,
                     "episode": 23,
@@ -656,7 +674,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:24",
+                    "id": "il_kan_kids_1002:1:24",
                     "name": "פרק 24-  אני רוצה להיות גדולה יותר, כמוך",
                     "season": 1,
                     "episode": 24,
@@ -673,7 +691,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:25",
+                    "id": "il_kan_kids_1002:1:25",
                     "name": "פרק 25- העיר הקטנה שלי",
                     "season": 1,
                     "episode": 25,
@@ -690,7 +708,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1004:1:26",
+                    "id": "il_kan_kids_1002:1:26",
                     "name": "פרק 26- אבל אני תנינה",
                     "season": 1,
                     "episode": 26,
@@ -903,14 +921,14 @@
             ]
         }
     },
-    "il_kan_kids_1005": {
-        "id": "il_kan_kids_1005",
+    "il_kan_kids_1003": {
+        "id": "il_kan_kids_1003",
         "name": "פרפר נחמד",
         "link": "https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad/",
         "type": "series",
         "subtype": "k",
         "meta": {
-            "id": "il_kan_kids_1005",
+            "id": "il_kan_kids_1003",
             "type": "series",
             "name": "פרפר נחמד",
             "link": "https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad/",
@@ -925,7 +943,7 @@
             ],
             "videos": [
                 {
-                    "id": "il_kan_kids_1005:2:1",
+                    "id": "il_kan_kids_1003:2:1",
                     "name": "המבצר המעופף | פרק 31",
                     "season": 2,
                     "episode": 1,
@@ -942,7 +960,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:2",
+                    "id": "il_kan_kids_1003:2:2",
                     "name": "המטמון | פרק 32",
                     "season": 2,
                     "episode": 2,
@@ -959,7 +977,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:3",
+                    "id": "il_kan_kids_1003:2:3",
                     "name": "המכולת שלנו | פרק 33",
                     "season": 2,
                     "episode": 3,
@@ -976,7 +994,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:4",
+                    "id": "il_kan_kids_1003:2:4",
                     "name": "בץ מחפש געגוע | פרק 34",
                     "season": 2,
                     "episode": 4,
@@ -993,7 +1011,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:5",
+                    "id": "il_kan_kids_1003:2:5",
                     "name": "להציל את עץ התות | פרק 35",
                     "season": 2,
                     "episode": 5,
@@ -1010,7 +1028,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:6",
+                    "id": "il_kan_kids_1003:2:6",
                     "name": "שבי יוצא דופן | פרק 36",
                     "season": 2,
                     "episode": 6,
@@ -1027,7 +1045,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:7",
+                    "id": "il_kan_kids_1003:2:7",
                     "name": "החברה החדשה של משי | פרק 37",
                     "season": 2,
                     "episode": 7,
@@ -1044,7 +1062,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:8",
+                    "id": "il_kan_kids_1003:2:8",
                     "name": "האכזבות של נולי | פרק 38",
                     "season": 2,
                     "episode": 8,
@@ -1061,7 +1079,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:9",
+                    "id": "il_kan_kids_1003:2:9",
                     "name": "אני יכול | פרק 39",
                     "season": 2,
                     "episode": 9,
@@ -1078,7 +1096,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:10",
+                    "id": "il_kan_kids_1003:2:10",
                     "name": "שמח בפורים | פרק 40",
                     "season": 2,
                     "episode": 10,
@@ -1095,7 +1113,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:11",
+                    "id": "il_kan_kids_1003:2:11",
                     "name": "בית למשי | פרק 41",
                     "season": 2,
                     "episode": 11,
@@ -1112,7 +1130,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:12",
+                    "id": "il_kan_kids_1003:2:12",
                     "name": "בוקר טוב | פרק 42",
                     "season": 2,
                     "episode": 12,
@@ -1129,7 +1147,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:13",
+                    "id": "il_kan_kids_1003:2:13",
                     "name": "חוגגים עצמאות | פרק 43",
                     "season": 2,
                     "episode": 13,
@@ -1146,7 +1164,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:14",
+                    "id": "il_kan_kids_1003:2:14",
                     "name": "קוף אחרי בן אדם | פרק 44",
                     "season": 2,
                     "episode": 14,
@@ -1163,7 +1181,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:15",
+                    "id": "il_kan_kids_1003:2:15",
                     "name": "הפתעה בהפתעה | פרק 45",
                     "season": 2,
                     "episode": 15,
@@ -1180,7 +1198,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:16",
+                    "id": "il_kan_kids_1003:2:16",
                     "name": "לנשום ולספור | פרק 46",
                     "season": 2,
                     "episode": 16,
@@ -1197,7 +1215,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:17",
+                    "id": "il_kan_kids_1003:2:17",
                     "name": "תחרות הצורה הטובה | פרק 47",
                     "season": 2,
                     "episode": 17,
@@ -1214,7 +1232,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:18",
+                    "id": "il_kan_kids_1003:2:18",
                     "name": "יחד ולבד | פרק 48",
                     "season": 2,
                     "episode": 18,
@@ -1231,7 +1249,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:19",
+                    "id": "il_kan_kids_1003:2:19",
                     "name": "גינת ירק | פרק 49",
                     "season": 2,
                     "episode": 19,
@@ -1248,7 +1266,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:20",
+                    "id": "il_kan_kids_1003:2:20",
                     "name": "אחות קטנה | פרק 50",
                     "season": 2,
                     "episode": 20,
@@ -1265,7 +1283,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:21",
+                    "id": "il_kan_kids_1003:2:21",
                     "name": "משעמם לי | פרק 51",
                     "season": 2,
                     "episode": 21,
@@ -1282,7 +1300,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:22",
+                    "id": "il_kan_kids_1003:2:22",
                     "name": "לפני החגים | פרק 52",
                     "season": 2,
                     "episode": 22,
@@ -1299,7 +1317,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:23",
+                    "id": "il_kan_kids_1003:2:23",
                     "name": "פרק 53 - המופע של אוזה",
                     "season": 2,
                     "episode": 23,
@@ -1316,7 +1334,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:24",
+                    "id": "il_kan_kids_1003:2:24",
                     "name": "פרק 54 - תקשיבו לי",
                     "season": 2,
                     "episode": 24,
@@ -1333,7 +1351,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:25",
+                    "id": "il_kan_kids_1003:2:25",
                     "name": "פרק 55 - בן הדוד מאיטליה",
                     "season": 2,
                     "episode": 25,
@@ -1350,7 +1368,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:26",
+                    "id": "il_kan_kids_1003:2:26",
                     "name": "פרק 56 - דרוש מעשה טוב",
                     "season": 2,
                     "episode": 26,
@@ -1367,7 +1385,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:27",
+                    "id": "il_kan_kids_1003:2:27",
                     "name": "פרק 57 - חוקים וחרובים",
                     "season": 2,
                     "episode": 27,
@@ -1384,7 +1402,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:28",
+                    "id": "il_kan_kids_1003:2:28",
                     "name": "פרק 58 - כשאהיה גדול",
                     "season": 2,
                     "episode": 28,
@@ -1401,7 +1419,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:29",
+                    "id": "il_kan_kids_1003:2:29",
                     "name": "פרק 59 - שקרים לבנים",
                     "season": 2,
                     "episode": 29,
@@ -1418,7 +1436,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:2:30",
+                    "id": "il_kan_kids_1003:2:30",
                     "name": "פרק 60 - החורף הגיע",
                     "season": 2,
                     "episode": 30,
@@ -1435,7 +1453,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:1",
+                    "id": "il_kan_kids_1003:1:1",
                     "name": "איך דמיון מתגלגל | פרק 1",
                     "season": 1,
                     "episode": 1,
@@ -1452,7 +1470,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:2",
+                    "id": "il_kan_kids_1003:1:2",
                     "name": "על טעם ועל ריח | פרק 2",
                     "season": 1,
                     "episode": 2,
@@ -1469,7 +1487,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:3",
+                    "id": "il_kan_kids_1003:1:3",
                     "name": "מי בא לים | פרק 3",
                     "season": 1,
                     "episode": 3,
@@ -1486,7 +1504,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:4",
+                    "id": "il_kan_kids_1003:1:4",
                     "name": "איזה פחד | פרק 4",
                     "season": 1,
                     "episode": 4,
@@ -1503,7 +1521,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:5",
+                    "id": "il_kan_kids_1003:1:5",
                     "name": "מה מצחיק? | פרק 5",
                     "season": 1,
                     "episode": 5,
@@ -1520,7 +1538,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:6",
+                    "id": "il_kan_kids_1003:1:6",
                     "name": "עננים צהובים | פרק 6",
                     "season": 1,
                     "episode": 6,
@@ -1537,7 +1555,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:7",
+                    "id": "il_kan_kids_1003:1:7",
                     "name": "בץ החוקר | פרק 7",
                     "season": 1,
                     "episode": 7,
@@ -1554,7 +1572,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:8",
+                    "id": "il_kan_kids_1003:1:8",
                     "name": "החבורה הסודית | פרק 8",
                     "season": 1,
                     "episode": 8,
@@ -1571,7 +1589,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:9",
+                    "id": "il_kan_kids_1003:1:9",
                     "name": "השכנה החדשה | פרק 9",
                     "season": 1,
                     "episode": 9,
@@ -1588,7 +1606,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:10",
+                    "id": "il_kan_kids_1003:1:10",
                     "name": "המעודדים | פרק 10",
                     "season": 1,
                     "episode": 10,
@@ -1605,7 +1623,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:11",
+                    "id": "il_kan_kids_1003:1:11",
                     "name": "מה לובשים למסיבה | פרק 11",
                     "season": 1,
                     "episode": 11,
@@ -1622,7 +1640,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:12",
+                    "id": "il_kan_kids_1003:1:12",
                     "name": "מעט, הרבה, המון | פרק 12",
                     "season": 1,
                     "episode": 12,
@@ -1639,7 +1657,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:13",
+                    "id": "il_kan_kids_1003:1:13",
                     "name": "חנוכה | פרק 13",
                     "season": 1,
                     "episode": 13,
@@ -1656,7 +1674,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:14",
+                    "id": "il_kan_kids_1003:1:14",
                     "name": "אוסף הכדורים של שבי | פרק 14",
                     "season": 1,
                     "episode": 14,
@@ -1673,7 +1691,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:15",
+                    "id": "il_kan_kids_1003:1:15",
                     "name": "הברוגז של שבי | פרק 15",
                     "season": 1,
                     "episode": 15,
@@ -1690,7 +1708,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:16",
+                    "id": "il_kan_kids_1003:1:16",
                     "name": "גשם של טבעות | פרק 16",
                     "season": 1,
                     "episode": 16,
@@ -1707,7 +1725,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:17",
+                    "id": "il_kan_kids_1003:1:17",
                     "name": "בץ מדבר בצית | פרק 17",
                     "season": 1,
                     "episode": 17,
@@ -1724,7 +1742,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:18",
+                    "id": "il_kan_kids_1003:1:18",
                     "name": "לבריאות שבי מדביק | פרק 18",
                     "season": 1,
                     "episode": 18,
@@ -1741,7 +1759,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:19",
+                    "id": "il_kan_kids_1003:1:19",
                     "name": "ממציאים המצאות | פרק 19",
                     "season": 1,
                     "episode": 19,
@@ -1758,7 +1776,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:20",
+                    "id": "il_kan_kids_1003:1:20",
                     "name": "חברים לעפיפון | פרק 20",
                     "season": 1,
                     "episode": 20,
@@ -1775,7 +1793,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:21",
+                    "id": "il_kan_kids_1003:1:21",
                     "name": "האוטובץ | פרק 21",
                     "season": 1,
                     "episode": 21,
@@ -1792,7 +1810,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:22",
+                    "id": "il_kan_kids_1003:1:22",
                     "name": "איפה העוגה? | פרק 22",
                     "season": 1,
                     "episode": 22,
@@ -1809,7 +1827,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:23",
+                    "id": "il_kan_kids_1003:1:23",
                     "name": "יום הולדת למוזה | פרק 23",
                     "season": 1,
                     "episode": 23,
@@ -1826,7 +1844,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:24",
+                    "id": "il_kan_kids_1003:1:24",
                     "name": "התחלות חדשות | פרק 24",
                     "season": 1,
                     "episode": 24,
@@ -1843,7 +1861,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:25",
+                    "id": "il_kan_kids_1003:1:25",
                     "name": "פסח בא! | פרק 25",
                     "season": 1,
                     "episode": 25,
@@ -1860,7 +1878,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:26",
+                    "id": "il_kan_kids_1003:1:26",
                     "name": "מסיבת הפתעה | פרק 26",
                     "season": 1,
                     "episode": 26,
@@ -1877,7 +1895,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:27",
+                    "id": "il_kan_kids_1003:1:27",
                     "name": "טיפ, טיפה קנאה | פרק 27",
                     "season": 1,
                     "episode": 27,
@@ -1894,7 +1912,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:28",
+                    "id": "il_kan_kids_1003:1:28",
                     "name": "ביצת זהב | פרק 28",
                     "season": 1,
                     "episode": 28,
@@ -1911,7 +1929,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:29",
+                    "id": "il_kan_kids_1003:1:29",
                     "name": "האספנים | פרק 29",
                     "season": 1,
                     "episode": 29,
@@ -1928,7 +1946,7 @@
                     ]
                 },
                 {
-                    "id": "il_kan_kids_1005:1:30",
+                    "id": "il_kan_kids_1003:1:30",
                     "name": "שבי הקוסם | פרק 30",
                     "season": 1,
                     "episode": 30,
