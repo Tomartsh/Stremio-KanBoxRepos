@@ -14126,7 +14126,7 @@
             "poster": "https://www.kan.org.il/media/1q2jdlry/poster-image_small_239x360_סיפור-מנצח.jpg",
             "posterShape": "poster",
             "logo": "https://www.kan.org.il/media/1q2jdlry/poster-image_small_239x360_סיפור-מנצח.jpg",
-            "description": "המנצח גיל שוחט יוצא למסע תיעודי, אסוציאטיבי וחוויתי בעקבות יצירות קלאסיות, שודרה בשנת 2012.\n",
+            "description": "המנצח גיל שוחט יוצא למסע תיעודי, אסוציאטיבי וחוויתי בעקבות יצירות קלאסיות..\n",
             "genres": [
                 "Archive",
                 "ארכיון",
@@ -14224,6 +14224,60 @@
                         }
                     ],
                     "released": "2012-07-18T00:00:00.000Z"
+                },
+                {
+                    "id": "il_kan_archive_671114:1:6",
+                    "name": "פרק 6 - תמונות בתערוכה - מודסט מוסורגסקי",
+                    "season": 1,
+                    "episode": 6,
+                    "description": "איך ציוריו של האדריכל ויקטור הרטמן נהפכו ליצירה מוזיקלית?",
+                    "thumbnail": "https://www.kan.org.il/media/f2gi0exg/סיפור-למנצח-פרק-6.jpg",
+                    "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-671114/s1/933940/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_c6v0sy6a/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 6 - תמונות בתערוכה - מודסט מוסורגסקי",
+                            "description": "ב\"תמונות בתערוכה\" מנסה מוסורגסקי לתאר את ציוריו של חברו, הארכיטקט ויקטור הרטמן שמת בטרם עת. איך הופכים תמונות ליצירה מוזיקלית?"
+                        }
+                    ],
+                    "released": "2016-02-07T00:00:00.000Z"
+                },
+                {
+                    "id": "il_kan_archive_671114:1:7",
+                    "name": "פרק 7 - אגם הברבורים - פיוטר צ'ייקובסקי",
+                    "season": 1,
+                    "episode": 7,
+                    "description": "מהי אהבה ואיך הברבור הפך לסמל היופי?",
+                    "thumbnail": "https://www.kan.org.il/media/metdc50r/סיפור-מנצח-פרק-7.jpg",
+                    "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-671114/s1/933944/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_e2kqwftc/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 7 - אגם הברבורים - פיוטר צ'ייקובסקי",
+                            "description": "המאסטרו גיל שוחט במסע אחרי אחת מיצירות הבלט המפורסמות ביותר - מחייו האישיים של המלחין ועד ההיסטוריה של הבלט"
+                        }
+                    ],
+                    "released": "2016-02-01T00:00:00.000Z"
+                },
+                {
+                    "id": "il_kan_archive_671114:1:8",
+                    "name": "פרק 8 - הסימפוניה התשיעית - לודוויג ואן בטהובן",
+                    "season": 1,
+                    "episode": 8,
+                    "description": "חירות, שוויון, אחווה: על כוחן של מהפכות",
+                    "thumbnail": "https://www.kan.org.il/media/z2bngdym/שלמה-גרוניך-פרק-8-ערוך.jpg",
+                    "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-671114/s1/933946/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_lclspmv2/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 8 - הסימפוניה התשיעית - לודוויג ואן בטהובן",
+                            "description": "חירות, שוויון, אחווה: על כוחן של מהפכות"
+                        }
+                    ],
+                    "released": "2016-02-15T00:00:00.000Z"
                 }
             ]
         }
@@ -19371,8 +19425,14 @@
                     "thumbnail": "https://www.kan.org.il/media/0wkmkfje/toses0171093.jpg",
                     "episodeLink": "https://www.kan.org.il/content/archive1/vod/p-671135/s1/674696/",
                     "streams": [
-                        {}
-                    ]
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_vvuypoha/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 83 - מנחים חדשים",
+                            "description": "צוות התכנית החדש בא לעשות שלום ומראיין נערות ערביות על החוויה שלהן בתקופת האינתיפאדה"
+                        }
+                    ],
+                    "released": "1993-10-16T00:00:00.000Z"
                 },
                 {
                     "id": "il_kan_archive_671135:1:38",
