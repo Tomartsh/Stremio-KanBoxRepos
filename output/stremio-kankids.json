@@ -22,9 +22,26 @@
             "videos": [
                 {
                     "id": "il_kan_kids_1000:1:1",
-                    "name": "הגינה של תמרי 🌸 בקרוב!",
+                    "name": "פרק 1 - פיית גינה",
                     "season": 1,
                     "episode": 1,
+                    "description": "יהלי מחפשת פיות בגינה והאם תמרי אוהבת ריבת תפוזונים?",
+                    "thumbnail": "https://www.kankids.org.il/media/mcloxyr1/הגינה-של-תמרי-פרק-1.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/934085/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_qbchcyaw/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 1 - פיית גינה",
+                            "description": "יהלי בטוחה שיש פיות גינה. עמית עוזר לה לחשוב שיש כדי שתהיה מאושרת. תמרי, שמסתירה מאליעזר שמעולם לא אהבה את ריבת התפוזונים, נאלצת לספר לו את האמת"
+                        }
+                    ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:2",
+                    "name": "הגינה של תמרי 🌸 בקרוב!",
+                    "season": 1,
+                    "episode": 2,
                     "description": "תמרי מזמינה אתכם לגינה שבה כולם פורחים",
                     "thumbnail": "https://www.kankids.org.il/media/magbtqjc/1920x1080_169_hd.jpg",
                     "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/930693/",
