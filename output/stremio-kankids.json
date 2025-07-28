@@ -39,9 +39,26 @@
                 },
                 {
                     "id": "il_kan_kids_1000:1:2",
-                    "name": "הגינה של תמרי 🌸 בקרוב!",
+                    "name": "פרק 2 - ינשופים ומתפייסים",
                     "season": 1,
                     "episode": 2,
+                    "description": "מיקה וחדווה נעלבות מהחברים בגינה. איך מתפייסים?",
+                    "thumbnail": "https://www.kankids.org.il/media/ughmo3zi/הגינה-של-תמרי-פרק-2.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/934492/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_dznp47jc/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 2 - ינשופים ומתפייסים",
+                            "description": "מיקה נעלבת מנועה שלא מזמינה אותה לעבודת יצירה. חדווה נעלבת מתמרי שלא הודתה לה על מאמציה ביוזמת השוק גינה"
+                        }
+                    ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:3",
+                    "name": "הגינה של תמרי 🌸 בקרוב!",
+                    "season": 1,
+                    "episode": 3,
                     "description": "תמרי מזמינה אתכם לגינה שבה כולם פורחים",
                     "thumbnail": "https://www.kankids.org.il/media/magbtqjc/1920x1080_169_hd.jpg",
                     "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/930693/",
