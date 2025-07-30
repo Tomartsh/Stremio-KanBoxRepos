@@ -42,7 +42,7 @@
                     "name": "פרק 2 - ינשופים ומתפייסים",
                     "season": 1,
                     "episode": 2,
-                    "description": "מיקה וחדווה נעלבות מהחברים בגינה. איך מתפייסים?",
+                    "description": "מיקה וחדוה נעלבות מהחברים בגינה. איך מתפייסים?",
                     "thumbnail": "https://www.kankids.org.il/media/ughmo3zi/הגינה-של-תמרי-פרק-2.jpg",
                     "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/934492/",
                     "streams": [
@@ -50,7 +50,7 @@
                             "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_dznp47jc/format/applehttp/protocol/https/desiredFileName.m3u8",
                             "type": "series",
                             "name": "פרק 2 - ינשופים ומתפייסים",
-                            "description": "מיקה נעלבת מנועה שלא מזמינה אותה לעבודת יצירה. חדווה נעלבת מתמרי שלא הודתה לה על מאמציה ביוזמת השוק גינה"
+                            "description": "מיקה נעלבת מנועה שלא מזמינה אותה לעבודת יצירה. חדוה נעלבת מתמרי שלא הודתה לה על מאמציה ביוזמת השוק גינה"
                         }
                     ]
                 },
@@ -68,6 +68,23 @@
                             "type": "series",
                             "name": "פרק 3 - בלי עזרה",
                             "description": "עוז מסרב לקבל עזרה כי הוא חושב שכולם רוצים לעזור לו רק בגלל שהוא קטן. מפתח האוטו של אריק נופל לבור ניקוז והוא לא מבקש עזרה. עוז עוזר לו"
+                        }
+                    ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:4",
+                    "name": "פרק 4 - מפת אוצר",
+                    "season": 1,
+                    "episode": 4,
+                    "description": "האם מיקה ויהלי ימצאו אוצר בגינה?",
+                    "thumbnail": "https://www.kankids.org.il/media/mgupyaou/הגינה-של-תמרי-פרק-4.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/934500/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_qxszw5rq/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 4 - מפת אוצר",
+                            "description": "מיקה ויהלי מוצאות מפת אוצר ומחפשות אותו. מסתבר שהמפה הזאת היא מפת ההשקיה שקובעת איפה חדוה אמורה לשתול את הליצ'י החדש שלה"
                         }
                     ]
                 }
