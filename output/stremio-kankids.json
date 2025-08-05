@@ -121,6 +121,23 @@
                             "description": "הילדים מפצלחים לחדוה את הדלעת. תמרי מלמדת את חדווה לראות את חצי הכוס המלאה"
                         }
                     ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:7",
+                    "name": "פרק 7 - קטנה לנצח",
+                    "season": 1,
+                    "episode": 7,
+                    "description": "יהלי חוששת שלא תגדל יותר. אריק מנסה להרשים את תמרי",
+                    "thumbnail": "https://www.kankids.org.il/media/e4lpfwdc/הגינה-של-תמרי-פרק-7.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/935472/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_ty51achk/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 7 - קטנה לנצח",
+                            "description": "יהלי חוששת שלא תגדל יותר. אריק מגלה שתמרי אוהבת כרוב אבל לא מצליח להרשים אותה עם בישולי הכרוב שלו"
+                        }
+                    ]
                 }
             ]
         }
