@@ -138,6 +138,23 @@
                             "description": "יהלי חוששת שלא תגדל יותר. אריק מגלה שתמרי אוהבת כרוב אבל לא מצליח להרשים אותה עם בישולי הכרוב שלו"
                         }
                     ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:8",
+                    "name": "פרק 8 - הדינוזאור הרגזן",
+                    "season": 1,
+                    "episode": 8,
+                    "description": "עוז לומד להתמודד עם הכעסים שלו ותמרי מתמודדת עם אכזבה",
+                    "thumbnail": "https://www.kankids.org.il/media/2q4l4wn2/הגינה-של-תמרי-פרק-8.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/935474/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_novltppx/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 8 - הדינוזאור הרגזן",
+                            "description": "כשעוז נעלב ומתוסכל הוא מתפרע. אליעזר מכיר את הבעיה ועוזר לו לפתור אותה. תמרי מגלה שהאפרסקים שאהבה וחשבה שאביה גידל במו כישרונו הם קנויים"
+                        }
+                    ]
                 }
             ]
         }
