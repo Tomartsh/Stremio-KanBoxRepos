@@ -172,6 +172,57 @@
                             "description": "נתנאל מאמץ חיפושית ונעלב כשהשאר צוחקים עליו. חדוה מנהלת מלחמת חורמה נגד המזיקים שפשטו על עץ המנגו"
                         }
                     ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:10",
+                    "name": "פרק 10 - דורון במיעוט",
+                    "season": 1,
+                    "episode": 10,
+                    "description": "הילדים מתחרים בציפורים על השסק. ולאן נעלמה החולצה החדשה של אריק?",
+                    "thumbnail": "https://www.kankids.org.il/media/2nkbtvrw/הגינה-של-תמרי-פרק-10.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/937740/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_6uhikzuj/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 10 - דורון במיעוט",
+                            "description": "הציפורים מנקרות את השסק, והילדים מחליטים להיאבק בהן, חוץ מדורון שנאבקת על זכותן לאכול. אריק קונה חולצה חדשה ומוצא אותה על הדחליל שהילדים בנו"
+                        }
+                    ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:11",
+                    "name": "פרק 11 - יהלי באה מאהבה",
+                    "season": 1,
+                    "episode": 11,
+                    "description": "יהלי ואליעזר מגלים שלפעמים, כשרוצים לעזור, אפשר גם לפגוע",
+                    "thumbnail": "https://www.kankids.org.il/media/k3llaeqw/הגינה-של-תמרי-פרק-11.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/937742/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_zt2znm3x/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 11 - יהלי באה מאהבה",
+                            "description": "עמית זרע פטרוזיליות שלא נבטו. יהלי מנסה לשמח אותו עם נבטי  פטרוזיליות שהיא שותלת, אבל טועה לשתול כוסברה. אליעזר מלחיץ את תמרי לקראת הרצאה שהיא עומדת להעביר בנושא גינון"
+                        }
+                    ]
+                },
+                {
+                    "id": "il_kan_kids_1000:1:12",
+                    "name": "פרק 12 - אח גדול חדש בכאילו",
+                    "season": 1,
+                    "episode": 12,
+                    "description": "יהלי נעלבת מעמית ורוצה להחליף אח, בזמן שתמרי מתקשה להחליף מזמרה",
+                    "thumbnail": "https://www.kankids.org.il/media/xprjuq0n/הגינה-של-תמרי-פרק-12.jpg",
+                    "episodeLink": "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/עונה-1/937745/",
+                    "streams": [
+                        {
+                            "url": "https://cdnapisec.kaltura.com/p/2717431/sp/271743100/playManifest/entryId/1_vhhm755h/format/applehttp/protocol/https/desiredFileName.m3u8",
+                            "type": "series",
+                            "name": "פרק 12 - אח גדול חדש בכאילו",
+                            "description": "יהלי נעלבת מעמית ורוצה להחליף אח. חדוה נותנת לתמרי מזמרה משוכללת, אבל תמרי מעדיפה את הישנה והמוכרת שלה"
+                        }
+                    ]
                 }
             ]
         }
