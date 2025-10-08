@@ -3,8 +3,8 @@
 const { parse } = require('node-html-parser');
 const path = require("path");
 const axios = require('axios');
-const { wrapper } = require('axios-cookiejar-support');
-const { CookieJar } = require('tough-cookie');
+//const { wrapper } = require('axios-cookiejar-support');
+//const { CookieJar } = require('tough-cookie');
 const AdmZip = require("adm-zip");
 const fs = require('fs');
 
@@ -42,8 +42,8 @@ log4js.configure({
 
 var logger = log4js.getLogger("utillities");
 
-const jar = new CookieJar();
-const client = wrapper(axios.create({ jar, withCredentials: true }));
+//const jar = new CookieJar();
+//const client = wrapper(axios.create({ jar, withCredentials: true }));
 
 class Throttler {
     constructor(limit) {
@@ -96,7 +96,8 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
                 logger.trace("fetchWithRetries => Attempting retrieval from " + url +", try no. " + attempt);
-                var response = await client.get(url, {
+                //var response = await client.get(url, {
+                var response = await axios.get(url, {
                     timeout: REQUEST_TIMEOUT,
                     headers: headers,
                     params: params,
