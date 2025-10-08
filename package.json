@@ -1,13 +1,15 @@
 {
   "dependencies": {
     "adm-zip": "^0.5.16",
-    "axios": "^1.10.0",
+    "axios": "^1.11.0",
+    "axios-cookiejar-support": "^6.0.4",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "https": "^1.0.0",
     "log4js": "^6.9.1",
     "node-cron": "^4.2.1",
     "node-html-parser": "^7.0.1",
+    "tough-cookie": "^5.1.2",
     "uuid": "^11.1.0"
   },
   "name": "stremio-kanboxrepos",

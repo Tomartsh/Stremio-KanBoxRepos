@@ -3,6 +3,8 @@
 const { parse } = require('node-html-parser');
 const path = require("path");
 const axios = require('axios');
+const { wrapper } = require('axios-cookiejar-support');
+const { CookieJar } = require('tough-cookie');
 const AdmZip = require("adm-zip");
 const fs = require('fs');
 
@@ -40,6 +42,8 @@ log4js.configure({
 
 var logger = log4js.getLogger("utillities");
 
+const jar = new CookieJar();
+const client = wrapper(axios.create({ jar, withCredentials: true }));
 
 class Throttler {
     constructor(limit) {
@@ -87,12 +91,12 @@ const throttler = new Throttler(MAX_CONCURRENT_REQUESTS);
 async function fetchWithRetries(url, asJson = false, params = {}, headers) {
     logger.trace("fetchWithRetries => Entering");
     logger.trace("URL: " + url + "\n    asJson: " + asJson + "\n    Params: " + "params: " + params + "\n   headers: " + headers);
+    
     return throttler.schedule(async () => {
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
                 logger.trace("fetchWithRetries => Attempting retrieval from " + url +", try no. " + attempt);
-                //writeLog("DEBUG","fetchWithRetries => Attempting retrieval from " + url +", try no. " + attempt);
-                var response = await axios.get(url, {
+                var response = await client.get(url, {
                     timeout: REQUEST_TIMEOUT,
                     headers: headers,
                     params: params,
@@ -105,7 +109,6 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
                 
                 const delay = RETRY_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
                 logger.debug("fetchWithRetries => URL: " + url + ". Attempt " + attempt + " failed: " + error.message + ". Retrying in " + delay + " ms...");
-                //writeLog("DEBUG","fetchWithRetries => Attempt " + attempt + " failed: " + error.message + ". Retrying in " + delay + " ms...");
                 
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
