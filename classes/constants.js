@@ -12,25 +12,32 @@ module.exports = {
     MAX_LOG_SIZE: 10  * 1024 * 1024, // = 5Mb
     LOG_BACKUP_FILES: 3, // keep 5 backup files'
     LOG_FILENAME: "logs/Stremio-Repos.log",
-    // HEADERS: {
-    //     "Content-Type": "text/html; charset=utf-8",
-    //     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:139.0) Gecko/20100101 Firefox/139.0",
-    //     "Accept": "application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    //     "Accept-Encoding": "gzip, deflate, br, zstd",
-    //     "Charset": "UTF-8"
-    // },
     HEADERS: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': 'https://www.google.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'cross-site',
-        'Sec-Fetch-User': '?1'
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Priority': 'u=0, i'
     },
+    
+    //HEADERS: {
+    //    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0',
+    //    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    //    'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+    //    'Referer': 'https://www.google.com/',
+    //    'Connection': 'keep-alive',
+    //    'Upgrade-Insecure-Requests': '1',
+    //    'Sec-Fetch-Dest': 'document',
+    //    'Sec-Fetch-Mode': 'navigate',
+    //    'Sec-Fetch-Site': 'cross-site',
+    //    'Sec-Fetch-User': '?1'
+    //},
     URL_JSON_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/output/", 
     URLS_ASSETS_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/assets/",
 
