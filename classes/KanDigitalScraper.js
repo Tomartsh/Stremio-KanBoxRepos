@@ -58,7 +58,48 @@ class KanDigitalScraper {
     async crawlVod(){
         logger.trace("crawlVod => Entered");
         logger.debug("crawlVod => Starting retrieval of VOD series");
+/*
+        var seriesJson;
+        var doc = await fetchData("https://www.kan.org.il/lobby/kan11");
+        var scriptElems = doc.querySelectorAll("div.umb-block-list div script");
 
+        for (var scriptElem of scriptElems){         
+            if (scriptElem.toString().includes("digitalSeries: ")) {
+                seriesJson = scriptElem.toString().substring(scriptElem.toString().indexOf("[{"));
+                seriesJson = seriesJson.substring(0, seriesJson.toString().indexOf("}]") + 2);
+                logger.info("After second row: \n" + seriesJson);
+
+                break;
+            }
+        }
+
+        var seriesJsonElems = JSON.parse(seriesJson);
+        for (var seriesElem of seriesJsonElems) {// iterate over series
+            if (seriesElem == undefined) { continue;}
+            if (seriesElem.Url == undefined) { continue;} //if we do not have an element, skip
+            var seriesUrl = seriesElem.Url;
+            if (seriesUrl == undefined) { continue;}
+
+            if (seriesUrl.includes("kan-actual")){continue;} //we are skipping news item (for rnow)
+            if (seriesUrl.includes("podcasts")){continue;} //we are skipping podcasts, we will deal with them later
+            if ((! seriesUrl.includes("/content/kan/")) && (! seriesUrl.includes("dig/digital"))) { continue; }//if URL does not contain this string it is not digital
+
+            if (seriesUrl.startsWith("/")) { seriesUrl = KAN_URL_ADDRESS + seriesUrl; }
+
+            //set series ID
+            // in case the id is not numbers only we need to invent an ID. We will start with 5,000
+            // the generateId will return also the incremented series iterator
+            var id = utils.generateSeriesId(seriesUrl, SUB_PREFIX);
+
+            //set series image link
+            var imgUrl = seriesElem.Image.substring(0,seriesElem.Image.indexOf("?"));
+            if (imgUrl.startsWith("/")){
+                imgUrl = KAN_DIGITAL_IMAGE_PREFIX + imgUrl;
+            }
+
+            this.addToJsonObject(id, "",seriesUrl,imgUrl,"","",[],"d","series");
+        }
+        */
         var doc = await fetchData(KAN_URL_ADDRESS);
 
         var series = doc.querySelectorAll("a.card-link");
@@ -94,7 +135,8 @@ class KanDigitalScraper {
         }
 
         //start working on each series
-        await this.getSeries()
+        await this.getSeries();
+        
         logger.trace("crawl() => Exiting");
     }
 
@@ -308,35 +350,7 @@ class KanDigitalScraper {
         str = str.trim();
         return str;
     }
-   /*
-    generateSeriesId(link){
-        var retId = "";
-        //if the link has a trailing  "/" then omit it
 
-        if(link) {
-            if (link.substring(link.length -1) == "/"){
-                link = link.substring(0,link.length -1);
-            }
-            retId = link.substring(link.lastIndexOf("/") + 1, link.length);
-            retId = retId.replace(/\D/g,'');
-
-            //check this is not an empty string or if key already exist
-            var testKey = retId in this._kanDigitalJSONObj;
-            if ((retId == "") || (testKey)){
-                retId = this.seriesIdIterator;
-                this.seriesIdIterator++;
-            }
-
-            retId = PREFIX + "kan_" + retId;
-            
-        } else {
-            retId = PREFIX + "kan_" + this.seriesIdIterator;
-            this.seriesIdIterator++;
-        }
-        
-        return retId;
-    }
-*/
     setDescription(seriesElems){
         var description = "";
         if (seriesElems.length < 1) {return description;}
