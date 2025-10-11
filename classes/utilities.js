@@ -3,6 +3,7 @@
 const { parse } = require('node-html-parser');
 const path = require("path");
 const axios = require('axios');
+const cloudscraper = require('cloudscraper');
 //const { wrapper } = require('axios-cookiejar-support');
 //const { CookieJar } = require('tough-cookie');
 const AdmZip = require("adm-zip");
@@ -95,7 +96,7 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
     return throttler.schedule(async () => {
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                logger.trace("fetchWithRetries => Attempting retrieval from " + url +", try no. " + attempt);
+                logger.debug("fetchWithRetries => Attempting retrieval from " + url +", try no. " + attempt);
                 //var response = await client.get(url, {
                 var response = await axios.get(url, {
                     timeout: REQUEST_TIMEOUT,
@@ -105,13 +106,34 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
                 });
 
                 return asJson ? response.data : parse(response.data.toString()); // Convert to string for HTML
+
             } catch (error) {
-                if (attempt === MAX_RETRIES) throw error;
-                
-                const delay = RETRY_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
-                logger.debug("fetchWithRetries => URL: " + url + ". Attempt " + attempt + " failed: " + error.message + ". Retrying in " + delay + " ms...");
-                
-                await new Promise(resolve => setTimeout(resolve, delay));
+                //in case we get a 403 forbidden error, fallback to cloudscraper
+                if (error.response.status == 403) {
+                    logger.warn("fetchWithRetries => Received 403 from axios, falling back to cloudscraper for URL: " + url);
+                    logger.warn("fetchWithRetries => waiting 2 seconds before attempting " + url);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    try {
+                        const html = await cloudscraper.get(url, { 
+                            headers, 
+                            timeout: REQUEST_TIMEOUT,
+                            params: params,
+                            responseType: asJson ? 'json' : 'text' 
+                        });
+                        return asJson ? JSON.parse(html) : parse(html.toString());
+                    }catch (cloudscraperErr) {
+                        logger.error("fetchWithRetries => cloudscraper also failed for URL: " + url + " with error: " + cloudscraperErr.message);
+                        if (attempt == MAX_RETRIES) throw cloudscraperErr;
+                    }
+
+                    if (attempt === MAX_RETRIES) throw error;
+                    
+                    const delay = RETRY_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
+                    logger.debug("fetchWithRetries => URL: " + url + ". Attempt " + attempt + " failed: " + error.message + ". Retrying in " + delay + " ms...");
+                    
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
             }
         }
     });
