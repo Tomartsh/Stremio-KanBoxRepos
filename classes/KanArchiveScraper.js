@@ -107,7 +107,24 @@ class KanArchiveScraper {
 
             var retrieveLink = this._kanArchiveJSONObj[key]["link"]  + "?page=1&itemsToShow=1000";
             var seriesPageDoc = await fetchData(retrieveLink);  
+            var episodeLink;
+
+            //Check if this is empty
+            try {
+                if (seriesPageDoc.querySelector("a.btn.with-arrow.info-link.btn-gradient").getAttribute("href") == undefined){
+                    logger.debug("getSeries => Series page is empty, skipping series ID: " + id + " Link: " + retrieveLink);
+                    continue;
+                } else {
+                    episodeLink = seriesPageDoc.querySelector("a.btn.with-arrow.info-link.btn-gradient").getAttribute("href");
+                }
+
+            } catch(error) {
+                logger.debug("getSeries => Series page is empty, skipping series ID: " + id + " Link: " + retrieveLink);
+                continue;
+            }
             
+            logger.debug("getSeries => Working on series ID: " + id + " Link: " + retrieveLink);
+
             //set series Description
             var description = "";
             if (seriesPageDoc.querySelector("div.info-description p") != undefined){
@@ -147,7 +164,8 @@ class KanArchiveScraper {
                 } 
                 
 
-                var episodeLink = seriesPageDoc.querySelector("a.btn.with-arrow.info-link.btn-gradient").getAttribute("href");
+                logger.error("getSeries => meta:" + this._kanArchiveJSONObj[key]["meta"]);
+                
                 this._kanArchiveJSONObj[key]["meta"]["link"] = episodeLink;
                 this._kanArchiveJSONObj[key]["meta"]["description"] = description;
                 this._kanArchiveJSONObj[key]["meta"]["poster"] = imgUrl;
