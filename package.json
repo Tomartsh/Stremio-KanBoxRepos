@@ -10,6 +10,7 @@
     "log4js": "^6.9.1",
     "node-cron": "^4.2.1",
     "node-html-parser": "^7.0.1",
+    "path": "^0.12.7",
     "tough-cookie": "^5.1.2",
     "uuid": "^11.1.0"
   },
