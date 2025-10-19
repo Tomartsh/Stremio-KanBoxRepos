@@ -163,7 +163,8 @@ function padWithLeadingZeros(num, totalLength) {
 
 async function writeJSONToFile(jsonObj, fileName){
     logger.debug("writeJSONToFile => Entering");
-    if (jsonObj == undefined){ return;}
+    //if (jsonObj == undefined){ return;}
+    if (!jsonObj){ return;}
 
     var dateStr = getCurrentDateStr();
     dateStr = dateStr.split(":").join("_");
@@ -199,13 +200,13 @@ async function writeJSONToFile(jsonObj, fileName){
 
     // Upload to GitHub if needed
     if (SAVE_MODE === "github" || SAVE_MODE === "both") {
-        await uploadToGitHub(Buffer.from(jsonContent, "utf8"), jsonFileName, `Adding ${jsonFileName} ${dateStr}`);
+        //await uploadToGitHub(Buffer.from(jsonContent, "utf8"), jsonFileName, `Adding ${jsonFileName} ${dateStr}`, true);
         await uploadToGitHub(zip.toBuffer(), zipFileName, `Adding ${zipFileName} ${dateStr}`);
     }
     logger.debug("writeJSONToFile => Exiting");
 }
 
-async function uploadToGitHub(fileContent, fileName, commitMessage) {
+async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge = false) {
     logger.trace("uploadToGitHub => Entering");
     
     //Check the environemtn variables are in place
@@ -213,37 +214,139 @@ async function uploadToGitHub(fileContent, fileName, commitMessage) {
         logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
     }
     if (!process.env.BRANCH_SECRET) {
-        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
+        logger.warn("⚠️ Missing BRANCH_SECRET in env");
     }
     if (!process.env.REPO_OWNER_SECRET) {
-        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
+        logger.warn("⚠️ Missing REPO_OWNER_SECRET in env");
     }
     if (!process.env.REPO_NAME_SECRET) {
-        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
+        logger.warn("⚠️ Missing REPO_NAME_SECRET in env");
     }
     
+    const bufferContent = Buffer.isBuffer(fileContent)
+        ? fileContent
+        : Buffer.from(fileContent, "utf8");
+    const fileSize = bufferContent.length;
+
+    // Decide API based on file size or forced large flag
+    const useReleasesAPI = forceLarge || fileSize >= 1000000;
+
     const GITHUB_API_URL = 'https://api.github.com';
     const githubFilePath = `${SAVE_FOLDER}/${fileName}`;
-    const url = `${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`;
-    logger.debug("uploadToGitHub => URL is: " + url);
+    //const url = `${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`;
+    //logger.debug("uploadToGitHub => URL is: " + url);
       
     try {
+        
+        if (!useReleasesAPI) {
+            // === Small file: /contents API ===
+            let sha = null;
+            try {
+                const res = await axios.get(`${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`, {
+                    headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}` },
+                });
+                sha = res.data.sha;
+            } catch (err) {
+                if (!(err.response && err.response.status === 404)) throw err;
+            }
+
+            const payload = {
+                message: commitMessage,
+                content: bufferContent.toString("base64"),
+                branch: process.env.BRANCH_SECRET,
+                ...(sha ? { sha } : {}), // SHA included for small ZIPs, optional for JSON
+            };
+
+            const putRes = await axios.put(`${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`,
+                payload,
+                { 
+                    headers: { 
+                        Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`, 
+                        "User-Agent": "Node.js", 
+                        Accept: "application/vnd.github.v3+json" 
+                    } 
+                }
+            );
+
+            logger.info(`uploadToGitHub => Uploaded: ${githubFilePath} → ${putRes.data.content.html_url}`);
+
+        } else {
+            // === Large file: Releases API ===
+            logger.info(`uploadToGitHub => Large file, using Releases API: ${fileName}`);
+
+            const releasesUrl = `${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/releases`;
+            const releaseName = "auto-upload";
+            let releaseId = null;
+
+            // Find or create release
+            try {
+                const releases = await axios.get(releasesUrl, { headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}` } });
+                const found = releases.data.find(r => r.name === releaseName);
+                if (found) releaseId = found.id;
+                
+            } catch (e) { logger.warn("uploadToGitHub => Could not fetch releases:", e.message); }
+
+            if (!releaseId) {
+                const res = await axios.post(releasesUrl, {
+                    tag_name: "auto-upload",
+                    name: releaseName,
+                    body: "Automatically uploaded large files",
+                }, { headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`, Accept: "application/vnd.github.v3+json" } });
+                releaseId = res.data.id;
+            }
+
+            const uploadUrl = `https://uploads.github.com/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/releases/${releaseId}/assets?name=${encodeURIComponent(fileName)}`;
+            const res = await axios.post(uploadUrl, bufferContent, {
+                headers: {
+                    Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`,
+                    "Content-Type": fileName.endsWith(".zip") ? "application/zip" : "application/json",
+                    "Content-Length": fileSize,
+                },
+                timeout: 120000,
+            });
+
+            logger.info(`uploadToGitHub => Uploaded large file to release: ${res.data.browser_download_url}`);
+
+        }
+    } catch (error) {
+        logger.error("uploadToGitHub => Error uploading file:", error.response ? error.response.data : error.message);
+    }
+
+    logger.trace("uploadToGitHub => Exiting");
+        
+    /*    
+        
         // Check if the file exists to get SHA
         let sha = null;
+        let existingContent = null;
         try {
             const response = await axios.get(url, {
-                headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}` },
+                headers: { 
+                    Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`,
+                    Accept: 'application/vnd.github.v3+json', 
+                },
             });
             sha = response.data.sha;
+            existingContent = Buffer.from(response.data.content, "base64");
+            logger.debug(`uploadToGitHub => Found existing file (${fileName}), SHA: ${sha}`);
         } catch (error) {
             if (error.response && error.response.status !== 404) {
                 logger.error("uploadToGitHub => Error checking file existence:", error.response.data);
                 return;
+            } else {
+                logger.error("uploadToGitHub => Error checking file existence:", error.response?.data || error.message);
+                return;
             }
         }
 
+        // Skip upload if content identical
+        if (existingContent && Buffer.compare(existingContent, fileContent) === 0) {
+            logger.info(`uploadToGitHub => Skipped identical file: ${githubFilePath}`);
+            return;
+        }
+
         // Upload or update the file
-        const response = await axios.put(url, {
+        const putResponse = await axios.put(url, {
             message: commitMessage,
             content: fileContent.toString('base64'),
             branch: process.env.BRANCH_SECRET,
@@ -256,11 +359,15 @@ async function uploadToGitHub(fileContent, fileName, commitMessage) {
             },
         });
 
-        logger.info(`uploadToGitHub => Uploaded: ${githubFilePath} → ${response.data.content.html_url}`);
+        const uploaded = putResponse.data?.content?.html_url || "(no URL returned)";
+        logger.info(`uploadToGitHub => Uploaded: ${githubFilePath} → ${uploaded}`);
     } catch (error) {
-        logger.error("uploadToGitHub => Error uploading file:", error.response ? error.response.data : error.message);
+        const errData = error.response?.data || error.message;
+        logger.error("uploadToGitHub => Error uploading file:", errData);
+        //logger.error("uploadToGitHub => Error uploading file:", error.putResponse ? error.putResponse.data : error.message);
     }
     logger.trace("uploadToGitHub => Exiting");
+    */
 }
 
 function getReleaseDate(str){
