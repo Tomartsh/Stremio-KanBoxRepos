@@ -84,7 +84,11 @@ class KanPodcastsScraper {
 
                 //set thumbnail image
                 var podcastImageUrl = "";
-                podcastImageUrl = utils.getImageFromUrl(podcastElement.querySelector("img.img-full").getAttribute("src"),"p");
+
+                if (podcastElement.querySelector("img.img-full") != null){
+                    podcastImageUrl = utils.getImageFromUrl(podcastElement.querySelector("img.img-full").getAttribute("src"),"p");
+                }
+                
                 logger.debug("crawlPodcasts => podcastImageUrl: " + podcastImageUrl + " Name: " + seriesTitle);
 
                 //set description
@@ -132,15 +136,31 @@ class KanPodcastsScraper {
         logger.trace("getpodcastEpisodeVideos => Entering");
         
         var podcastSeriesPageDoc = await fetchData(podcastSeriesLink); //get the series episodes 
-        var lastPageNo = ''
-        try {
+        if (podcastSeriesPageDoc == undefined){
+            logger.error("getpodcastEpisodeVideos => No podcast series page found for URL: " + podcastSeriesLink);
+            return;
+        }
+        var lastPageNo = '';
+
+        if (podcastSeriesPageDoc.querySelector('li[class*="pagination-page__item"][title*="Last page"]') != null){
             lastPageNo = podcastSeriesPageDoc.querySelector('li[class*="pagination-page__item"][title*="Last page"]').getAttribute('data-num');
-        }catch{
-            lastPageNo = String(podcastSeriesPageDoc.querySelectorAll('li[class*="pagination-page__item"]').length);
-            //if(lastPageNo==='0'){return {}; }
+            logger.trace("getpodcastEpisodeVideos => URL: " + podcastSeriesLink + ` has ${lastPageNo} pages`);
+        } else {
             lastPageNo = 1;
             logger.trace("getpodcastEpisodeVideos => URL: " + podcastSeriesLink + " has only 1 page");
         }
+        /*try {
+            lastPageNo = podcastSeriesPageDoc.querySelector('li[class*="pagination-page__item"][title*="Last page"]').getAttribute('data-num');
+        }catch{
+            if (podcastSeriesPageDoc.querySelector('li[class*="pagination-page__item"]') == null){
+
+                logger.debug("getpodcastEpisodeVideos => URL: " + podcastSeriesLink + " has only 1 page (exception)");
+            }
+            //lastPageNo = String(podcastSeriesPageDoc.querySelectorAll('li[class*="pagination-page__item"]').length);
+            //if(lastPageNo==='0'){return {}; }
+            lastPageNo = 1;
+            logger.trace("getpodcastEpisodeVideos => URL: " + podcastSeriesLink + " has only 1 page");
+        }*/
         logger.debug("getpodcastEpisodeVideos => podcast ID: " + id + " number of pages: " + lastPageNo);
         var podcastEpisodes = []; //list of podcast episodes
         if ((lastPageNo) && (parseInt(lastPageNo) >= 0) ){
@@ -156,7 +176,14 @@ class KanPodcastsScraper {
                             episodeLink = KAN_BASE_URL + episodeLink;
                         }
                         var docToCheck = await fetchData(episodeLink);//check if there is an episode on the oher side or more episodes
-                        var card = docToCheck.querySelector("h2.title");
+                        var card;
+                        if (docToCheck.querySelector("h2.title") != undefined){
+                            card = docToCheck.querySelector("h2.title");
+                        } else {
+                            logger.error("getpodcastEpisodeVideos => No docToCheck for URL: " + episodeLink);
+                        }
+                        
+                        //var card = docToCheck.querySelector("h2.title");
                         if (card != undefined){ //this is an episode so let's get the  stream while we have the data
                             var streams = this.getPodcastStream(docToCheck);
                             podcastEpisodes.push({
