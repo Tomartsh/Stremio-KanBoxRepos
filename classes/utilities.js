@@ -1,11 +1,9 @@
 
-//const write = require("fs");
 const { parse } = require('node-html-parser');
 const path = require("path");
 const axios = require('axios');
+const { gotScraping } = require('got-scraping');
 const cloudscraper = require('cloudscraper');
-//const { wrapper } = require('axios-cookiejar-support');
-//const { CookieJar } = require('tough-cookie');
 const AdmZip = require("adm-zip");
 const fs = require('fs');
 
@@ -45,7 +43,6 @@ var logger = log4js.getLogger("utillities");
 
 //const jar = new CookieJar();
 //const client = wrapper(axios.create({ jar, withCredentials: true }));
-
 class Throttler {
     constructor(limit) {
         this.limit = limit;
@@ -64,7 +61,6 @@ class Throttler {
                 this.activeRequests++;
                 try {
                     logger.trace("Throttler-schedule => running task");
-                    //writeLog("TRACE","Throttler-schedule => running task");
                     const result = await task();
                     resolve(result);
                 } catch (error) {
@@ -73,11 +69,9 @@ class Throttler {
                     this.activeRequests--;
                     if (this.queue.length > 0) {
                         logger.trace("Throttler-schedule => Moving next in queue");
-                        //writeLog("TRACE","Throttler-schedule => Moving next in queue");
                         const nextTask = this.queue.shift();
                         nextTask();
                         logger.debug("Throttler-schedule => waiting in queue: " + this.queue.length);
-                        //writeLog("DEBUG","Throttler-schedule => waiting in queue: " + this.queue.length);
                     }
                 }
             };
@@ -89,69 +83,173 @@ class Throttler {
 
 const throttler = new Throttler(MAX_CONCURRENT_REQUESTS);
 
+// --- Persistent State Tracker ---
+// This keeps track of which method works for which domain
+const stickyMethods = new Map(); 
+
+// --- Core Request Logic ---
+
+/**
+ * Main Fetcher: Determines which method to use and handles retries
+ */
+
 async function fetchWithRetries(url, asJson = false, params = {}, headers) {
     logger.trace("fetchWithRetries => Entering");
-    logger.trace("URL: " + url + "\n    asJson: " + asJson + "\n    Params: " + "params: " + params + "\n   headers: " + headers);
+    logger.trace(`URL: ${url} \n    asJson: ${asJson} \n    Params: ${params}: \n   headers: ${headers}`);
     
+    let hostname;
+    let currentMethod = stickyMethods.get(hostname) || 'axios';
+    try {
+        hostname = new URL(url).hostname;
+        logger.debug("Setting hostname for scraping method: " + hostname);
+    } catch (e) {
+        logger.error(`Invalid URL provided: ${url}`);
+        return null;
+    }
+
     return throttler.schedule(async () => {
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
-                logger.debug("fetchWithRetries => Attempting retrieval from " + url +", try no. " + attempt);
-                //var response = await client.get(url, {
-                var response = await axios.get(url, {
-                    timeout: REQUEST_TIMEOUT,
-                    headers: headers,
-                    params: params,
-                    responseType: asJson ? 'json' : 'text' // Ensure correct response type
-                });
-
-                return asJson ? response.data : parse(response.data.toString()); // Convert to string for HTML
+                logger.debug(`fetchWithRetries => [${currentMethod.toUpperCase()}] ->  ${url} try no. ${attempt}`);
+                const data = executeRequest(currentMethod, url, asJson, params, headers);
+                // Success! Stick this method to the domain
+                if (stickyMethods.get(hostname) !== currentMethod) {
+                    logger.info(`Method "${currentMethod}" is now STICKY for ${hostname}`);
+                    stickyMethods.set(hostname, currentMethod);
+                }
+                
+                return data;
 
             } catch (error) {
-                //in case we get a 403 forbidden error, fallback to cloudscraper
-                if (error.response.status == 403) {
-                    logger.warn("fetchWithRetries => Received 403 from axios, falling back to cloudscraper for URL: " + url);
-                    logger.warn("fetchWithRetries => waiting 2 seconds before attempting " + url);
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    try {
-                        const html = await cloudscraper.get(url, { 
-                            headers, 
-                            timeout: REQUEST_TIMEOUT,
-                            params: params,
-                            responseType: asJson ? 'json' : 'text' 
-                        });
-                        return asJson ? JSON.parse(html) : parse(html.toString());
-                    }catch (cloudscraperErr) {
-                        logger.error("fetchWithRetries => cloudscraper also failed for URL: " + url + " with error: " + cloudscraperErr.message);
-                        if (attempt == MAX_RETRIES) throw cloudscraperErr;
-                    }
-
-                    if (attempt === MAX_RETRIES) throw error;
-                    
-                    const delay = RETRY_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
-                    logger.debug("fetchWithRetries => URL: " + url + ". Attempt " + attempt + " failed: " + error.message + ". Retrying in " + delay + " ms...");
-                    
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                const status = error.response?.status || error.statusCode;
+                
+                // If we get a 403 or 401, immediately rotate to a more powerful tool
+                if (status === 403 || status === 401) {
+                    logger.warn(`Access Denied (403) with ${currentMethod}. Rotating...`);
+                    currentMethod = getNextMethod(currentMethod);
+                } else {
+                    logger.error(`${currentMethod} error: ${error.message}`);
                 }
+
+                if (attempt === MAX_RETRIES) throw error;
+
+                const delay = RETRY_DELAY * Math.pow(2, attempt - 1);
+                await new Promise(r => setTimeout(r, delay));
             }
         }
+
+        //         var response = await axios.get(url, {
+        //             timeout: REQUEST_TIMEOUT,
+        //             headers: headers,
+        //             params: params,
+        //             responseType: asJson ? 'json' : 'text' // Ensure correct response type
+        //         });
+
+        //         return asJson ? response.data : parse(response.data.toString()); // Convert to string for HTML
+
+        //     } catch (error) {
+        //         //in case we get a 403 forbidden error, fallback to cloudscraper
+        //         if (error.response.status == 403) {
+        //             logger.warn("fetchWithRetries => Received 403 from axios, falling back to cloudscraper for URL: " + url);
+        //             logger.warn("fetchWithRetries => waiting 2 seconds before attempting " + url);
+        //             await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+        //             try {
+        //                 const html = await cloudscraper.get(url, { 
+        //                     headers, 
+        //                     timeout: REQUEST_TIMEOUT,
+        //                     params: params,
+        //                     responseType: asJson ? 'json' : 'text' 
+        //                 });
+        //                 return asJson ? JSON.parse(html) : parse(html.toString());
+        //             }catch (cloudscraperErr) {
+        //                 logger.error("fetchWithRetries => cloudscraper also failed for URL: " + url + " with error: " + cloudscraperErr.message);
+        //                 if (attempt == MAX_RETRIES) throw cloudscraperErr;
+        //             }
+
+        //             if (attempt === MAX_RETRIES) throw error;
+                    
+        //             const delay = RETRY_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
+        //             logger.debug("fetchWithRetries => URL: " + url + ". Attempt " + attempt + " failed: " + error.message + ". Retrying in " + delay + " ms...");
+                    
+        //             await new Promise(resolve => setTimeout(resolve, delay));
+        //         }
+        //     }
+        // }
     });
 }
 
-// Wrapper function for fetching data
-async function fetchData(url , asJson = false, params={}, headers = HEADERS ) {
-    try {
-        logger.trace("fetchData => For URL: " + url);
-        const data = await fetchWithRetries(url, asJson, params, headers);
-        //console.log('Fetched data:', data);
-        return asJson ? data : parse(data.toString());
 
+/**
+ * Entry Point: Your original fetchData wrapper
+ */
+async function fetchData(url, asJson = false, params = {}, headers = HEADERS) {
+    try {
+        logger.debug(`fetchData => For URL: ${url}`);
+        // We pass the URL through to the retry logic
+        return await fetchWithRetries(url, asJson, params, headers);
     } catch (error) {
         logger.error(`Failed to fetch URL ${url} :`, error.message);
-        return;
+        return null; 
     }
 }
+
+/**
+ * Library Selector: Executes the actual request
+ */
+async function executeRequest(method, url, asJson, params, headers) {
+    switch (method) {
+        case 'axios':
+            const axRes = await axios.get(url, { 
+                timeout: REQUEST_TIMEOUT, headers, params, 
+                responseType: asJson ? 'json' : 'text' 
+            });
+            return asJson ? axRes.data : parse(axRes.data.toString());
+
+        case 'cloudscraper':
+            const csRes = await cloudscraper.get({ 
+                uri: url, headers, qs: params, timeout: REQUEST_TIMEOUT 
+            });
+            // Cloudscraper returns a string; parse if JSON requested
+            return asJson ? JSON.parse(csRes) : parse(csRes.toString());
+
+        case 'got-scraping':
+            const gotRes = await gotScraping({
+                url, headers, searchParams: params,
+                responseType: asJson ? 'json' : 'text',
+                headerGeneratorOptions: { 
+                    browsers: [{ name: 'firefox' }], 
+                    devices: ['desktop'] 
+                }
+            });
+            return asJson ? gotRes.body : parse(gotRes.body.toString());
+
+        default:
+            throw new Error(`Unknown method: ${method}`);
+    }
+}
+
+// Wrapper function for fetching data
+// async function fetchData(url , asJson = false, params={}, headers = HEADERS ) {
+//     try {
+//         logger.trace("fetchData => For URL: " + url);
+//         const data = await fetchWithRetries(url, asJson, params, headers);
+//         //console.log('Fetched data:', data);
+//         return asJson ? data : parse(data.toString());
+
+//     } catch (error) {
+//         logger.error(`Failed to fetch URL ${url} :`, error.message);
+//         return;
+//     }
+// }
+
+
+function getNextMethod(current) {
+    const order = ['axios', 'cloudscraper', 'got-scraping'];
+    let idx = order.indexOf(current);
+    return order[(idx + 1) % order.length];
+}
+
 
 //+===================================================================================
 //

@@ -6,6 +6,7 @@
     "cloudscraper": "^4.6.0",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
+    "got-scraping": "^3.2.15",
     "https": "^1.0.0",
     "log4js": "^6.9.1",
     "node-cron": "^4.2.1",

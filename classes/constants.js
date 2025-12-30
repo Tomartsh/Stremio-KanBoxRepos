@@ -42,7 +42,8 @@ module.exports = {
     URLS_ASSETS_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/assets/",
 
     //Kan constants
-    KAN_URL_ADDRESS: "https://www.kan.org.il/lobby/kan-box",
+    //KAN_URL_ADDRESS: "https://www.kan.org.il/lobby/kan-box",
+    KAN_URL_ADDRESS: "https://www.kan.org.il/lobby/kan11",
     KAN_DIGITAL_IMAGE_PREFIX: "https://www.kan.org.il",
     KAN_BASE_URL: "https://www.kan.org.il",
 

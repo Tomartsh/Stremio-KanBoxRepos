@@ -58,6 +58,69 @@ class KanDigitalScraper {
     async crawlVod(){
         logger.trace("crawlVod => Entered");
         logger.debug("crawlVod => Starting retrieval of VOD series");
+        
+        // get the JSON from the site contaitning all the series.
+        var seriesJson;
+        var doc = await fetchData("https://www.kan.org.il/lobby/kan11");
+
+        if (!doc) {
+            logger.error("crawlVod => Could not retrieve data from Kan. Skipping this crawl.");
+            return; // Stop here instead of trying to call querySelectorAll
+        }
+
+        // get all script elements
+        var scriptElems = doc.querySelectorAll('script');
+        // find the script element with the json of the series
+        const targetScript = scriptElems.find(script => script.rawText.includes('digitalSeries: ['));
+        if (targetScript) {
+            const scriptContent = targetScript.rawText;
+
+            try {
+                // Extract the JSON portion
+                // If the script is: window.someVar = { ...digitalSeries: [] ... };
+                // We use a regex to find the start of the object and end of the object.
+                const jsonMatch = scriptContent.match(/\{[\s\S]*digitalSeries:[\s\S]*\}/);
+
+                if (jsonMatch) {
+                    const rawJsonString = jsonMatch[0];
+                    
+                    // 4. Parse it
+                    // NOTE: If the site uses a "JS Object" instead of strict JSON (no quotes on keys),
+                    // standard JSON.parse() might fail. If so, see the "Advanced Cleanup" section below.
+                    const data = JSON.parse(rawJsonString);
+
+                    logger.debug('Success! Found Digital Series:', data.digitalSeries);
+                }
+            } catch (error) {
+                logger.error("Found the script, but failed to parse the JSON. It might not be strict JSON format.");
+            }
+        } else {
+             logger.debug("Could not find a script containing 'digitalSeries: ['");
+        }
+
+        items.forEach((item) => {
+            // 3. Extract specific data
+            const title = item.ImageAlt; // Usually the show name
+            const fullImageUrl = `https://www.kan.org.il${item.Image}`;
+            const pageUrl = item.Url;
+            const description = item.Description;
+            const season = item.Season;
+
+                        //set the series URL
+            if (pageUrl == undefined) { return;} // if there is not link to the series then skip
+            if (pageUrl.includes("kan-actual")){return;} //we are skipping news item
+            if (pageUrl.includes("archive")){return;} //we are skipping archive item. Have a a separate scraper for those 
+            if (pageUrl.includes("podcasts")){return;} //we are skipping podcasts, we will deal with them later
+            if ((! pageUrl.includes("/content/kan/")) && (! pageUrl.includes("dig/digital"))) { return; }//if URL does not contain this strin git is not digital
+            if (pageUrl.startsWith("/")) { pageUrl = KAN_URL_ADDRESS + pageUrl; }
+
+            var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
+            var imgUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
+
+             this.addToJsonObject(id, "",pageUrl,imgUrl,"","",[],"d","series");
+            
+        });
+
 /*
         var seriesJson;
         var doc = await fetchData("https://www.kan.org.il/lobby/kan11");
@@ -100,39 +163,39 @@ class KanDigitalScraper {
             this.addToJsonObject(id, "",seriesUrl,imgUrl,"","",[],"d","series");
         }
         */
-        var doc = await fetchData(KAN_URL_ADDRESS);
+        // var doc = await fetchData(KAN_URL_ADDRESS);
 
-        var series = doc.querySelectorAll("a.card-link");
-        for (var seriesElem of series) {// iterate over series
-            if (seriesElem == undefined) { continue;} //if we do not have an element, skip
+        // var series = doc.querySelectorAll("a.card-link");
+        // for (var seriesElem of series) {// iterate over series
+        //     if (seriesElem == undefined) { continue;} //if we do not have an element, skip
 
-            //set the series URL
-            var seriesUrl = seriesElem.getAttribute("href");
-            if (seriesUrl == undefined) { continue;} // if there is not link to the series then skip
-            if (seriesUrl.startsWith("/")) { seriesUrl = KAN_URL_ADDRESS + seriesUrl; }
+        //     //set the series URL
+        //     var seriesUrl = seriesElem.getAttribute("href");
+        //     if (seriesUrl == undefined) { continue;} // if there is not link to the series then skip
+        //     if (seriesUrl.startsWith("/")) { seriesUrl = KAN_URL_ADDRESS + seriesUrl; }
 
-            if (seriesUrl.includes("kan-actual")){continue;} //we are skipping news item (for rnow)
-            if (seriesUrl.includes("podcasts")){continue;} //we are skipping podcasts, we will deal with them later
-            if ((! seriesUrl.includes("/content/kan/")) && (! seriesUrl.includes("dig/digital"))) { continue; }//if URL does not contain this strin git is not digital
+        //     if (seriesUrl.includes("kan-actual")){continue;} //we are skipping news item (for rnow)
+        //     if (seriesUrl.includes("podcasts")){continue;} //we are skipping podcasts, we will deal with them later
+        //     if ((! seriesUrl.includes("/content/kan/")) && (! seriesUrl.includes("dig/digital"))) { continue; }//if URL does not contain this strin git is not digital
      
 
-            var subType = "d";
+        //     var subType = "d";
 
-            //set series ID
-            // in case the id is not numbers only we need to invent an ID. We will start with 5,000
-            // the generateId will return also the incremented series iterator
-            var id = utils.generateSeriesId(seriesUrl, SUB_PREFIX);
+        //     //set series ID
+        //     // in case the id is not numbers only we need to invent an ID. We will start with 5,000
+        //     // the generateId will return also the incremented series iterator
+        //     var id = utils.generateSeriesId(seriesUrl, SUB_PREFIX);
             
-            //set series image link
-            var imageElem = seriesElem.querySelector("img");
-            var imgUrlStr = imageElem.getAttribute("src");
-            var imgUrl = imgUrlStr.substring(0,imgUrlStr.indexOf("?"));
-            if (imgUrl.startsWith("/")){
-                imgUrl = KAN_DIGITAL_IMAGE_PREFIX + imgUrl;
-            }
+        //     //set series image link
+        //     var imageElem = seriesElem.querySelector("img");
+        //     var imgUrlStr = imageElem.getAttribute("src");
+        //     var imgUrl = imgUrlStr.substring(0,imgUrlStr.indexOf("?"));
+        //     if (imgUrl.startsWith("/")){
+        //         imgUrl = KAN_DIGITAL_IMAGE_PREFIX + imgUrl;
+        //     }
 
-            this.addToJsonObject(id, "",seriesUrl,imgUrl,"","",[],subType,"series");
-        }
+        //     this.addToJsonObject(id, "",seriesUrl,imgUrl,"","",[],subType,"series");
+        // }
 
         //start working on each series
         await this.getSeries();
