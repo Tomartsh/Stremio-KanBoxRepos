@@ -6,7 +6,7 @@ const {
     LOG_BACKUP_FILES,
     LOG_FILENAME,
     KAN_URL_ADDRESS,
-    KAN_DIGITAL_IMAGE_PREFIX
+    KAN_DIGITAL_IMAGE_PREFIX,
 } = require("./constants.js");
 const SUB_PREFIX = "dogital";
 
@@ -61,35 +61,35 @@ class KanDigitalScraper {
         
         // get the JSON from the site contaitning all the series.
         var seriesJson;
-        var doc = await fetchData("https://www.kan.org.il/lobby/kan11");
+        var doc = await fetchData(KAN_URL_ADDRESS);
 
         if (!doc) {
             logger.error("crawlVod => Could not retrieve data from Kan. Skipping this crawl.");
-            return; // Stop here instead of trying to call querySelectorAll
+            return; // Nothing to see here, go back to the beggining
         }
 
         // get all script elements
         var scriptElems = doc.querySelectorAll('script');
+        
+        //Initialize items as an empty array at the function level scope
+        let items = [];
+        
         // find the script element with the json of the series
-        const targetScript = scriptElems.find(script => script.rawText.includes('digitalSeries: ['));
+        const targetScript = scriptElems.find(script => script.rawText.includes('digitalSeries:'));
         if (targetScript) {
             const scriptContent = targetScript.rawText;
 
             try {
                 // Extract the JSON portion
-                // If the script is: window.someVar = { ...digitalSeries: [] ... };
-                // We use a regex to find the start of the object and end of the object.
-                const jsonMatch = scriptContent.match(/\{[\s\S]*digitalSeries:[\s\S]*\}/);
+                const jsonMatch = scriptContent.match(/digitalSeries:\s*(\[[\s\S]*?\])/);
 
-                if (jsonMatch) {
-                    const rawJsonString = jsonMatch[0];
-                    
-                    // 4. Parse it
-                    // NOTE: If the site uses a "JS Object" instead of strict JSON (no quotes on keys),
-                    // standard JSON.parse() might fail. If so, see the "Advanced Cleanup" section below.
-                    const data = JSON.parse(rawJsonString);
+                if (jsonMatch && jsonMatch[1]) {
+                    let rawJsonString = jsonMatch[1].trim();
+                
+                    //Parse it
+                    items = JSON.parse(rawJsonString);
 
-                    logger.debug('Success! Found Digital Series:', data.digitalSeries);
+                    logger.debug(`Success! Found ${items.length} Digital Series items.`);
                 }
             } catch (error) {
                 logger.error("Found the script, but failed to parse the JSON. It might not be strict JSON format.");
@@ -99,14 +99,14 @@ class KanDigitalScraper {
         }
 
         items.forEach((item) => {
-            // 3. Extract specific data
+            // Extract specific data
             const title = item.ImageAlt; // Usually the show name
             const fullImageUrl = `https://www.kan.org.il${item.Image}`;
             const pageUrl = item.Url;
             const description = item.Description;
             const season = item.Season;
 
-                        //set the series URL
+            //set the series URL
             if (pageUrl == undefined) { return;} // if there is not link to the series then skip
             if (pageUrl.includes("kan-actual")){return;} //we are skipping news item
             if (pageUrl.includes("archive")){return;} //we are skipping archive item. Have a a separate scraper for those 
@@ -326,18 +326,24 @@ class KanDigitalScraper {
                 //get streams
                 var streams = await this.getStreams(episodePageLink);
 
-                var episodeNo = iter +1;
-                var streamsArr = [
-                    {
-                        url: streams.url,
-                        type: streams.type,
-                        name: streams.name,
-                        description: streams.description
-                    }
-                ];
+                //check streams is not empty, and if so, remove from list
+                if (streams ){
+                    var episodeNo = iter +1;
+                    var streamsArr = [
+                        {
+                            url: streams.url,
+                            type: streams.type,
+                            name: streams.name,
+                            description: streams.description
+                        }
+                    ];
+                    this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr);
+                    logger.debug("getVideos => Added videos for episode : " + title + "\n    season:" + seasonNo + ", episode: " + (iter +1) + ", subtype: " + subType);
+                } 
 
-                this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr);
-                logger.debug("getVideos => Added videos for episode : " + title + "\n    season:" + seasonNo + ", episode: " + (iter +1) + ", subtype: " + subType);
+                
+
+                
             }
         }      
     }
@@ -350,6 +356,7 @@ class KanDigitalScraper {
         
         if (doc == undefined){
             logger.debug("getStreams => Error retrieving do from " + link);
+            return null;
         }
         var released = "";
         var videoUrl = "";

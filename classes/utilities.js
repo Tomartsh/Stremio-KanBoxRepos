@@ -41,8 +41,6 @@ log4js.configure({
 
 var logger = log4js.getLogger("utillities");
 
-//const jar = new CookieJar();
-//const client = wrapper(axios.create({ jar, withCredentials: true }));
 class Throttler {
     constructor(limit) {
         this.limit = limit;
@@ -98,20 +96,20 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
     logger.trace(`URL: ${url} \n    asJson: ${asJson} \n    Params: ${params}: \n   headers: ${headers}`);
     
     let hostname;
-    let currentMethod = stickyMethods.get(hostname) || 'axios';
     try {
         hostname = new URL(url).hostname;
-        logger.debug("Setting hostname for scraping method: " + hostname);
     } catch (e) {
         logger.error(`Invalid URL provided: ${url}`);
         return null;
     }
 
     return throttler.schedule(async () => {
+        let currentMethod = stickyMethods.get(hostname) || 'axios';
+
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
                 logger.debug(`fetchWithRetries => [${currentMethod.toUpperCase()}] ->  ${url} try no. ${attempt}`);
-                const data = executeRequest(currentMethod, url, asJson, params, headers);
+                const data = await executeRequest(currentMethod, url, asJson, params, headers);
                 // Success! Stick this method to the domain
                 if (stickyMethods.get(hostname) !== currentMethod) {
                     logger.info(`Method "${currentMethod}" is now STICKY for ${hostname}`);
@@ -122,18 +120,24 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
 
             } catch (error) {
                 const status = error.response?.status || error.statusCode;
+                logger.warn(`${currentMethod} failed (Status: ${status || 'Timeout'}): ${error.message}`);
                 
                 // If we get a 403 or 401, immediately rotate to a more powerful tool
-                if (status === 403 || status === 401) {
-                    logger.warn(`Access Denied (403) with ${currentMethod}. Rotating...`);
-                    currentMethod = getNextMethod(currentMethod);
-                } else {
-                    logger.error(`${currentMethod} error: ${error.message}`);
+                if (status === 403 || status === 401 || error.message.includes('timeout')) {
+                    logger.warn(`Connection issue with ${currentMethod}. Switching to got-scraping...`);
+                    currentMethod = 'got-scraping'; 
+                    // Clear sticky so we don't keep trying a failing method
+                    stickyMethods.delete(hostname);
                 }
 
-                if (attempt === MAX_RETRIES) throw error;
+                if (attempt === MAX_RETRIES) {
+                    logger.error(`Max retries reached for ${url}`);
+                    throw error;
+
+                }
 
                 const delay = RETRY_DELAY * Math.pow(2, attempt - 1);
+                logger.debug(`Waiting ${delay}ms before next attempt...`);
                 await new Promise(r => setTimeout(r, delay));
             }
         }
@@ -189,7 +193,7 @@ async function fetchData(url, asJson = false, params = {}, headers = HEADERS) {
         // We pass the URL through to the retry logic
         return await fetchWithRetries(url, asJson, params, headers);
     } catch (error) {
-        logger.error(`Failed to fetch URL ${url} :`, error.message);
+        logger.error(`fetchData => Failed to fetch URL ${url} :`, error.message);
         return null; 
     }
 }
@@ -205,21 +209,25 @@ async function executeRequest(method, url, asJson, params, headers) {
                 responseType: asJson ? 'json' : 'text' 
             });
             return asJson ? axRes.data : parse(axRes.data.toString());
-
+/*
         case 'cloudscraper':
             const csRes = await cloudscraper.get({ 
                 uri: url, headers, qs: params, timeout: REQUEST_TIMEOUT 
             });
             // Cloudscraper returns a string; parse if JSON requested
             return asJson ? JSON.parse(csRes) : parse(csRes.toString());
-
+*/
         case 'got-scraping':
             const gotRes = await gotScraping({
-                url, headers, searchParams: params,
+                url, 
+                headers, 
+                searchParams: params,
                 responseType: asJson ? 'json' : 'text',
+                timeout: { request: REQUEST_TIMEOUT },
                 headerGeneratorOptions: { 
-                    browsers: [{ name: 'firefox' }], 
-                    devices: ['desktop'] 
+                    browsers: [{ name: 'chrome' }, { name: 'firefox' }],
+                    devices: ['desktop'] ,
+                    strategies: ['mobile', 'desktop']
                 }
             });
             return asJson ? gotRes.body : parse(gotRes.body.toString());
@@ -245,9 +253,7 @@ async function executeRequest(method, url, asJson, params, headers) {
 
 
 function getNextMethod(current) {
-    const order = ['axios', 'cloudscraper', 'got-scraping'];
-    let idx = order.indexOf(current);
-    return order[(idx + 1) % order.length];
+    return current === 'axios' ? 'got-scraping' : 'got-scraping';
 }
 
 
