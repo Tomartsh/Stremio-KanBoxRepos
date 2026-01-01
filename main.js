@@ -4,6 +4,7 @@ const https = require("https");
 const axios = require('axios');
 const cron = require('node-cron');
 const log4js = require("log4js"); 
+const path = require('path');
 
 //Express setup (setup is done before calling classes in order to make env variables available to them)
 const app = express();  
@@ -25,7 +26,10 @@ const Makoscraper = require("./classes/MakoScraper.js");
 const Reshetscraper = require("./classes/ReshetScraper.js");
 const LiveTV = require("./classes/LiveTV.js"); 
 
-require("dotenv").config({debug: true}); // Load .env from config folder
+require("dotenv").config({
+	debug: true,
+	path: path.resolve(__dirname, './classes/.env')
+}); // Load .env from config folder
 
 log4js.configure({
 	appenders: { 
