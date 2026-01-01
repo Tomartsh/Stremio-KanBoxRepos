@@ -6,7 +6,7 @@ const {
     MAX_LOG_SIZE, 
     LOG_BACKUP_FILES,
     LOG_FILENAME,
-    KAN_URL_ADDRESS,
+    KAN_ARCHIVE_URL_ADDRESS,
     KAN_DIGITAL_IMAGE_PREFIX
 } = require("./constants.js");
 const SUB_PREFIX = "archive";
@@ -59,7 +59,7 @@ class KanArchiveScraper {
         logger.trace("crawlVod => Entered");
         logger.debug("crawlVod => Starting retrieval of VOD series");
 
-        var doc = await fetchData(KAN_URL_ADDRESS);
+        var doc = await fetchData(KAN_ARCHIVE_URL_ADDRESS);
 
         var series = doc.querySelectorAll("a.card-link");
         for (var seriesElem of series) {// iterate over series
@@ -97,6 +97,7 @@ class KanArchiveScraper {
         //start working on each series
         await this.getSeries()
         logger.trace("crawl() => Exiting");
+    
     }
 
     async getSeries(){
