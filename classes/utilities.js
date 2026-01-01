@@ -142,44 +142,6 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
             }
         }
 
-        //         var response = await axios.get(url, {
-        //             timeout: REQUEST_TIMEOUT,
-        //             headers: headers,
-        //             params: params,
-        //             responseType: asJson ? 'json' : 'text' // Ensure correct response type
-        //         });
-
-        //         return asJson ? response.data : parse(response.data.toString()); // Convert to string for HTML
-
-        //     } catch (error) {
-        //         //in case we get a 403 forbidden error, fallback to cloudscraper
-        //         if (error.response.status == 403) {
-        //             logger.warn("fetchWithRetries => Received 403 from axios, falling back to cloudscraper for URL: " + url);
-        //             logger.warn("fetchWithRetries => waiting 2 seconds before attempting " + url);
-        //             await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-        //             try {
-        //                 const html = await cloudscraper.get(url, { 
-        //                     headers, 
-        //                     timeout: REQUEST_TIMEOUT,
-        //                     params: params,
-        //                     responseType: asJson ? 'json' : 'text' 
-        //                 });
-        //                 return asJson ? JSON.parse(html) : parse(html.toString());
-        //             }catch (cloudscraperErr) {
-        //                 logger.error("fetchWithRetries => cloudscraper also failed for URL: " + url + " with error: " + cloudscraperErr.message);
-        //                 if (attempt == MAX_RETRIES) throw cloudscraperErr;
-        //             }
-
-        //             if (attempt === MAX_RETRIES) throw error;
-                    
-        //             const delay = RETRY_DELAY * Math.pow(2, attempt - 1); // Exponential backoff
-        //             logger.debug("fetchWithRetries => URL: " + url + ". Attempt " + attempt + " failed: " + error.message + ". Retrying in " + delay + " ms...");
-                    
-        //             await new Promise(resolve => setTimeout(resolve, delay));
-        //         }
-        //     }
-        // }
     });
 }
 
@@ -236,21 +198,6 @@ async function executeRequest(method, url, asJson, params, headers) {
             throw new Error(`Unknown method: ${method}`);
     }
 }
-
-// Wrapper function for fetching data
-// async function fetchData(url , asJson = false, params={}, headers = HEADERS ) {
-//     try {
-//         logger.trace("fetchData => For URL: " + url);
-//         const data = await fetchWithRetries(url, asJson, params, headers);
-//         //console.log('Fetched data:', data);
-//         return asJson ? data : parse(data.toString());
-
-//     } catch (error) {
-//         logger.error(`Failed to fetch URL ${url} :`, error.message);
-//         return;
-//     }
-// }
-
 
 function getNextMethod(current) {
     return current === 'axios' ? 'got-scraping' : 'got-scraping';
