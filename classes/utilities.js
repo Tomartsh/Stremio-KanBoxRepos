@@ -234,10 +234,29 @@ async function writeJSONToFile(jsonObj, fileName){
     const jsonFileName = `${fileName}.json`;
     const zipFileName = `${fileName}.zip`;
 
+    zip.addFile(jsonFileName, Buffer.from(jsonContent, "utf8"));
+
+    if (SAVE_MODE === "local" || SAVE_MODE === "both") {
+        fs.writeFileSync(jsonFilePath, jsonContent);
+        
+        // Use writeZip() which handles the buffer internally for local saving
+        zip.writeZip(zipFilePath); 
+        logger.debug(`writeJSONToFile => Saved locally .zip file: ${zipFileName}`);
+    }
+
+    if (SAVE_MODE === "github" || SAVE_MODE === "both") {
+        // 3. Convert the populated zip object to a Buffer
+        const zipBuffer = zip.toBuffer(); 
+        logger.debug(`ZIP Buffer size: ${zipBuffer.length} bytes`); // Log this to verify!
+
+        await uploadToGitHub(zipBuffer, zipFileName, `Adding ${zipFileName} ${dateStr}`);
+    }
+
     const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
     const zipFilePath = path.join(OUTPUT_DIR, zipFileName);
 
     // Save JSON and ZIP files locally if needed
+    /*
     if (SAVE_MODE === "local" || SAVE_MODE === "both") {
         //save .json file 
         fs.writeFileSync(jsonFilePath, jsonContent);
@@ -254,6 +273,8 @@ async function writeJSONToFile(jsonObj, fileName){
         //await uploadToGitHub(Buffer.from(jsonContent, "utf8"), jsonFileName, `Adding ${jsonFileName} ${dateStr}`, true);
         await uploadToGitHub(zip.toBuffer(), zipFileName, `Adding ${zipFileName} ${dateStr}`);
     }
+    */
+    
     logger.debug("writeJSONToFile => Exiting");
 }
 
