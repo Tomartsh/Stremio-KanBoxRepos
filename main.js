@@ -88,50 +88,7 @@ app.get('/run', async (req, res) => {
             logger.error(`❌ Background Error in ${scraper}:`, err);
         }
     })();
-	/*
-	try {
-		// Run the scraper based on the provided name
-		switch (scraper) {
-			case "kanDigital":
-				await new KanDigitalscraper().crawl(true);
-				break;
-			case "kanArchive":
-				await new KanArchivescraper().crawl(true);
-				break;
-			case "kanKids":
-				await new KanKidscraper().crawl(true);
-				break;
-			case "kanTeens":
-				await new KanTeensscraper().crawl(true);
-				break;
-			case "kanPodcasts":
-				await new KanPodcastsscraper().crawl(true);
-				break;
-			case "kan88":
-				await new Kan88scraper().crawl(true);
-				break;
-			case "mako":
-				await new Makoscraper().crawl(true);
-				break;
-			case "reshet":
-				await new Reshetscraper().crawl(true);
-				break;
-			case "livetv":
-				await new LiveTV().crawl(true);
-				break;
-
-			default:
-				logger.debug("scraper " + scraper  + " unknown");
-				return res.status(404).send("Unknown scraper: " + scraper);
-		}
-
-		//res.send(`✅ ${scraper} completed successfully`);
-	} catch (err) {
-		logger.error(`❌ Error running ${scraper}:`, err);
-		res.status(500).send("Scraper failed – see logs for error " + err.message);
-	}
-
-	*/
+	
 });
 
 // Health check
