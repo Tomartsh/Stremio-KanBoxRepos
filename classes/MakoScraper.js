@@ -73,14 +73,18 @@ class MakoScraper{
                 logger.error(`getSeries => Cannot get series at url: ${seriesUrl}${URL_MAKO_SUFFIX}. Moving to next series`);    
                 continue; 
             } 
-            genres = seasons["seo"]["schema"]["genre"]; //get the genres
-            description = seasons["seo"]["description"];
-            background = seasons ["hero"]["pics"][0]["picUrl"];
+            if (typeof seasons === 'string' && seasons.startsWith("<!DOCTYPE html>")) { //In case we get a valud HTML file, just not the one we want.
+                logger.error(`getSeries => Series Ppage not found at url: ${seriesUrl}${URL_MAKO_SUFFIX}. Moving to next series`);    
+                continue; 
+            } 
+            genres = seasons?.seo?.schema?.genre || []; //get the genres
+            description = seasons?.seo?.description;
+            background = seasons?.hero?.pics?.[0]?.picUrl;
             
             if (seasons["seasons"] == undefined){
                 logger.info(`getSeries => seasons is: ` + seasons ); 
-                if ((seasons["menu"] == undefined) || (seasons["menu"][0] == undefined)){continue;}
-                if (seasons["menu"][0]["vods"]){
+                if ((seasons["menu"] == undefined) || (seasons?.menu?.[0] == undefined)){continue;}
+                if (seasons?.menu?.[0]?.vods){
                     videos = await this.getEpisodes(seasons["menu"], id, "-1");
                     this.addToJsonObject(id, seriesUrl, title, background, poster, description,genres, videos);
                     this.seriesId++;
@@ -114,6 +118,7 @@ class MakoScraper{
     }
 
     async getEpisodes(season, id, seasonId = "0"){
+        logger.debug(`getEpisodes => SeasonID: ${seasonId}. Sesason: ${season}`);
         var videos = [];
         var retryVideos = [];
         var episodes;
