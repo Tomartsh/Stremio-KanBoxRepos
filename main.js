@@ -50,15 +50,45 @@ var logger = log4js.getLogger("main");
 app.get('/run', async (req, res) => {
 	
  	const { scraper } = req.query;
-	logger.debug("request for: " + scraper);
+	// Validation FIRST
+    if (!scraper) { 
+        return res.status(400).send("Missing ?scraper= parameter");
+    }
 
-	
-	if (!scraper) { return res.status(400).send("Missing ?scraper= parameter");}
+    // List of valid scrapers to prevent the "Double Send" on the default case
+    const validScrapers = ["kanDigital", "kanArchive", "kanKids", "kanTeens", "kanPodcasts", "kan88", "mako", "reshet", "livetv"];
 
-	logger.info(`Triggered scraper: ${scraper}`);
+    if (!validScrapers.includes(scraper)) {
+        return res.status(404).send(`Unknown scraper: ${scraper}`);
+    }
 
-	res.send(`✅ ${scraper} started`);
+    // Send the "Started" response and END the request cycle here
+    res.send(`✅ ${scraper} started in the background.`);
 
+	// 3. Run the logic in a "Fire and Forget" block with its own error handling
+    // We don't 'await' this inside the route if we already sent a response
+    (async () => {
+        try {
+            logger.info(`Starting execution for: ${scraper}`);
+            switch (scraper) {
+                case "kanDigital": await new KanDigitalscraper().crawl(true); break;
+                case "kanArchive": await new KanArchivescraper().crawl(true); break;
+                case "kanKids":    await new KanKidscraper().crawl(true);    break;
+                case "kanTeens":   await new KanTeensscraper().crawl(true);   break;
+                case "kanPodcasts": await new KanPodcastsscraper().crawl(true); break;
+                case "kan88":      await new Kan88scraper().crawl(true);      break;
+                case "mako":       await new Makoscraper().crawl(true);       break;
+                case "reshet":     await new Reshetscraper().crawl(true);     break;
+                case "livetv":     await new LiveTV().crawl(true);            break;
+            }
+            logger.info(`✅ ${scraper} completed successfully`);
+        } catch (err) {
+            // Since the response is already sent, we ONLY log the error.
+            // This prevents the "Headers already sent" crash.
+            logger.error(`❌ Background Error in ${scraper}:`, err);
+        }
+    })();
+	/*
 	try {
 		// Run the scraper based on the provided name
 		switch (scraper) {
@@ -100,6 +130,8 @@ app.get('/run', async (req, res) => {
 		logger.error(`❌ Error running ${scraper}:`, err);
 		res.status(500).send("Scraper failed – see logs for error " + err.message);
 	}
+
+	*/
 });
 
 // Health check
