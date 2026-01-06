@@ -171,14 +171,7 @@ async function executeRequest(method, url, asJson, params, headers) {
                 responseType: asJson ? 'json' : 'text' 
             });
             return asJson ? axRes.data : parse(axRes.data.toString());
-/*
-        case 'cloudscraper':
-            const csRes = await cloudscraper.get({ 
-                uri: url, headers, qs: params, timeout: REQUEST_TIMEOUT 
-            });
-            // Cloudscraper returns a string; parse if JSON requested
-            return asJson ? JSON.parse(csRes) : parse(csRes.toString());
-*/
+
         case 'got-scraping':
             const gotRes = await gotScraping({
                 url, 
@@ -255,26 +248,6 @@ async function writeJSONToFile(jsonObj, fileName){
     const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
     const zipFilePath = path.join(OUTPUT_DIR, zipFileName);
 
-    // Save JSON and ZIP files locally if needed
-    /*
-    if (SAVE_MODE === "local" || SAVE_MODE === "both") {
-        //save .json file 
-        fs.writeFileSync(jsonFilePath, jsonContent);
-        logger.debug(`writeJSONToFile => Saved locally .json file: ${jsonFileName}`);
-
-        // Create ZIP file
-        zip.addFile(jsonFileName, Buffer.from(jsonContent, "utf8"));
-        zip.writeZip(zipFilePath);
-        logger.debug(`writeJSONToFile => Saved locally .zip file: ${zipFileName}`);
-    }
-
-    // Upload to GitHub if needed
-    if (SAVE_MODE === "github" || SAVE_MODE === "both") {
-        //await uploadToGitHub(Buffer.from(jsonContent, "utf8"), jsonFileName, `Adding ${jsonFileName} ${dateStr}`, true);
-        await uploadToGitHub(zip.toBuffer(), zipFileName, `Adding ${zipFileName} ${dateStr}`);
-    }
-    */
-    
     logger.debug("writeJSONToFile => Exiting");
 }
 
@@ -282,18 +255,10 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
     logger.trace("uploadToGitHub => Entering");
     
     //Check the environemtn variables are in place
-    if (!process.env.REPO_TOKEN_SECRET) {
-        logger.warn("⚠️ Missing REPO_TOKEN_SECRET in env");
-    }
-    if (!process.env.BRANCH_SECRET) {
-        logger.warn("⚠️ Missing BRANCH_SECRET in env");
-    }
-    if (!process.env.REPO_OWNER_SECRET) {
-        logger.warn("⚠️ Missing REPO_OWNER_SECRET in env");
-    }
-    if (!process.env.REPO_NAME_SECRET) {
-        logger.warn("⚠️ Missing REPO_NAME_SECRET in env");
-    }
+    const requiredEnv = ['REPO_TOKEN_SECRET', 'BRANCH_SECRET', 'REPO_OWNER_SECRET', 'REPO_NAME_SECRET'];
+    requiredEnv.forEach(env => {
+        if (!process.env[env]) logger.warn(`⚠️ Missing ${env} in env`);
+    });
     
     const bufferContent = Buffer.isBuffer(fileContent)
         ? fileContent
@@ -305,72 +270,83 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
 
     const GITHUB_API_URL = 'https://api.github.com';
     const githubFilePath = `${SAVE_FOLDER}/${fileName}`;
-    //const url = `${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`;
-    //logger.debug("uploadToGitHub => URL is: " + url);
       
+    const axiosConfig = {
+        headers: {
+            Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`,
+            "User-Agent": "Node.js",
+            Accept: "application/vnd.github.v3+json"
+        }
+    };
+
     try {
         
         if (!useReleasesAPI) {
             // === Small file: /contents API ===
-            let sha = null;
-            try {
-                const res = await axios.get(`${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`, {
-                    headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}` },
-                });
-                sha = res.data.sha;
-            } catch (err) {
-                if (!(err.response && err.response.status === 404)) throw err;
-            }
-
-            const payload = {
-                message: commitMessage,
-                content: bufferContent.toString("base64"),
-                branch: process.env.BRANCH_SECRET,
-                ...(sha ? { sha } : {}), // SHA included for small ZIPs, optional for JSON
-            };
-
-            const putRes = await axios.put(`${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`,
-                payload,
-                { 
-                    headers: { 
-                        Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`, 
-                        "User-Agent": "Node.js", 
-                        Accept: "application/vnd.github.v3+json" 
-                    } 
+            let retryCount = 0;
+            const maxRetries = 3;
+            let success = false;
+            
+            while (retryCount < maxRetries && !success) {
+                let sha = null;
+                // Fetch latest SHA every attempt to avoid 409
+                try {
+                    const res = await axios.get(`${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`, axiosConfig);
+                    sha = res.data.sha;
+                } catch (err) {
+                    if (!(err.response && err.response.status === 404)) throw err;
                 }
-            );
+                try {
+                    const payload = {
+                        message: commitMessage,
+                        content: bufferContent.toString("base64"),
+                        branch: process.env.BRANCH_SECRET,
+                        ...(sha ? { sha } : {}),
+                    };
 
-            logger.info(`uploadToGitHub => Uploaded: ${githubFilePath} → ${putRes.data.content.html_url}`);
+                    const putRes = await axios.put(`${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/contents/${githubFilePath}`, payload, axiosConfig);
+                    
+                    logger.info(`uploadToGitHub => Uploaded: ${githubFilePath} → ${putRes.data.content.html_url}`);
+                    success = true; // Break the loop
+                } catch (putError) {
+                    if (putError.response && putError.response.status === 409) {
+                        retryCount++;
+                        logger.warn(`uploadToGitHub => 409 Conflict. Retrying (${retryCount}/${maxRetries})...`);
+                        // Wait a moment before retrying to allow GitHub DB to sync
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                        throw putError; // Non-409 errors should stop immediately
+                    }
+                }
+            
+            }
+            if (!success) throw new Error("Failed to upload after maximum retries due to 409 conflicts.");
 
         } else {
             // === Large file: Releases API ===
             logger.info(`uploadToGitHub => Large file, using Releases API: ${fileName}`);
-
             const releasesUrl = `${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/releases`;
             const releaseName = "auto-upload";
             let releaseId = null;
 
-            // Find or create release
-            try {
-                const releases = await axios.get(releasesUrl, { headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}` } });
-                const found = releases.data.find(r => r.name === releaseName);
-                if (found) releaseId = found.id;
-                
-            } catch (e) { logger.warn("uploadToGitHub => Could not fetch releases:", e.message); }
-
-            if (!releaseId) {
+            const releases = await axios.get(releasesUrl, axiosConfig);
+            const found = releases.data.find(r => r.name === releaseName);
+            
+            if (found) {
+                releaseId = found.id;
+            } else {
                 const res = await axios.post(releasesUrl, {
                     tag_name: "auto-upload",
                     name: releaseName,
                     body: "Automatically uploaded large files",
-                }, { headers: { Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`, Accept: "application/vnd.github.v3+json" } });
+                }, axiosConfig);
                 releaseId = res.data.id;
             }
 
             const uploadUrl = `https://uploads.github.com/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/releases/${releaseId}/assets?name=${encodeURIComponent(fileName)}`;
             const res = await axios.post(uploadUrl, bufferContent, {
                 headers: {
-                    Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`,
+                    ...axiosConfig.headers,
                     "Content-Type": fileName.endsWith(".zip") ? "application/zip" : "application/json",
                     "Content-Length": fileSize,
                 },
@@ -378,68 +354,13 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
             });
 
             logger.info(`uploadToGitHub => Uploaded large file to release: ${res.data.browser_download_url}`);
+        }    
 
-        }
     } catch (error) {
         logger.error("uploadToGitHub => Error uploading file:", error.response ? error.response.data : error.message);
     }
 
     logger.trace("uploadToGitHub => Exiting");
-        
-    /*    
-        
-        // Check if the file exists to get SHA
-        let sha = null;
-        let existingContent = null;
-        try {
-            const response = await axios.get(url, {
-                headers: { 
-                    Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`,
-                    Accept: 'application/vnd.github.v3+json', 
-                },
-            });
-            sha = response.data.sha;
-            existingContent = Buffer.from(response.data.content, "base64");
-            logger.debug(`uploadToGitHub => Found existing file (${fileName}), SHA: ${sha}`);
-        } catch (error) {
-            if (error.response && error.response.status !== 404) {
-                logger.error("uploadToGitHub => Error checking file existence:", error.response.data);
-                return;
-            } else {
-                logger.error("uploadToGitHub => Error checking file existence:", error.response?.data || error.message);
-                return;
-            }
-        }
-
-        // Skip upload if content identical
-        if (existingContent && Buffer.compare(existingContent, fileContent) === 0) {
-            logger.info(`uploadToGitHub => Skipped identical file: ${githubFilePath}`);
-            return;
-        }
-
-        // Upload or update the file
-        const putResponse = await axios.put(url, {
-            message: commitMessage,
-            content: fileContent.toString('base64'),
-            branch: process.env.BRANCH_SECRET,
-            ...(sha ? { sha } : {}),
-        }, {
-            headers: {
-                Authorization: `Bearer ${process.env.REPO_TOKEN_SECRET}`,
-                "User-Agent": "Node.js",
-                Accept: 'application/vnd.github.v3+json',
-            },
-        });
-
-        const uploaded = putResponse.data?.content?.html_url || "(no URL returned)";
-        logger.info(`uploadToGitHub => Uploaded: ${githubFilePath} → ${uploaded}`);
-    } catch (error) {
-        const errData = error.response?.data || error.message;
-        logger.error("uploadToGitHub => Error uploading file:", errData);
-        //logger.error("uploadToGitHub => Error uploading file:", error.putResponse ? error.putResponse.data : error.message);
-    }
-    logger.trace("uploadToGitHub => Exiting");
-    */
 }
 
 function getReleaseDate(str){
