@@ -325,36 +325,57 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
         } else {
             // === Large file: Releases API ===
             logger.info(`uploadToGitHub => Large file, using Releases API: ${fileName}`);
+            
+            const repoPath = `${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}`;
             const releasesUrl = `${GITHUB_API_URL}/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/releases`;
             const releaseName = "auto-upload";
-            let releaseId = null;
+            let release = null;
 
-            const releases = await axios.get(releasesUrl, axiosConfig);
-            const found = releases.data.find(r => r.name === releaseName);
-            
-            if (found) {
-                releaseId = found.id;
-            } else {
+            // Find or create the release
+            try {
+                const releases = await axios.get(releasesUrl, axiosConfig);
+                release = releases.data.find(r => r.name === releaseName);
+            } catch (e) { 
+                logger.warn("uploadToGitHub => Could not fetch releases:", e.message); 
+            }
+
+            if (!release) {
+                logger.info("uploadToGitHub => Creating new release: " + releaseName);
                 const res = await axios.post(releasesUrl, {
                     tag_name: "auto-upload",
                     name: releaseName,
                     body: "Automatically uploaded large files",
                 }, axiosConfig);
-                releaseId = res.data.id;
+                release = res.data;
             }
 
-            const uploadUrl = `https://uploads.github.com/repos/${process.env.REPO_OWNER_SECRET}/${process.env.REPO_NAME_SECRET}/releases/${releaseId}/assets?name=${encodeURIComponent(fileName)}`;
+            // CHECK FOR EXISTING ASSET (The fix for your error)
+            // We fetch the list of files already attached to this release
+            const assetsUrl = `${GITHUB_API_URL}/repos/${repoPath}/releases/${release.id}/assets`;
+            const assetsResponse = await axios.get(assetsUrl, axiosConfig);
+            const existingAsset = assetsResponse.data.find(a => a.name === fileName);
+
+            if (existingAsset) {
+                logger.debug(`uploadToGitHub => Asset "${fileName}" already exists. Deleting asset ID: ${existingAsset.id} before re-upload.`);
+                const deleteUrl = `${GITHUB_API_URL}/repos/${repoPath}/releases/assets/${existingAsset.id}`;
+                await axios.delete(deleteUrl, axiosConfig);
+            }
+
+            // Upload the new file
+            // Note: Uploads use 'uploads.github.com' instead of 'api.github.com'
+            const uploadUrl = `https://uploads.github.com/repos/${repoPath}/releases/${release.id}/assets?name=${encodeURIComponent(fileName)}`;
+            
             const res = await axios.post(uploadUrl, bufferContent, {
                 headers: {
                     ...axiosConfig.headers,
                     "Content-Type": fileName.endsWith(".zip") ? "application/zip" : "application/json",
                     "Content-Length": fileSize,
                 },
-                timeout: 120000,
+                timeout: 120000, // 2 minutes for large uploads
             });
 
             logger.info(`uploadToGitHub => Uploaded large file to release: ${res.data.browser_download_url}`);
-        }    
+        }   
 
     } catch (error) {
         logger.error("uploadToGitHub => Error uploading file:", error.response ? error.response.data : error.message);
