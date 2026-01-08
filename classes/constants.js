@@ -39,7 +39,7 @@ module.exports = {
     URL_HINUKHIT_TINY: "https://www.kankids.org.il/lobby-kids/tiny/",
     URL_HINUKHIT_TEENS: "https://www.kankids.org.il/lobby-kids/kids-teens",
     URL_HINUKHIT_KIDS_CONTENT_PREFIX: "https://www.kankids.org.il",
-    PODCASTS_URL: "https://www.kan.org.il/lobby/aod",
+    PODCASTS_URL: "https://www.kan.org.il/lobby/podcasts-lobby/",
     KAN88_POCASTS_URL: "https://www.kan.org.il/content/kan/podcasts/kan88/",
 
     //Mako constants (Keshet channel 12)
