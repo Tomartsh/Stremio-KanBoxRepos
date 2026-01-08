@@ -11,7 +11,7 @@ output/*.*
 
 #ignore the logs folder
 logs
-logs/*.*
+logs/stremio*.*
 
 #ignore backup folder
 backups
