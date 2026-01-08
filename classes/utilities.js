@@ -3,7 +3,6 @@ const { parse } = require('node-html-parser');
 const path = require("path");
 const axios = require('axios');
 const { gotScraping } = require('got-scraping');
-const cloudscraper = require('cloudscraper');
 const AdmZip = require("adm-zip");
 const fs = require('fs');
 
@@ -722,16 +721,20 @@ function getVideoNameFromEpisodePage(str){
     return str;
 }
 
-function generateSeriesId(link, subPrefix){
+function generateSeriesId(link, subPrefix, seriesId = "0"){
     var retId = "";
-    //if the link has a trailing  "/" then omit it
 
-    if(link) {
-        if (link.substring(link.length -1) == "/"){
-            link = link.substring(0,link.length -1);
+    if (seriesId != "0"){
+        retId = seriesId;
+    } else {
+    //if the link has a trailing  "/" then omit it
+        if(link) {
+            if (link.substring(link.length -1) == "/"){
+                link = link.substring(0,link.length -1);
+            }
+            retId = link.substring(link.lastIndexOf("/") + 1, link.length);
+            retId = retId.replace(/\D/g,'');
         }
-        retId = link.substring(link.lastIndexOf("/") + 1, link.length);
-        retId = retId.replace(/\D/g,'');
     }
     if (retId == ""){
         retId = seriesIterator;

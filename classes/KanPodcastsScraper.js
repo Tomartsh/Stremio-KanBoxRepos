@@ -5,7 +5,9 @@ const {
     MAX_LOG_SIZE, 
     LOG_BACKUP_FILES,
     LOG_FILENAME,
-    PODCASTS_URL,
+    KAN_PARTNER_ID,
+    KAN_MOBILE_API,
+    KAN_PODCAST_CATEGORIES,
     KAN_BASE_URL
 } = require("./constants.js");
 const SUB_PREFIX = "podcasts";
@@ -59,7 +61,186 @@ class KanPodcastsScraper {
     async crawlPodcasts(){
         logger.trace("crawlPods => Entering");
         //get the podcasts series genre list
-        logger.debug("crawlPods => Starting retrieval of podcast series");
+        // get the JSON from the site contaitning all the series.
+        //var seriesJson = [];
+        //var doc = await fetchData(PODCASTS_URL);
+
+        //if (!doc) {
+        //    logger.error("crawlVod => Could not retrieve data from Kan Podcasts. Skipping this crawl.");
+        //    return; // Nothing to see here, go back to the beggining
+        //}
+
+        // get all script elements
+        //var scriptElems = doc.querySelectorAll('script');
+        
+        //Initialize items as an empty array at the function level scope
+        //let items = [];
+        
+        //const podcasts = [];
+        let fromIndex = 1;      // Kan API is 1-indexed
+        const pageSize = 200;   // Number of items per request
+        let hasMore = true; 
+        let totalCount = 0;
+
+        while (hasMore) {
+            // The endpoint identified in kan.py for podcast categories is 4451
+            const url = `${KAN_MOBILE_API}${fromIndex}&id=${KAN_PODCAST_CATEGORIES}`;
+            
+            try {
+                const data = await fetchData(url,true);
+                const entries = data.entry || [];
+                
+                if (entries.length === 0) {
+                    hasMore = false;
+                    break;
+                }
+
+                for (const entry of entries) {
+                    totalCount++;
+                    logger.debug(`[${totalCount}] Title: ${entry.title}`);
+                    
+                    let entryID = entry.id;
+                    let id = utils.generateSeriesId("", SUB_PREFIX, entry.id);
+                    let title = entry.title;
+                    let description = entry.description;
+                    let pageUrl = entry.link?.href?.replace('?app=true', '') || '';
+
+                    //exclude Kan 88 podcasts
+                    if (pageUrl.includes("kan88")){continue; }
+
+                    const headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                        'Accept': 'application/json'
+                    };
+
+                    const params = {
+                        id: entryID,
+                        type: 'program', // זה מה שגורם לשרת להחזיר פרקים
+                        num: 100         // כמות פרקים מקסימלית
+                    };
+
+                    logger.debug(`URL is: ${pageUrl}`);
+                    const response = await fetchData('https://mobapi.kan.org.il/api/mobile/subClass', true, params, headers);
+                    const data = response.data;
+                    logger.debug(`Data is: ${data}`);
+                    if (data && data.entry) {
+                        for (const episode of data.entry){
+                            logger.debug ("Episode title: " + episode.title);
+                        }
+                    }
+                }
+            } catch (error) {
+                logger.error("Failed to fetch podcasts:", error);
+                 hasMore = false;
+                }       
+        } 
+                        /*
+                        allResults[cleanId] = data.entry.map(item => ({
+                            title: item.title,
+                            summary: item.summary,
+                            // חילוץ הלינק ל-MP3 מתוך אובייקט הקישור או התוכן
+                            mp3Url: item.content ? item.content.src : (item.link ? item.link.href : null),
+                            date: item.updated, // תאריך עדכון הפרק
+                            image: item.media_group?.[0]?.media_item?.[0]?.src || ""
+                        })).filter(ep => ep.mp3Url && ep.mp3Url.includes('.mp3')); // סינון רק לפרקים עם לינק תקין
+                    }
+*/
+/*
+                    const episodesApiUrl = `https://mobapi.kan.org.il/api/v1/podcasts/${entryID}/episodes?partnerId=${KAN_PARTNER_ID}&from=1&size=200`;
+
+
+
+
+                    const episodesUrl = `https://mobapi.kan.org.il/api/v1/programs/${entryID}/episodes`;
+                    const episodes = await fetchData(episodesUrl,true, headers);
+
+                    if (data && data.episodes) {
+                        for (const episode of data.episodes) {
+                            /*ep.title,
+                            description: ep.description || '',
+                            url: ep.externalUrl, // זהו הקישור הישיר ל-MP3
+                            released: new Date(ep.publishDate).toISOString(),
+                            id: `kan_ep_${ep.id}`
+                            logger.debug(`episode title: ${episode.title}`)
+                        }
+
+                    }
+                    let podcastImageUrl = '';
+                    const mediaItems = entry.media_group?.[0]?.media_item || [];
+                    
+                    // We look specifically for the item with the key 'image_base_1x1'
+                    const targetImage = mediaItems.find(item => item.key === 'image_base_1x1');
+                    
+                    if (targetImage && targetImage.src) {
+                        podcastImageUrl = targetImage.src;
+                    }
+                    logger.debug(`id: ${id} \n title: ${title} \n pageUrl: ${pageUrl} \n podcastImageUrl: ${podcastImageUrl} \n description: ${description} \n episodesApiUrl: ${episodesApiUrl}`);
+                    this.addToJsonObject(id,title,pageUrl,podcastImageUrl,description,"",[],"p","series");
+                }
+               
+                // Pagination Logic:
+            // If we received exactly 200 entries, there's likely a next "page".
+            // We increment the index by 200 to get the next batch (1 -> 201 -> 401).
+            if (entries.length === pageSize) {
+                fromIndex += pageSize; 
+            } else {
+                // Received fewer than 200, so this is the last batch.
+                hasMore = false;
+            }
+            } catch (error) {
+               logger.error("Failed to fetch podcasts:", error);
+                hasMore = false;
+            }
+        }
+*/
+/*
+        // find the script element with the json of the series
+        const targetScript = scriptElems.find(script => script.rawText.includes('digitalSeries:'));
+        if (targetScript) {
+            const scriptContent = targetScript.rawText;
+
+            try {
+                // Extract the JSON portion
+                const jsonMatch = scriptContent.match(/digitalSeries:\s*(\[[\s\S]*?\])/);
+
+                if (jsonMatch && jsonMatch[1]) {
+                    let rawJsonString = jsonMatch[1].trim();
+                
+                    //Parse it
+                    items = JSON.parse(rawJsonString);
+
+                    logger.debug(`Success! Found ${items.length} Digital Series items.`);
+                }
+            } catch (error) {
+                logger.error("Found the script, but failed to parse the JSON. It might not be strict JSON format.");
+            }
+        } else {
+             logger.debug("Could not find a script containing 'digitalSeries: ['");
+        }
+
+        items.forEach((item) => {
+            // Extract specific data
+            const title = item.ImageAlt; // Usually the show name
+            //const fullImageUrl = `https://www.kan.org.il${item.Image}`;
+            const pageUrl = item.Url;
+            const description = item.Description;
+            const season = item.Season;
+            const genresName = item.Genres;
+
+            //set the series URL
+            if (pageUrl == undefined) { return;} // if there is not link to the series then skip
+            if (pageUrl.includes("kan-actual")){return;} //we are skipping news item
+            if (pageUrl.includes("archive")){return;} //we are skipping archive item. Have a a separate scraper for those 
+            if (pageUrl.includes("podcasts")){return;} //we are skipping podcasts, we will deal with them later
+            if ((! pageUrl.includes("/content/kan/")) && (! pageUrl.includes("dig/digital"))) { return; }//if URL does not contain this strin git is not digital
+            if (pageUrl.startsWith("/")) { pageUrl = KAN_URL_ADDRESS + pageUrl; }
+
+            var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
+            var podcastImageUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
+
+            this.addToJsonObject(id,title,pageUrl,podcastImageUrl,description,genresName,[],"p","series");
+            
+        });
         
         var docPodcastSeries = await fetchData(PODCASTS_URL);
         var genres = docPodcastSeries.querySelectorAll("div.podcast-row");
@@ -104,9 +285,13 @@ class KanPodcastsScraper {
                 logger.debug("crawlPodcasts => Added podcast " + seriesTitle);
             }    
         }
+*/
         logger.trace("crawlPodcasts => Exiting");
     }   
 
+    getPodcastSeriesFromEntry(){
+
+    }
     getPodcastTitle(podcastElement, seriesTempTitle){
         var seriesTitle = ""
         if (podcastElement.getAttribute("title") != undefined){ 
