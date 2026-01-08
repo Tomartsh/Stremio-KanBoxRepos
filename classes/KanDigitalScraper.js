@@ -57,7 +57,6 @@ class KanDigitalScraper {
      ***********************************************************/
     async crawlVod(){
         logger.trace("crawlVod => Entered");
-        logger.debug("crawlVod => Starting retrieval of VOD series");
         
         // get the JSON from the site contaitning all the series.
         var seriesJson;
@@ -101,7 +100,7 @@ class KanDigitalScraper {
         items.forEach((item) => {
             // Extract specific data
             const title = item.ImageAlt; // Usually the show name
-            const fullImageUrl = `https://www.kan.org.il${item.Image}`;
+            //const fullImageUrl = `https://www.kan.org.il${item.Image}`;
             const pageUrl = item.Url;
             const description = item.Description;
             const season = item.Season;
@@ -117,7 +116,7 @@ class KanDigitalScraper {
             var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
             var imgUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
 
-             this.addToJsonObject(id, "",pageUrl,imgUrl,"","",[],"d","series");
+             this.addToJsonObject(id, "",pageUrl,imgUrl,description,"",[],"d","series");
             
         });
 
