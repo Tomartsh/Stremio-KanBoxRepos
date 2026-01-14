@@ -191,9 +191,6 @@ async function executeRequest(method, url, asJson, params, headers) {
     }
 }
 
-function getNextMethod(current) {
-    return current === 'axios' ? 'got-scraping' : 'got-scraping';
-}
 
 
 //+===================================================================================
