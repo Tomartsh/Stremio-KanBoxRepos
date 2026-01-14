@@ -42,8 +42,10 @@ module.exports = {
     PODCASTS_URL: "https://www.kan.org.il/lobby/podcasts-lobby/",
     KAN88_POCASTS_URL: "https://www.kan.org.il/content/kan/podcasts/kan88/",
     KAN_PARTNER_ID: "2717431",
-    KAN_MOBILE_API: "https://mobapi.kan.org.il/api/mobile/subClass?from=",
-    KAN_PODCAST_CATEGORIES: "4451",
+    //KAN_MOBILE_API: "https://mobapi.kan.org.il/api/mobile/subClass?from=",
+    KAN_BASE_MOB_API: 'https://mobapi.kan.org.il/api/mobile/subClass',
+    KAN_PODCAST_CATEGORIES: "4451",    
+    AN_PODCAST_CHILDREN_CATEGORIES: "4562",
 
     //Mako constants (Keshet channel 12)
     URL_MAKO_VOD: "https://www.mako.co.il/mako-vod-index?platform=responsive",
