@@ -111,7 +111,7 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
                 const data = await executeRequest(currentMethod, url, asJson, params, headers);
                 // Success! Stick this method to the domain
                 if (stickyMethods.get(hostname) !== currentMethod) {
-                    logger.info(`Method "${currentMethod}" is now STICKY for ${hostname}`);
+                    logger.trace(`Method "${currentMethod}" is now STICKY for ${hostname}`);
                     stickyMethods.set(hostname, currentMethod);
                 }
                 
@@ -150,7 +150,7 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
  */
 async function fetchData(url, asJson = false, params = {}, headers = HEADERS) {
     try {
-        logger.debug(`fetchData => For URL: ${url}`);
+        logger.trace(`fetchData => For URL: ${url}`);
         // We pass the URL through to the retry logic
         return await fetchWithRetries(url, asJson, params, headers);
     } catch (error) {
@@ -378,62 +378,6 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
     }
 
     logger.trace("uploadToGitHub => Exiting");
-}
-
-function getReleaseDate(str){
-    var released = "";
-    var releasedArr = [];
-    var year = "";
-    var month = "";
-    var day = "";
-
-    if (str.length > 0) {
-        //check existing format
-        const regexReshet = /^(\d{2})\/(\d{2})\/(\d{4})/;
-        const regexKanPodcasts = /^(\d{1,2})\.(\d{1,2})\.(\d{4}) (\d{1,2}):(\d{1,2}):(\d{2})/;
-        const regexMako = /^(\d{2})\.(\d{2})\.(\d{2})/;
-        
-        var processed = false;
-        
-        if ((regexReshet.test(str)) && (!processed)) {//example 03/06/2024
-            releasedArr = str.split("/"); 
-            year = releasedArr[2];
-            month = releasedArr[1];
-            day = releasedArr[0];
-            processed = true;
-        }
-
-        if ((regexKanPodcasts.test(str)) && (!processed)) {
-            releasedArr = str.split(".");
-            year = releasedArr[2].split(" ")[0];
-            month = releasedArr[1];
-            day = releasedArr[0];
-
-            if (month.length == 1){ 
-                month = "0" + month;
-            }
-            if (day.length == 1){ day = "0" + day;}
-            processed = true;
-        } 
-        
-        if ((regexMako.test(str))  && (!processed)){
-            releasedArr = str.split(".");
-            year = releasedArr[2];
-            month = releasedArr[1];
-            day = releasedArr[0];
-            processed = true;
-        }
-
-        if (processed){
-            released = year + "-" + month + "-" + day + "T00:00:00.000Z";
-        }else {
-            released = "";
-        }
-
-        return released;
-        
-    }
-    return str;
 }
 
 function getCurrentDateStr(){
@@ -749,13 +693,11 @@ async function sleeperTimer(delay = RETRY_DELAY) {
     console.log(`sleeperTimer => ${delay} ms`);
 }
 
-
 module.exports = {
     padWithLeadingZeros, 
     fetchData, 
     writeJSONToFile, 
     getCurrentDateStr, 
-    getReleaseDate, 
     getImageFromUrl, 
     setGenreFromString, 
     getNameFromSeriesPage, 
@@ -763,5 +705,5 @@ module.exports = {
     getEpisodeUrl,
     getVideoNameFromEpisodePage,
     generateSeriesId,
-    sleeperTimer    
+    sleeperTimer 
 };
