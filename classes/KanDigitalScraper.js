@@ -9,6 +9,7 @@ const {
     KAN_DIGITAL_IMAGE_PREFIX,
 } = require("./constants.js");
 const SUB_PREFIX = "dogital";
+const SUBTYPE = "d";
 
 const log4js = require("log4js");
 
@@ -97,11 +98,9 @@ class KanDigitalScraper {
              logger.debug("Could not find a script containing 'digitalSeries: ['");
         }
 
-        items.forEach((item) => {
-            // Extract specific data
+        for (const item of items) { //iterate over series
             const title = item.ImageAlt; // Usually the show name
-            //const fullImageUrl = `https://www.kan.org.il${item.Image}`;
-            const pageUrl = item.Url;
+            const pageUrl = item.Url; //URL of the series episodes
             const description = item.Description;
             const season = item.Season;
 
@@ -116,92 +115,220 @@ class KanDigitalScraper {
             var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
             var imgUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
 
-             this.addToJsonObject(id, "",pageUrl,imgUrl,description,"",[],"d","series");
-            
-        });
+            //get the doc of the series
+            try{
+                var seriesPageDoc = await fetchData(`${pageUrl}?page=1&itemsToShow=1000`);
+            } catch (e){
+                logger.error(`crawlVod => could not retrieve series page doc from URL ${pageUrl}. Error: ${e}`);
+                return;
+            }
+
+            //set series genres
+            const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
+
+            //Get the seasons number
+            var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
+            var videoObj = [];
+            if ((seasons != undefined) && (seasons.length> 0)){ //generate videos object with media links(streams)
+                logger.debug("getSeries => seasons " + title + " length: " + seasons.length);
+                videoObj = await this.getVideos(seasons, id);
+
+                //this.addToJsonObject(id, title, pageUrl,imgUrl,description,genres,videoObj,"series")
+            } else {
+                // probably no episodes, only a single movie
+                if (! seriesPageDoc.querySelector("a.btn.with-arrow")){
+                    continue
+                }
+                var moveiLink = seriesPageDoc.querySelector("a.btn.with-arrow").getAttribute("href");
+                videoObj = await this.getVideo(moveiLink, id);
+            } 
+            if ((videoObj == null) || (videoObj.length == 0)){
+                logger.warn(`crawlVod => could not find videos for series ${title} @ URL ${pageUrl}`);
+            } else {    
+                 this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series");   
+            } 
+        };
 
         //start working on each series
-        await this.getSeries();
+        //await this.getSeries();
         
         logger.trace("crawl() => Exiting");
     }
 
-    async getSeries(){
-        logger.trace("getSeries => Entering");
-        for (const key in this._kanDigitalJSONObj) {
-            var id = this._kanDigitalJSONObj[key]["id"];
-            var subType = this._kanDigitalJSONObj[key]["subtype"];
-
-            var retrieveLink = this._kanDigitalJSONObj[key]["link"]  + "?page=1&itemsToShow=1000";
-            var seriesPageDoc = await fetchData(retrieveLink);  
-            
-            //set series Description
-            var description = "";
-            if (seriesPageDoc.querySelector("div.info-description p") != undefined){
-                this._kanDigitalJSONObj[key]["meta"]["description"]  = this.setDescription(seriesPageDoc.querySelector("div.info-description p"));
-            }
-            
-            //set series genres
-            this._kanDigitalJSONObj[key]["meta"]["genres"] = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
-            
-            //set series name
-            var titleTemp = seriesPageDoc.querySelector("title").text;
-            var title = utils.getNameFromSeriesPage(titleTemp);
-            this._kanDigitalJSONObj[key]["meta"]["name"] = title;
-            this._kanDigitalJSONObj[key]["name"] = title;
-
-            var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
-            logger.debug("getSeries => seasons " + title + " length: " + seasons.length);
-
-            if (seasons.length > 0) { // there are multiple seasons and episodes
-
-                await this.getVideos(seasons, id, subType);
-            } else { // there is only one episode and one season. It is not realy a series but a movie
-                var title = seriesPageDoc.querySelector("h2").text.trim(); //getting the title from the series page
-                var description = "";
-                if (seriesPageDoc.querySelector("div.info-description p") != undefined){
-                    description = seriesPageDoc.querySelector("div.info-description p").text.trim();
-                }
-                var videoId = key + ":1:1";
-
-                var elemImage = seriesPageDoc.querySelector("div.block-img").toString();
-                var startPoint = elemImage.indexOf("--desktop-vod-bg-image: url(") + 29;
-                var imgUrl = elemImage.substring(startPoint);
-                if (imgUrl.indexOf("?") <1) { continue;}
-                imgUrl = imgUrl.substring(0, imgUrl.indexOf("?"));
-                if (imgUrl.startsWith("/")){
-                    imgUrl = "https://www.kan.org.il" + imgUrl;
-                } 
-                
-                var episodeLink;
-                if (seriesPageDoc.querySelector("a.btn.with-arrow.info-link.btn-gradient")){ //only one episode. This is actually a movie and not a series
-                    episodeLink = seriesPageDoc.querySelector("a.btn.with-arrow.info-link.btn-gradient").getAttribute("href");
-                } else { //No episodes at all. We need to delete it from the JSON object
-                    logger.error(`Could not find episodes for series ${title} erasing the series from the JSON object`)
-                    delete this._kanDigitalJSONObj[key];
-                    continue;
-                }
-                this._kanDigitalJSONObj[key]["meta"]["link"] = episodeLink;
-                this._kanDigitalJSONObj[key]["meta"]["description"] = description;
-                this._kanDigitalJSONObj[key]["meta"]["poster"] = imgUrl;
-                
-                //get streams
-                var streams = this.getStreams(episodeLink);
-                
-                this.addVideoToMeta(id, videoId, title, "1", "1", description, imgUrl, episodeLink, streams.released, streams);
-            }
+     /**
+     * Get the video element in case of a single episode (movie)
+     * @param {*} url - The link to the movie page
+     */
+    async getVideo(url, id){
+        logger.trace("getVideo => Entering");
+        try {
+            var movieDoc = await fetchData(url);
+        } catch (e) {
+            logger.error(`getVideo => could not retrieve movie page doc from URL ${url}. Error: ${e}`);
+            return null;
         }
+        let scripts = movieDoc.querySelectorAll('script[type="application/ld+json"]');
+
+        let videosList = this.getStream(scripts, id, url);
+
+        if ((videosList == null) || (videosList.length == 0)) {
+            logger.warn(`getVideo => No VideoObject found in the movie page at URL ${url}`);
+        }
+        return videosList;
+
     }
 
+getStream (scripts, id, url){
+    logger.trace("getStream => Entering");
+    for (const script of scripts){
+        try {
+            let scriptContent = script.text || script.innerText || script.rawText;
+
+            // First check if it's a VideoObject before doing any processing
+            if (!scriptContent.includes('"@type"') || !scriptContent.includes('VideoObject')) {
+                continue; // Skip if not a VideoObject
+            }
+
+            // Only handle HTML entities - keep all quotes as they are
+            scriptContent = scriptContent
+                .replace(/&quot;/g, '"')
+                .replace(/&amp;/g, '&')
+                .replace(/&#xD;&#xA;/g, '\n')
+                .replace(/&#xD;/g, '\n')
+                .replace(/&#xA;/g, '\n')
+                .trim();
+
+            // Split into lines
+            const lines = scriptContent.split('\n');
+            
+            let name = '';
+            let desc = '';
+            let thumb = '';
+            let episodeLink = '';
+            let inDescription = false;
+            let descriptionLines = [];
+            let released = '';
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // Skip empty lines
+                if (!line) continue;
+                
+                //skip {, }, @context, @type
+                if (line.startsWith('{') || line.endsWith('}') || line.startsWith('"@context') || line.startsWith('"@type')) { continue; }
+
+                // Handle multi-line description continuation first
+                if (inDescription) {
+                    if (line.endsWith('",') || line.endsWith('"')) {
+                        // End of description
+                        descriptionLines.push(line.replace(/",?$/, ''));
+                        desc = descriptionLines.join('\n');
+                        inDescription = false;
+                        descriptionLines = [];
+                    } else {
+                        descriptionLines.push(line);
+                    }
+                    continue; // Skip other checks while in description mode
+                }
+                
+                // Extract name
+                if (line.includes('"name":')) {
+                    const match = line.match(/"name":\s*"([^"]+)"/);
+                    if (match) {
+                        name = match[1];
+                    }
+                    continue;
+                }
+                
+                // Extract description (might span multiple lines)
+                if (line.includes('"description":')) {
+                    const match = line.match(/"description":\s*"(.*)$/);
+                    if (match) {
+                        const content = match[1];
+                        // Check if description ends on same line
+                        if (content.endsWith('",') || content.endsWith('"')) {
+                            desc = content.replace(/",?$/, '');
+                        } else {
+                            // Description continues on next lines
+                            inDescription = true;
+                            descriptionLines.push(content);
+                        }
+                    }
+                    continue;
+                }
+                
+                // Extract thumbnailUrl
+                if (line.includes('"thumbnailUrl":')) {
+                    const match = line.match(/"thumbnailUrl":\s*"([^"]+)"/);
+                    if (match) {
+                        thumb = match[1];
+                    }
+                    continue;
+                }
+                
+                // Extract contentUrl
+                if (line.includes('"contentUrl":')) {
+                    const match = line.match(/"contentUrl":\s*"([^"]+)"/);
+                    if (match) {
+                        episodeLink = match[1];
+                    }
+                    continue;
+                }
+                
+                // Extract release date
+                if (line.includes('"uploadDate":')) {
+                    const match = line.match(/"uploadDate":\s*"([^"]+)"/);
+                    if (match) {
+                        let tempDate = match[1];
+                        const date = new Date(tempDate);
+                        released = isNaN(date.getTime()) ? "" : date.toISOString();
+                    }
+                    continue;
+                }
+            }
+
+            // Verify we got the essential fields
+            var videosList = [];
+            if (name && episodeLink) {
+                const episodeId = `${id}:1:1`;
+                
+                videosList.push({
+                    name: name,
+                    episode: episodeId,
+                    description: desc,
+                    thumbnail: thumb,
+                    episodeLink: url,
+                    released: released,
+                    streams: {
+                        url: episodeLink,
+                        type: "series",
+                        name: name,
+                        description: desc
+                    }
+                });
+                logger.info(`getVideo => Successfully extracted VideoObject: ${name}`);
+                return videosList;
+
+            } else {
+                logger.warn(`getVideo => Missing a required field for ${episodeLink}`);
+                return videosList;
+            }
+                
+        } catch (e) {
+            logger.debug("getVideo => Error processing VideoObject: " + e);
+            return [];
+        }
+    }
+}
     /**********************************************************
-     * receive the video elements with ID of series and the 
-     * subtype, and retrieve the list of videos and streams
+     * receive the video elements with ID of series and 
+     * retrieve the list of videos and streams
      * @param {*} videosElems 
      * @param {*} id 
-     * @param {*} subType 
      * @returns Array of video json objects
      *********************************************************/
-    async getVideos(videosElems, id, subType){
+    async getVideos(videosElems, id){
         var videosArr = [];
 
         var noOfSeasons = videosElems.length;
@@ -213,6 +340,10 @@ class KanDigitalScraper {
                 logger.trace("getVideos => season: " + seasonNo + " episode: " + (iter +1));
                 var seasonEpisodesElem = seasonEpisodesElems[iter];
                 var episodePageLink = seasonEpisodesElem.getAttribute("href");
+
+                if (episodePageLink.contains("p-12385/s4")){//season 4 of this series yields no episode. Skipping.
+                    return videosArr;
+                }
                 if (episodePageLink.startsWith("/")){
                     episodePageLink = KAN_DIGITAL_IMAGE_PREFIX;
                 }
@@ -236,7 +367,7 @@ class KanDigitalScraper {
                             var elemEpisodeLogo = elemImage.querySelector("img.img-full");
                             
                             if (elemEpisodeLogo != null) {
-                                episodeLogoUrl = utils.getImageFromUrl(elemEpisodeLogo.attrs["src"],subType);
+                                episodeLogoUrl = utils.getImageFromUrl(elemEpisodeLogo.attrs["src"],SUBTYPE);
                             }
                             logger.trace("getVideos => episodeLogoUrl location: " + episodeLogoUrl);                          
                         }
@@ -244,31 +375,43 @@ class KanDigitalScraper {
                         logger.error("getVideos => episodeLogoUrl:" + ex);                       
                     }
                 }
-                logger.debug ("getVideos => episodeLogoUrl: " + episodeLogoUrl + " Name: " + title); 
-                
+                logger.trace ("getVideos => episodeLogoUrl: " + episodeLogoUrl + " Name: " + title); 
+
+
                 //get streams
                 var streams = await this.getStreams(episodePageLink);
 
                 //check streams is not empty, and if so, remove from list
                 if (streams ){
                     var episodeNo = iter +1;
-                    var streamsArr = [
+                    /*var streamsArr = [
                         {
                             url: streams.url,
                             type: streams.type,
                             name: streams.name,
                             description: streams.description
+                            released: 
                         }
-                    ];
-                    this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr);
-                    logger.debug("getVideos => Added videos for episode : " + title + "\n    season:" + seasonNo + ", episode: " + (iter +1) + ", subtype: " + subType);
-                } 
-
-                
-
-                
+                    ];*/
+                    videosArr.push ({
+                        id: videoId,
+                        name: title,
+                        season: seasonNo,
+                        episode: episodeNo ,
+                        description: description,
+                        thumbnail: episodeLogoUrl,
+                        episodeLink: episodePageLink,
+                        released: streams.released,
+                        streams: [streams]
+                    });
+                    //this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr);
+                    logger.debug(`getVideos => processed episode : ${title}\n    season:${seasonNo}, episode: ${iter +1}`);
+                } else {
+                    logger.warn(`getVideos => Episode has no media : ${title}\n    season: ${seasonNo}, episode: ${iter +1}`);
+                }
             }
-        }      
+        } 
+        return videosArr;     
     }
 
     async getStreams(link){
@@ -287,7 +430,9 @@ class KanDigitalScraper {
         var descVideo = "";
 
         if (doc.querySelector("li.date-local") != undefined){
-            released = utils.getReleaseDate(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
+            const date = new Date(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
+            released = isNaN(date.getTime()) ? "" : date.toISOString();
+            //released = utils.getReleaseDate(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
         } 
         var scriptElems = doc.querySelectorAll("script");
         
@@ -315,9 +460,10 @@ class KanDigitalScraper {
             type: "series",
             name: nameVideo,
             description: descVideo,
+            released: released
         };
 
-        if (released != "") {streamsJSONObj["released"] = released;}
+        //if (released != "") {streamsJSONObj["released"] = released;}
         logger.trace("getStreams => Exiting");
         return streamsJSONObj;
     }
@@ -389,7 +535,7 @@ class KanDigitalScraper {
 
     }
 
-    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type){
+    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, type){
         this._kanDigitalJSONObj[id] =  {
             id: id, 
             name: seriesTitle, 
@@ -399,7 +545,7 @@ class KanDigitalScraper {
             background: imgUrl, 
             genres: genres,
             type: type, 
-            subtype: subType,
+            subtype: SUBTYPE,
             meta: {
                 id: id,
                 type: type,
@@ -414,7 +560,7 @@ class KanDigitalScraper {
                 videos: videosList
             }
         }
-        logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
+        logger.info(`addToJsonObject => Added  series, ID: ${id} Name: ${seriesTitle} Link: ${seriesPage}`);
     }
 
     writeJSON(){
