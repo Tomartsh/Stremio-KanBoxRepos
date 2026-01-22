@@ -219,7 +219,13 @@ async function writeJSONToFile(jsonObj, fileName){
         fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     }
 
-    const jsonContent = JSON.stringify(jsonObj, null, 4);
+    // Add timestamp at the top level
+    const jsonWithTimestamp = {
+        timestamp: new Date().toISOString(),
+        data: jsonObj
+    };
+
+    const jsonContent = JSON.stringify(jsonWithTimestamp, null, 4);
     const jsonFileName = `${fileName}.json`;
     const zipFileName = `${fileName}.zip`;
 
@@ -596,7 +602,8 @@ async function getStreams(link){
     var descVideo = "";
 
     if (doc.querySelector("li.date-local") != undefined){
-        released = utils.getReleaseDate(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
+        const date = new Date(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
+        released = isNaN(date.getTime()) ? "" : date.toISOString();
     } 
     var scriptElems = doc.querySelectorAll("script");
     

@@ -207,10 +207,9 @@ class MakoScraper{
             } else {
                 episodeReleased = episode["extraInfo"]
             }
-            episodeReleased = utils.getReleaseDate(episodeReleased);
-        } else if (episode["title"] != undefined){
-            episodeReleased = utils.getReleaseDate(episode["title"]);
-        }
+            const date = new Date(episodeReleased);
+            episodeReleased = isNaN(date.getTime()) ? "" : date.toISOString();
+        } 
 
         //var tempEpisodeId = this.getEpisodeIdFromTitle(episodeTitle,noOfEpisodes)
         var tempEpisodeId = this.getEpisodeIdFromTitle(episodeTitle,episodeNo)

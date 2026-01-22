@@ -292,7 +292,14 @@ getStream (scripts, id, url){
             var videosList = [];
             if (name && episodeLink) {
                 const episodeId = `${id}:1:1`;
-                
+                let stream = {
+                        url: episodeLink,
+                        type: "series",
+                        name: name,
+                        description: desc,
+                        released: released
+                }
+
                 videosList.push({
                     name: name,
                     episode: episodeId,
@@ -300,12 +307,7 @@ getStream (scripts, id, url){
                     thumbnail: thumb,
                     episodeLink: url,
                     released: released,
-                    streams: {
-                        url: episodeLink,
-                        type: "series",
-                        name: name,
-                        description: desc
-                    }
+                    streams: [stream]
                 });
                 logger.info(`getVideo => Successfully extracted VideoObject: ${name}`);
                 return videosList;
@@ -341,7 +343,8 @@ getStream (scripts, id, url){
                 var seasonEpisodesElem = seasonEpisodesElems[iter];
                 var episodePageLink = seasonEpisodesElem.getAttribute("href");
 
-                if (episodePageLink.contains("p-12385/s4")){//season 4 of this series yields no episode. Skipping.
+                if (episodePageLink.includes("p-12385/s4")){//season 4 of this series yields no episode. Skipping.
+                    logger.debug(`getVideos => Skipping season: ${seasonNo} of id ${id} due to no episodes`);
                     return videosArr;
                 }
                 if (episodePageLink.startsWith("/")){
@@ -384,15 +387,6 @@ getStream (scripts, id, url){
                 //check streams is not empty, and if so, remove from list
                 if (streams ){
                     var episodeNo = iter +1;
-                    /*var streamsArr = [
-                        {
-                            url: streams.url,
-                            type: streams.type,
-                            name: streams.name,
-                            description: streams.description
-                            released: 
-                        }
-                    ];*/
                     videosArr.push ({
                         id: videoId,
                         name: title,
@@ -404,7 +398,6 @@ getStream (scripts, id, url){
                         released: streams.released,
                         streams: [streams]
                     });
-                    //this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr);
                     logger.debug(`getVideos => processed episode : ${title}\n    season:${seasonNo}, episode: ${iter +1}`);
                 } else {
                     logger.warn(`getVideos => Episode has no media : ${title}\n    season: ${seasonNo}, episode: ${iter +1}`);
@@ -432,7 +425,6 @@ getStream (scripts, id, url){
         if (doc.querySelector("li.date-local") != undefined){
             const date = new Date(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
             released = isNaN(date.getTime()) ? "" : date.toISOString();
-            //released = utils.getReleaseDate(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
         } 
         var scriptElems = doc.querySelectorAll("script");
         
@@ -490,14 +482,6 @@ getStream (scripts, id, url){
         return str;
     }
 
-    setDescription(seriesElems){
-        var description = "";
-        if (seriesElems.length < 1) {return description;}
-        description = seriesElems.text.trim() +".\n";
-
-        return description;
-    }
-
     /**
      * Get the genres from the html element and pass it to get the accurate genres
      * @param {*} genreElems 
@@ -516,23 +500,6 @@ getStream (scripts, id, url){
         }
             
         return utils.setGenreFromString(genres);
-    }
-
-    addVideoToMeta(key, episodeId, name, seasonNo, episodeNo, desc, thumb, episodeLink, released, streams){
-        var video = {
-            id: episodeId,
-            name: name,
-            season: seasonNo,
-            episode: episodeNo ,
-            description: desc,
-            thumbnail: thumb,
-            episodeLink: episodeLink,
-            streams: streams
-        };
-        if (released != "") {video["released"] = released;}
-        
-        this._kanDigitalJSONObj[key]["meta"]["videos"].push(video);
-
     }
 
     addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, type){
@@ -569,10 +536,8 @@ getStream (scripts, id, url){
         utils.writeJSONToFile(this._kanDigitalJSONObj, EXPORT_FILENAME);
 
         logger.trace("writeJSON => Leaving");
-
     }
 }
-
 
 /**********************************************************
  * Module Exports

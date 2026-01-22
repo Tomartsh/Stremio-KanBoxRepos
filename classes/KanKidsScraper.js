@@ -225,7 +225,9 @@ class KanKidsScraper {
         var descVideo = "";
 
         if (doc.querySelector("li.date-local") != undefined){
-            released = utils.getReleaseDate(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
+            let tempDate = doc.querySelector("li.date-local").getAttribute("data-date-utc");
+            const date = new Date(tempDate);
+            released = isNaN(date.getTime()) ? "" : date.toISOString();
         } 
         var scriptElems = doc.querySelectorAll("script");
         

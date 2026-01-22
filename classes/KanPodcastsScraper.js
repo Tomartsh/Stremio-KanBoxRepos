@@ -285,7 +285,8 @@ class KanPodcastsScraper {
             if (dateElem) {
                 const dateUtc = dateElem.getAttribute("data-date-utc");
                 if (dateUtc) {
-                    released = utils.getReleaseDate(dateUtc);
+                    const date = new Date(dateUtc);
+                    released = isNaN(date.getTime()) ? "" : date.toISOString();
                 }
             }
 
@@ -470,10 +471,10 @@ class KanPodcastsScraper {
             
             var episodeDescription = episodeElement.querySelector("div.description").text.trim();
             var released = "";
-            var releasedTemp = ""
             if (episodeElement.querySelector("li.date-local") != undefined){
-                releasedTemp = episodeElement.querySelector("li.date-local").getAttribute("data-date-utc").trim();
-                released = utils.getReleaseDate(releasedTemp);
+                let tempDate = episodeElement.querySelector("li.date-local").getAttribute("data-date-utc").trim();
+                const date = new Date(tempDate);
+                released = isNaN(date.getTime()) ? "" : date.toISOString();
             }
             logger.debug("getpodcastEpisodeVideos => Calling streams with URL: " + episodeLink + " for episode: " + episodeTitle + " released: " + released);
             var episodeId = id + ":1:" + podcastEpisodeNo;

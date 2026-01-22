@@ -115,7 +115,9 @@ class ReshetScraper {
                         if (kalturaId == undefined){return "-1";}
                         var streams = await this.getStream(kalturaId, episodes[i]["title"]);
                         var episodeId = episodes.length - i;
-                        var released = utils.getReleaseDate(episodes[i]["air_date"]);
+                        
+                        const date = new Date(episodes[i]["air_date"]);
+                        var released = isNaN(date.getTime()) ? "" : date.toISOString();
                         
                         var video = {
                             reshetEpisodeId: episodes[i]["id"],
