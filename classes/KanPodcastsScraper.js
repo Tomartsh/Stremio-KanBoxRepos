@@ -511,12 +511,14 @@ class KanPodcastsScraper {
         
         const urlRaw = urlRawElem?.getAttribute("data-player-src")?.trim();
 
-        if (!urlRaw) {
+        let url = "";
+        try {
+            const urlObj = new URL(urlRaw);
+            url = urlObj.origin + urlObj.pathname;
+        } catch (e) {
+            logger.error("getPodcastStream => Failed to parse URL: " + urlRaw);
             return streams;
         }
-
-        const urlObj = new URL(urlRaw);
-        const url = urlObj.origin + urlObj.pathname;
 
         logger.trace(`getPodcastStreams => Podcast stream name: ${episodeName}, Description: ${description}`);
         

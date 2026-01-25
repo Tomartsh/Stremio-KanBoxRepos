@@ -6,8 +6,12 @@ config/.env
 .env
 
 #ignore output folder
-output
 output/*.*
+output
+output/stremio-kandigital.json
+output/stremio-kankids.json
+output/stremio-kanteens.json
+output/stremio-reshet.json
 
 #ignore the logs folder
 logs
@@ -16,3 +20,6 @@ logs/stremio*.*
 #ignore backup folder
 backups
 backups/*.*
+
+
+

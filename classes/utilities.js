@@ -214,6 +214,11 @@ async function writeJSONToFile(jsonObj, fileName){
     logger.debug("writeJSONToFile => handling repository files");
     const OUTPUT_DIR = path.join(__dirname, `../${SAVE_FOLDER}`); // Ensure correct relative path
 
+    const jsonFileName = `${fileName}.json`;
+    const zipFileName = `${fileName}.zip`;
+
+    const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
+    const zipFilePath = path.join(OUTPUT_DIR, zipFileName);
     // Ensure output directory exists inside the function
     if (!fs.existsSync(OUTPUT_DIR)) {
         fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -226,8 +231,6 @@ async function writeJSONToFile(jsonObj, fileName){
     };
 
     const jsonContent = JSON.stringify(jsonWithTimestamp, null, 4);
-    const jsonFileName = `${fileName}.json`;
-    const zipFileName = `${fileName}.zip`;
 
     zip.addFile(jsonFileName, Buffer.from(jsonContent, "utf8"));
 
@@ -247,9 +250,6 @@ async function writeJSONToFile(jsonObj, fileName){
         await uploadToGitHub(zipBuffer, zipFileName, `Adding ${zipFileName} ${dateStr}`);
     }
 
-    const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
-    const zipFilePath = path.join(OUTPUT_DIR, zipFileName);
-
     logger.debug("writeJSONToFile => Exiting");
 }
 
@@ -268,7 +268,8 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
     const fileSize = bufferContent.length;
 
     // Decide API based on file size or forced large flag
-    const useReleasesAPI = forceLarge || fileSize >= 1000000;
+    //const useReleasesAPI = forceLarge || fileSize >= 1000000;
+    const useReleasesAPI = forceLarge;
 
     const GITHUB_API_URL = 'https://api.github.com';
     const githubFilePath = `${SAVE_FOLDER}/${fileName}`;
@@ -546,7 +547,9 @@ function getNameFromSeriesPage(name){
         if (name.indexOf ("- סרטונים מלאים לצפייה ישירה") > 0){
             name = name.substring(0,name.indexOf("-") - 1).trim();
         }
-
+        if (name.indexOf (".כאן 11") > 0){
+            name = name.replace("כאן 11.","");
+        }
         if (name.indexOf ("239 360") > 0){
             name = name.replace("Poster 239 360","");
         }

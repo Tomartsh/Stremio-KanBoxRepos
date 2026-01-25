@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData} = require("./utilities.js");
+const {fetchData, getNameFromSeriesPage} = require("./utilities.js");
 const {
     LOG4JS_LEVEL, 
     MAX_LOG_SIZE, 
@@ -99,17 +99,18 @@ class KanDigitalScraper {
         }
 
         for (const item of items) { //iterate over series
-            const title = item.ImageAlt; // Usually the show name
+            
+            let title = item.ImageAlt; // Usually the show name
             const pageUrl = item.Url; //URL of the series episodes
             const description = item.Description;
-            const season = item.Season;
+            //const season = item.Season;
 
             //set the series URL
-            if (pageUrl == undefined) { return;} // if there is not link to the series then skip
-            if (pageUrl.includes("kan-actual")){return;} //we are skipping news item
-            if (pageUrl.includes("archive")){return;} //we are skipping archive item. Have a a separate scraper for those 
-            if (pageUrl.includes("podcasts")){return;} //we are skipping podcasts, we will deal with them later
-            if ((! pageUrl.includes("/content/kan/")) && (! pageUrl.includes("dig/digital"))) { return; }//if URL does not contain this strin git is not digital
+            if (pageUrl == undefined) { return;} // if there is no link to the series then skip
+            if (pageUrl.includes("kan-actual")){return;} //skip news item
+            if (pageUrl.includes("archive")){return;} //skip archive item. Have a a separate scraper for those 
+            if (pageUrl.includes("podcasts")){return;} //skip podcasts. Separate scraper for those
+            if ((! pageUrl.includes("/content/kan/")) && (! pageUrl.includes("dig/digital"))) { return; }//if URL does not contain this string it is not digital series
             if (pageUrl.startsWith("/")) { pageUrl = KAN_URL_ADDRESS + pageUrl; }
 
             var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
@@ -122,6 +123,16 @@ class KanDigitalScraper {
                 logger.error(`crawlVod => could not retrieve series page doc from URL ${pageUrl}. Error: ${e}`);
                 return;
             }
+            //verify there is a name to the series
+            if (title.trim() == ""){
+                logger.info("crawlVod => Title is empty. Attempting to retrieve it");
+                logger.trace("crawlVod => Attempting to retrieve from img.img-fluid");
+                if (seriesPageDoc.querySelector("img.img-fluid").getAttribute("title")){
+                    title = getNameFromSeriesPage(seriesPageDoc.querySelector("img.img-fluid").getAttribute("title"));
+                } else if (seriesPageDoc.querySelector("h2.title.h1")){
+                    title = getNameFromSeriesPage(seriesPageDoc.querySelector("h2.title.h1").text.trim());
+                }  
+            }
 
             //set series genres
             const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
@@ -129,11 +140,10 @@ class KanDigitalScraper {
             //Get the seasons number
             var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
             var videoObj = [];
-            if ((seasons != undefined) && (seasons.length> 0)){ //generate videos object with media links(streams)
+            if ((seasons != undefined) && (seasons.length > 1)){ //generate videos object with media links(streams)
                 logger.debug("getSeries => seasons " + title + " length: " + seasons.length);
                 videoObj = await this.getVideos(seasons, id);
 
-                //this.addToJsonObject(id, title, pageUrl,imgUrl,description,genres,videoObj,"series")
             } else {
                 // probably no episodes, only a single movie
                 if (! seriesPageDoc.querySelector("a.btn.with-arrow")){
@@ -145,12 +155,12 @@ class KanDigitalScraper {
             if ((videoObj == null) || (videoObj.length == 0)){
                 logger.warn(`crawlVod => could not find videos for series ${title} @ URL ${pageUrl}`);
             } else {    
+                // last minute checks before add the series
+                //check that we have a valid name for the series   
+                
                  this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series");   
             } 
         };
-
-        //start working on each series
-        //await this.getSeries();
         
         logger.trace("crawl() => Exiting");
     }
@@ -290,35 +300,36 @@ getStream (scripts, id, url){
 
             // Verify we got the essential fields
             var videosList = [];
-            if (name && episodeLink) {
-                const episodeId = `${id}:1:1`;
-                let stream = {
-                        url: episodeLink,
-                        type: "series",
-                        name: name,
-                        description: desc,
-                        released: released
-                }
 
-                videosList.push({
-                    name: name,
-                    episode: episodeId,
-                    description: desc,
-                    thumbnail: thumb,
-                    episodeLink: url,
-                    released: released,
-                    streams: [stream]
-                });
-                logger.info(`getVideo => Successfully extracted VideoObject: ${name}`);
-                return videosList;
-
-            } else {
-                logger.warn(`getVideo => Missing a required field for ${episodeLink}`);
+            if (!episodeLink){  
+                logger.warn(`getStream => Missing contentUrl in VideoObject at URL ${url}`);
                 return videosList;
             }
+
+            const episodeId = `${id}:1:1`;
+            let stream = {
+                    url: episodeLink,
+                    type: "series",
+                    name: name,
+                    description: desc,
+                    released: released
+            }
+
+            videosList.push({
+                name: name,
+                episode: episodeId,
+                description: desc,
+                thumbnail: thumb,
+                episodeLink: url,
+                released: released,
+                streams: [stream]
+            });
+            logger.info(`getStream => Successfully extracted VideoObject: ${name}`);
+            return videosList;
+
                 
         } catch (e) {
-            logger.debug("getVideo => Error processing VideoObject: " + e);
+            logger.debug("getStream => Error processing VideoObject: " + e);
             return [];
         }
     }
@@ -404,6 +415,7 @@ getStream (scripts, id, url){
                 }
             }
         } 
+
         return videosArr;     
     }
 
@@ -480,6 +492,10 @@ getStream (scripts, id, url){
         }
         str = str.trim();
         return str;
+    }
+
+    getSeriesNameFromSeriesPage(url){
+
     }
 
     /**
