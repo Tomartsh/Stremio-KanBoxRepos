@@ -13,7 +13,9 @@ const PORT = process.env.PORT || 49999; //set the port if does not exist
 const utils = require("./classes/utilities.js");
 const {fetchData} = require("./classes/utilities.js");
 const constants = require("./classes/constants.js");
-const {URL_ZIP_FILES, LOG_FILENAME, LOG4JS_LEVEL, MAX_LOG_SIZE, LOG_BACKUP_FILES} = require("./classes/constants.js");
+const {
+    LOG4JS,
+} = require("./classes/constants.js");
 
 //Scraper imports
 const KanDigitalscraper = require("./classes/KanDigitalScraper.js");
@@ -36,13 +38,13 @@ log4js.configure({
 		out: { type: "stdout" },
 		ScraperLogs: 
 		{ 
-			type: "file", 
-			filename: LOG_FILENAME, 
-			maxLogSize: MAX_LOG_SIZE,
-			backups: LOG_BACKUP_FILES, // keep five backup files
+			type: LOG4JS.TYPE, 
+			filename: LOG4JS.FILENAME, 
+			maxLogSize: LOG4JS.MAX_SIZE,
+			backups: LOG4JS.BACKUP_FILES, // keep five backup files
 		}
 	},
-	categories: { default: { appenders: ['ScraperLogs','out'], level: LOG4JS_LEVEL } },
+	categories: { default: { appenders: ['ScraperLogs','out'], level: LOG4JS.LEVEL } },
 });
 
 var logger = log4js.getLogger("main");
