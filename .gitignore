@@ -8,10 +8,18 @@ config/.env
 #ignore output folder
 output/*.*
 output
-output/stremio-kandigital.json
-output/stremio-kankids.json
-output/stremio-kanteens.json
-output/stremio-reshet.json
+
+#output files
+stremio-kandigital.json
+stremio-kandigital.zip
+stremio-kankids.json
+stremio-kankids.zip
+stremio-kanteens.json
+stremio-kanteens.zip
+stremio-reshet.json
+stremio-reshet.zip
+stremio-mako.json
+stremio-mako.zip
 
 #ignore the logs folder
 logs
