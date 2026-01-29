@@ -12,16 +12,12 @@ let seriesIterator = 1000;
 
 const log4js = require("log4js");
 const {
-    MAX_RETRIES, 
-    REQUEST_TIMEOUT,
+    LOG4JS,
     HEADERS, 
-    MAX_CONCURRENT_REQUESTS, 
-    RETRY_DELAY, 
-    LOG4JS_LEVEL,
-    MAX_LOG_SIZE, 
-    LOG_BACKUP_FILES,
     SAVE_MODE,
-    SAVE_FOLDER 
+    SAVE_FOLDER,
+    RATE_LIMITING,
+    FETCH_METHOD_CONFIG
 } = require ("./constants");
 
 log4js.configure({
@@ -31,15 +27,130 @@ log4js.configure({
         { 
             type: "file", 
             filename: "logs/Stremio_addon.log", 
-            maxLogSize: MAX_LOG_SIZE, 
-            backups: LOG_BACKUP_FILES
+            maxLogSize: LOG4JS.MAX_SIZE, 
+            backups: LOG4JS.BACKUP_FILES
         }
     },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS_LEVEL } },
+    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
 });
 
 var logger = log4js.getLogger("utillities");
 
+
+/**
+ * =============================================================================
+ * FETCH METHOD SELECTION
+ * =============================================================================
+ * 
+ * The fetchData function now supports explicit method selection:
+ * 
+ * Usage Examples:
+ * 
+ * 1. Auto method (default behavior - uses axios first, switches on errors):
+ *    const doc = await fetchData(url);
+ *    const jsonData = await fetchData(url, true);
+ * 
+ * 2. Explicit axios (useful for endpoints that block got-scraping):
+ *    const doc = await fetchData(url, false, {}, HEADERS, 'axios');
+ * 
+ * 3. Explicit got-scraping (useful for sites that need advanced scraping):
+ *    const doc = await fetchData(url, false, {}, HEADERS, 'got-scraping');
+ * 
+ * The system will still apply rate limiting and retry logic regardless of method.
+ * =============================================================================
+ */
+
+// --- Request Tracking for Rate Limiting ---
+class RequestTracker {
+    constructor() {
+        this.requestsByDomain = new Map(); // domain -> array of timestamps
+    }
+
+    getRateLimits(hostname) {
+        // Sort domains by length (longest first) to match most specific domain
+        const domains = Object.keys(RATE_LIMITING)
+            .filter(key => key !== 'DEFAULT_MIN_INTERVAL' && key !== 'DEFAULT_MAX_PER_MINUTE')
+            .sort((a, b) => b.length - a.length); // Longest first
+        
+        for (const domain of domains) {
+            if (hostname.includes(domain)) {
+                return RATE_LIMITING[domain];
+            }
+        }
+        
+        // Return defaults
+        return {
+            minInterval: RATE_LIMITING.DEFAULT_MIN_INTERVAL,
+            maxPerMinute: RATE_LIMITING.DEFAULT_MAX_PER_MINUTE
+        };
+    }
+
+    async trackAndDelay(hostname) {
+        const { minInterval, maxPerMinute } = this.getRateLimits(hostname);
+        const now = Date.now();
+        
+        if (!this.requestsByDomain.has(hostname)) {
+            this.requestsByDomain.set(hostname, []);
+        }
+        
+        const timestamps = this.requestsByDomain.get(hostname);
+        
+        // Clean old timestamps (older than 1 minute)
+        while (timestamps.length > 0 && now - timestamps[0] > 60000) {
+            timestamps.shift();
+        }
+        
+        // Check per-minute rate limit
+        if (timestamps.length >= maxPerMinute) {
+            const oldestRequest = timestamps[0];
+            const waitTime = 60000 - (now - oldestRequest) + 100;
+            logger.warn(`RequestTracker => Rate limit for ${hostname}: waiting ${waitTime}ms (${timestamps.length}/${maxPerMinute} requests)`);
+            await this.sleep(waitTime);
+        }
+        
+        // Check minimum interval
+        if (timestamps.length > 0) {
+            const lastRequest = timestamps[timestamps.length - 1];
+            const timeSinceLastRequest = now - lastRequest;
+            
+            if (timeSinceLastRequest < minInterval) {
+                const waitTime = minInterval - timeSinceLastRequest;
+                await this.sleep(waitTime);
+            }
+        }
+        
+        // Add random jitter (100-500ms) to appear more human-like
+        const jitter = Math.floor(Math.random() * 400) + 100;
+        await this.sleep(jitter);
+        
+        // Record this request
+        timestamps.push(Date.now());
+        
+        logger.trace(`RequestTracker => ${hostname}: ${timestamps.length} requests in last minute`);
+    }
+    
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    getStats(hostname) {
+        const timestamps = this.requestsByDomain.get(hostname) || [];
+        const now = Date.now();
+        const recentRequests = timestamps.filter(t => now - t < 60000);
+        const limits = this.getRateLimits(hostname);
+        
+        return {
+            requestsLastMinute: recentRequests.length,
+            totalRequests: timestamps.length,
+            maxPerMinute: limits.maxPerMinute,
+            minInterval: limits.minInterval
+        };
+    }
+}
+
+const requestTracker = new RequestTracker();
+
+// --- Throttler for Concurrent Requests ---
 class Throttler {
     constructor(limit) {
         this.limit = limit;
@@ -78,11 +189,56 @@ class Throttler {
     }
 }
 
-const throttler = new Throttler(MAX_CONCURRENT_REQUESTS);
+const throttler = new Throttler(FETCH_METHOD_CONFIG.MAX_CONCURRENT_REQUESTS);
 
 // --- Persistent State Tracker ---
 // This keeps track of which method works for which domain
 const stickyMethods = new Map(); 
+
+// --- Enhanced Header Generation ---
+function getEnhancedHeaders(url, baseHeaders = HEADERS) {
+    const hostname = new URL(url).hostname;
+    
+    // Base headers that work for most sites
+    const enhancedHeaders = {
+        ...baseHeaders,
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9,he;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+    };
+    
+    // Add domain-specific headers if needed
+    if (hostname.includes('mako.co.il')) {
+        enhancedHeaders['Referer'] = 'https://www.mako.co.il/mako-vod';
+        enhancedHeaders['Origin'] = 'https://www.mako.co.il';
+        enhancedHeaders['Accept-Language'] = 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7';
+    }
+    
+    return enhancedHeaders;
+}
+
+// --- Response Validation ---
+function validateResponse(data, url, asJson) {
+    // Check if we got HTML when expecting JSON
+    if (asJson) {
+        const bodyStr = typeof data === 'string' ? data : JSON.stringify(data);
+        
+        if (bodyStr.trim().startsWith('<!DOCTYPE') || 
+            bodyStr.trim().startsWith('<html') ||
+            bodyStr.includes('@@@page not found')) {
+            throw new Error('Received HTML page instead of JSON - possible rate limiting or block');
+        }
+    }
+    
+    return true;
+}
 
 // --- Core Request Logic ---
 
@@ -90,9 +246,9 @@ const stickyMethods = new Map();
  * Main Fetcher: Determines which method to use and handles retries
  */
 
-async function fetchWithRetries(url, asJson = false, params = {}, headers) {
+async function fetchWithRetries(url, asJson = false, params = {}, headers, preferredMethod = null) {
     logger.trace("fetchWithRetries => Entering");
-    logger.trace(`URL: ${url} \n    asJson: ${asJson} \n    Params: ${params}: \n   headers: ${headers}`);
+    logger.trace(`URL: ${url} \n    asJson: ${asJson} \n    Params: ${params}: \n   headers: ${headers} \n    preferredMethod: ${preferredMethod}`);
     
     let hostname;
     try {
@@ -102,13 +258,32 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
         return null;
     }
 
-    return throttler.schedule(async () => {
-        let currentMethod = stickyMethods.get(hostname) || 'axios';
+    // Apply rate limiting delay before making request
+    await requestTracker.trackAndDelay(hostname);
 
-        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    return throttler.schedule(async () => {
+        // Determine initial method:
+        // 1. If preferredMethod is specified, use it
+        // 2. Otherwise, use sticky method for this domain
+        // 3. Default to 'axios'
+        let currentMethod;
+        if (preferredMethod) {
+            currentMethod = preferredMethod;
+            logger.debug(`fetchWithRetries => Using explicitly requested method: ${preferredMethod}`);
+        } else {
+            currentMethod = stickyMethods.get(hostname) || 'axios';
+        }
+
+        let lastError; // Track the last error for final throw
+
+        for (let attempt = 1; attempt <= FETCH_METHOD_CONFIG.MAX_RETRIES; attempt++) {
             try {
                 logger.debug(`fetchWithRetries => [${currentMethod.toUpperCase()}] ->  ${url} try no. ${attempt}`);
                 const data = await executeRequest(currentMethod, url, asJson, params, headers);
+                
+                // Validate the response
+                validateResponse(data, url, asJson);
+                
                 // Success! Stick this method to the domain
                 if (stickyMethods.get(hostname) !== currentMethod) {
                     logger.trace(`Method "${currentMethod}" is now STICKY for ${hostname}`);
@@ -118,28 +293,75 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
                 return data;
 
             } catch (error) {
+                lastError = error;
                 const status = error.response?.status || error.statusCode;
-                logger.warn(`${currentMethod} failed (Status: ${status || 'Timeout'}): ${error.message}`);
+                const errorMsg = error.message || 'Unknown error';
+                logger.warn(`${currentMethod} failed (Status: ${status || 'Timeout'}): ${errorMsg}`);
                 
                 // If we get a 403 or 401, immediately rotate to a more powerful tool
-                if (status === 403 || status === 401 || error.message.includes('timeout')) {
-                    logger.warn(`Connection issue with ${currentMethod}. Switching to got-scraping...`);
-                    currentMethod = 'got-scraping'; 
-                    // Clear sticky so we don't keep trying a failing method
+                if (status === 403 || status === 401) {
+                    logger.warn(`Authorization issue (${status}) with ${currentMethod}.`);
+    
+                    // Check if this domain should stay with axios
+                    const shouldStayWithAxios = FETCH_METHOD_CONFIG.AXIOS_ONLY_DOMAINS.some(domain => 
+                        hostname.includes(domain)
+                    );
+                    
+                    if (shouldStayWithAxios) {
+                        logger.warn(`Keeping axios for ${hostname} (in AXIOS_ONLY list), adding long delay...`);
+                        const rateLimitDelay = 60000 * attempt; // 1min, 2min, 3min...
+                        await new Promise(r => setTimeout(r, rateLimitDelay));
+                        continue;
+                    }
+                    
+                    // For other domains, switching to got-scraping may help
+                    logger.warn(`Switching to got-scraping for ${hostname}...`);
+                    currentMethod = 'got-scraping';
                     stickyMethods.delete(hostname);
+                    
+                    const rateLimitDelay = 30000 * attempt;
+                    logger.warn(`Waiting ${rateLimitDelay}ms due to possible rate limiting...`);
+                    await new Promise(r => setTimeout(r, rateLimitDelay));
+                    continue;
                 }
 
-                if (attempt === MAX_RETRIES) {
+                if (status === 429) {
+                    logger.warn(`Rate limit (429) detected. Long delay before retry...`);
+                    const rateLimitDelay = 60000 * attempt; // 1min, 2min, 3min...
+                    await new Promise(r => setTimeout(r, rateLimitDelay));
+                    continue;
+                }
+                
+                if (errorMsg.includes('timeout') || errorMsg.includes('ETIMEDOUT')) {
+                    logger.warn(`Timeout with ${currentMethod}. Switching to got-scraping...`);
+                    currentMethod = 'got-scraping';
+                    stickyMethods.delete(hostname);
+                }
+                
+                if (errorMsg.includes('HTML page instead of JSON')) {
+                    logger.warn(`Got HTML instead of JSON - possible blocking. Switching method and adding delay...`);
+                    currentMethod = 'got-scraping';
+                    stickyMethods.delete(hostname);
+                    await new Promise(r => setTimeout(r, 5000));
+                }
+
+                if (attempt === FETCH_METHOD_CONFIG.NAX_RETRIES) {
                     logger.error(`Max retries reached for ${url}`);
                     throw error;
 
                 }
 
-                const delay = RETRY_DELAY * Math.pow(2, attempt - 1);
+                const baseDelay = FETCH_METHOD_CONFIG.RETRY_DELAY * Math.pow(2, attempt - 1);
+
+                const jitter = Math.floor(Math.random() * 1000);
+                const delay = baseDelay + jitter;
+
                 logger.debug(`Waiting ${delay}ms before next attempt...`);
                 await new Promise(r => setTimeout(r, delay));
             }
         }
+
+        throw lastError; 
 
     });
 }
@@ -147,12 +369,19 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers) {
 
 /**
  * Entry Point: Your original fetchData wrapper
+ * @param {string} url - The URL to fetch
+ * @param {boolean} asJson - Whether to parse response as JSON
+ * @param {object} params - Request parameters (for POST requests)
+ * @param {object} headers - HTTP headers
+ * @param {string|null} preferredMethod - Preferred fetch method: 'axios', 'got-scraping', or null for auto
+ * @returns {Promise} - Parsed HTML document or JSON object
  */
-async function fetchData(url, asJson = false, params = {}, headers = HEADERS) {
+async function fetchData(url, asJson = false, params = {}, headers = HEADERS, preferredMethod = null) {
     try {
         logger.trace(`fetchData => For URL: ${url}`);
+        const enhancedHeaders = getEnhancedHeaders(url, headers);
         // We pass the URL through to the retry logic
-        return await fetchWithRetries(url, asJson, params, headers);
+        return await fetchWithRetries(url, asJson, params, headers, preferredMethod);
     } catch (error) {
         logger.error(`fetchData => Failed to fetch URL ${url} :`, error.message);
         return null; 
@@ -165,25 +394,59 @@ async function fetchData(url, asJson = false, params = {}, headers = HEADERS) {
 async function executeRequest(method, url, asJson, params, headers) {
     switch (method) {
         case 'axios':
-            const axRes = await axios.get(url, { 
-                timeout: REQUEST_TIMEOUT, headers, params, 
-                responseType: asJson ? 'json' : 'text' 
-            });
+            const axiosConfig = { 
+                timeout: FETCH_METHOD_CONFIG.REQUEST_TIMEOUT, 
+                headers, 
+                params, 
+                responseType: asJson ? 'json' : 'text',
+                validateStatus: (status) => status < 500 // Don't throw on 4xx
+            };
+            
+            const axRes = await axios.get(url, axiosConfig);
+            
+            // Check for error status codes
+            if (axRes.status >= 400) {
+                const error = new Error(`HTTP ${axRes.status}`);
+                error.response = axRes;
+                error.statusCode = axRes.status;
+                throw error;
+            }
+            
             return asJson ? axRes.data : parse(axRes.data.toString());
 
         case 'got-scraping':
-            const gotRes = await gotScraping({
+            const gotConfig = {
                 url, 
                 headers, 
                 searchParams: params,
                 responseType: asJson ? 'json' : 'text',
-                timeout: { request: REQUEST_TIMEOUT },
+                timeout: { request: FETCH_METHOD_CONFIG.REQUEST_TIMEOUT },
+                throwHttpErrors: false, // Don't throw on 4xx/5xx
+                http2: true,
+                decompress: true,
+                followRedirect: true,
+                maxRedirects: 5,
                 headerGeneratorOptions: { 
-                    browsers: [{ name: 'chrome' }, { name: 'firefox' }],
-                    devices: ['desktop'] ,
-                    strategies: ['mobile', 'desktop']
+                    browsers: [
+                        { name: 'chrome', minVersion: 120 }, 
+                        { name: 'firefox', minVersion: 120 }
+                    ],
+                    devices: ['desktop'],
+                    locales: ['en-US', 'he-IL'],
+                    operatingSystems: ['windows', 'macos']
                 }
-            });
+            };
+            
+            const gotRes = await gotScraping(gotConfig);
+            
+            // Check for error status codes
+            if (gotRes.statusCode >= 400) {
+                const error = new Error(`HTTP ${gotRes.statusCode}`);
+                error.statusCode = gotRes.statusCode;
+                error.response = { status: gotRes.statusCode };
+                throw error;
+            }
+            
             return asJson ? gotRes.body : parse(gotRes.body.toString());
 
         default:
@@ -197,10 +460,83 @@ async function executeRequest(method, url, asJson, params, headers) {
 //
 //  Utility functions
 //+===================================================================================
+
+/**
+ * Sleep/delay utility
+ */
+function sleeperTimer(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/*
 function padWithLeadingZeros(num, totalLength) {
     return String(num).padStart(totalLength, '0');
 }
+*/
 
+/**
+ * Write JSON to file and create ZIP with date
+ */
+async function writeJSONToFile(jsonObj, fileName, uploadToGitHub) {
+    logger.debug("writeJSONToFile => Entering");
+    
+    if (!jsonObj) { 
+        logger.warn("writeJSONToFile => No JSON object provided");
+        return;
+    }
+
+    const dateStr = getDateString('YYYYmmdd_HHmm');
+
+    const zip = new AdmZip();
+
+    logger.debug("writeJSONToFile => handling repository files");
+    const OUTPUT_DIR = path.join(__dirname, `../${SAVE_FOLDER}`);
+
+    const jsonFileName = `${fileName}.json`;
+    const zipFileName = `${fileName}.zip`;
+
+    const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
+    const zipFilePath = path.join(OUTPUT_DIR, zipFileName);
+    
+    // Ensure output directory exists
+    if (!fs.existsSync(OUTPUT_DIR)) {
+        fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    }
+
+    // Add timestamp at the top level
+    const jsonWithTimestamp = {
+        timestamp: new Date().toISOString(),
+        data: jsonObj
+    };
+
+    const jsonContent = JSON.stringify(jsonWithTimestamp, null, 4);
+
+    zip.addFile(jsonFileName, Buffer.from(jsonContent, "utf8"));
+
+    if (SAVE_MODE === "local" || SAVE_MODE === "both") {
+        fs.writeFileSync(jsonFilePath, jsonContent);
+        
+        // Use writeZip() which handles the buffer internally for local saving
+        zip.writeZip(zipFilePath); 
+        logger.info(`writeJSONToFile => Saved locally .zip file: ${zipFileName}`);
+    }
+
+    if (SAVE_MODE === "github" || SAVE_MODE === "both") {
+        // Convert the populated zip object to a Buffer
+        const zipBuffer = zip.toBuffer(); 
+        logger.debug(`writeJSONToFile => ZIP Buffer size: ${zipBuffer.length} bytes`);
+
+        if (typeof uploadToGitHub === 'function') {
+            await uploadToGitHub(zipBuffer, zipFileName, `Adding ${zipFileName} ${dateStr}`);
+        } else {
+            logger.warn("writeJSONToFile => uploadToGitHub function not provided, skipping GitHub upload");
+        }
+    }
+
+    logger.debug("writeJSONToFile => Exiting");
+}
+
+/*
 async function writeJSONToFile(jsonObj, fileName){
     logger.debug("writeJSONToFile => Entering");
     //if (jsonObj == undefined){ return;}
@@ -252,7 +588,7 @@ async function writeJSONToFile(jsonObj, fileName){
 
     logger.debug("writeJSONToFile => Exiting");
 }
-
+*/
 async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge = false) {
     logger.trace("uploadToGitHub => Entering");
     
@@ -387,10 +723,35 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
     logger.trace("uploadToGitHub => Exiting");
 }
 
+
+/*
 function getCurrentDateStr(){
     var currDate = new Date();
     var dateStr = currDate.getDate() + "-" + (currDate.getMonth() + 1).toString().padStart(2,'0') + "-" + currDate.getFullYear() + "_" + currDate.getHours() + ":" + currDate.getMinutes() + ":" + currDate.getSeconds();
     return dateStr;
+}
+*/
+
+/**
+ * Get formatted date string
+ */
+function getDateString(format = 'YYYYmmdd_HHmm') {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    
+    if (format === 'YYYYmmdd') {
+        return `${year}${month}${day}`;
+    } else if (format === 'YYYYmmdd_HHmm') {
+        return `${year}${month}${day}_${hours}${minutes}`;
+    } else if (format === 'YYYYmmdd_HH_mm') {
+        return `${year}${month}${day}_${hours}_${minutes}`;
+    }
+    
+    return `${year}${month}${day}_${hours}${minutes}`;
 }
 
 function getImageFromUrl(url, subType){
@@ -697,17 +1058,13 @@ function generateSeriesId(link, subPrefix, seriesId = "0"){
     return retId;
 }
 
-async function sleeperTimer(delay = RETRY_DELAY) {
-    logger.info("sleeperTimer => Start");
-    await sleep(delay); // Sleep for 2 seconds
-    console.log(`sleeperTimer => ${delay} ms`);
+function sleeperTimer(delay = FETCH_METHOD_CONFIG.RETRY_DELAY) {
+    return new Promise(resolve => setTimeout(resolve, delay));
 }
 
 module.exports = {
-    padWithLeadingZeros, 
     fetchData, 
     writeJSONToFile, 
-    getCurrentDateStr, 
     getImageFromUrl, 
     setGenreFromString, 
     getNameFromSeriesPage, 
