@@ -1,9 +1,7 @@
 const utils = require("./utilities.js");
 const {fetchData} = require("./utilities.js");
 const {
-    MAX_LOG_SIZE, 
-    LOG4JS_LEVEL, 
-    LOG_BACKUP_FILES, 
+    LOG4JS,
     URLS_ASSETS_BASE,
     KNESSET_URL_TV
 } = require("./constants.js");
@@ -16,13 +14,13 @@ log4js.configure({
         out: { type: "stdout" },
         Stremio: 
         { 
-            type: "file", 
-            filename: "logs/Stremio_addon.log", 
-            maxLogSize: MAX_LOG_SIZE, 
-            backups: LOG_BACKUP_FILES
+            type: LOG4JS.TYPE, 
+            filename: LOG4JS.FILENAME, 
+            maxLogSize: LOG4JS.MAX_SIZE, 
+            backups: LOG4JS.BACKUP_FILES, 
         }
     },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS_LEVEL } },
+    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
 });
 
 var logger = log4js.getLogger("LiveTV");
