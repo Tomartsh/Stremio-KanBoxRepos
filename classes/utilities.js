@@ -333,9 +333,18 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
                 }
                 
                 if (errorMsg.includes('timeout') || errorMsg.includes('ETIMEDOUT')) {
-                    logger.warn(`Timeout with ${currentMethod}. Switching to got-scraping...`);
-                    currentMethod = 'got-scraping';
-                    stickyMethods.delete(hostname);
+                    // Check if this domain should stay with axios
+                    const shouldStayWithAxios = FETCH_METHOD_CONFIG.AXIOS_ONLY_DOMAINS.some(domain => 
+                        hostname.includes(domain)
+                    );
+                    
+                    if (!shouldStayWithAxios) {
+                        logger.warn(`Timeout with ${currentMethod}. Switching to got-scraping...`);
+                        currentMethod = 'got-scraping';
+                        stickyMethods.delete(hostname);
+                    } else {
+                        logger.warn(`Timeout with ${currentMethod} for ${hostname} (AXIOS_ONLY domain). Will retry with axios...`);
+                    }
                 }
                 
                 if (errorMsg.includes('HTML page instead of JSON')) {
@@ -477,7 +486,7 @@ function padWithLeadingZeros(num, totalLength) {
 /**
  * Write JSON to file and create ZIP with date
  */
-async function writeJSONToFile(jsonObj, fileName, uploadToGitHub) {
+async function writeJSONToFile(jsonObj, fileName) {
     logger.debug("writeJSONToFile => Entering");
     
     if (!jsonObj) { 
@@ -512,12 +521,11 @@ async function writeJSONToFile(jsonObj, fileName, uploadToGitHub) {
     const jsonContent = JSON.stringify(jsonWithTimestamp, null, 4);
 
     zip.addFile(jsonFileName, Buffer.from(jsonContent, "utf8"));
+    zip.writeZip(zipFilePath); 
 
     if (SAVE_MODE === "local" || SAVE_MODE === "both") {
         fs.writeFileSync(jsonFilePath, jsonContent);
-        
-        // Use writeZip() which handles the buffer internally for local saving
-        zip.writeZip(zipFilePath); 
+        zip.writeZip(zipFilePath);
         logger.info(`writeJSONToFile => Saved locally .zip file: ${zipFileName}`);
     }
 
@@ -525,70 +533,12 @@ async function writeJSONToFile(jsonObj, fileName, uploadToGitHub) {
         // Convert the populated zip object to a Buffer
         const zipBuffer = zip.toBuffer(); 
         logger.debug(`writeJSONToFile => ZIP Buffer size: ${zipBuffer.length} bytes`);
-
-        if (typeof uploadToGitHub === 'function') {
-            await uploadToGitHub(zipBuffer, zipFileName, `Adding ${zipFileName} ${dateStr}`);
-        } else {
-            logger.warn("writeJSONToFile => uploadToGitHub function not provided, skipping GitHub upload");
-        }
-    }
-
-    logger.debug("writeJSONToFile => Exiting");
-}
-
-/*
-async function writeJSONToFile(jsonObj, fileName){
-    logger.debug("writeJSONToFile => Entering");
-    //if (jsonObj == undefined){ return;}
-    if (!jsonObj){ return;}
-
-    var dateStr = getCurrentDateStr();
-    dateStr = dateStr.split(":").join("_");
-
-    const zip = new AdmZip()
-
-    logger.debug("writeJSONToFile => handling repository files");
-    const OUTPUT_DIR = path.join(__dirname, `../${SAVE_FOLDER}`); // Ensure correct relative path
-
-    const jsonFileName = `${fileName}.json`;
-    const zipFileName = `${fileName}.zip`;
-
-    const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
-    const zipFilePath = path.join(OUTPUT_DIR, zipFileName);
-    // Ensure output directory exists inside the function
-    if (!fs.existsSync(OUTPUT_DIR)) {
-        fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    }
-
-    // Add timestamp at the top level
-    const jsonWithTimestamp = {
-        timestamp: new Date().toISOString(),
-        data: jsonObj
-    };
-
-    const jsonContent = JSON.stringify(jsonWithTimestamp, null, 4);
-
-    zip.addFile(jsonFileName, Buffer.from(jsonContent, "utf8"));
-
-    if (SAVE_MODE === "local" || SAVE_MODE === "both") {
-        fs.writeFileSync(jsonFilePath, jsonContent);
-        
-        // Use writeZip() which handles the buffer internally for local saving
-        zip.writeZip(zipFilePath); 
-        logger.debug(`writeJSONToFile => Saved locally .zip file: ${zipFileName}`);
-    }
-
-    if (SAVE_MODE === "github" || SAVE_MODE === "both") {
-        // 3. Convert the populated zip object to a Buffer
-        const zipBuffer = zip.toBuffer(); 
-        logger.debug(`ZIP Buffer size: ${zipBuffer.length} bytes`); // Log this to verify!
-
         await uploadToGitHub(zipBuffer, zipFileName, `Adding ${zipFileName} ${dateStr}`);
     }
 
     logger.debug("writeJSONToFile => Exiting");
 }
-*/
+
 async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge = false) {
     logger.trace("uploadToGitHub => Entering");
     
@@ -722,15 +672,6 @@ async function uploadToGitHub(fileContent, fileName, commitMessage, forceLarge =
 
     logger.trace("uploadToGitHub => Exiting");
 }
-
-
-/*
-function getCurrentDateStr(){
-    var currDate = new Date();
-    var dateStr = currDate.getDate() + "-" + (currDate.getMonth() + 1).toString().padStart(2,'0') + "-" + currDate.getFullYear() + "_" + currDate.getHours() + ":" + currDate.getMinutes() + ":" + currDate.getSeconds();
-    return dateStr;
-}
-*/
 
 /**
  * Get formatted date string
