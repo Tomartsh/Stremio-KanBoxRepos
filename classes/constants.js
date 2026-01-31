@@ -10,14 +10,14 @@ module.exports = {
         // NOTE: More specific domains should come first (mass.mako.co.il before mako.co.il)
         'mass.mako.co.il': {
             minInterval: 500,              // 0.5 second between mass.mako requests (entitlement service)
-            maxPerMinute: 120                // 120 requests per minute (very conservative)
+            maxPerMinute: 200             // 200 requests per minute (very conservative)
         },
         'mako.co.il': {
-            minInterval: 50,              // 0.05 seconds between Mako requests
-            maxPerMinute: 180                // 180 Mako requests per minute
+            minInterval: 10,              // 0.01 seconds between Mako requests
+            maxPerMinute: 250                // 250 Mako requests per minute
         },
         'kan.org.il': {
-            minInterval: 50,              // 0.05 seconds between Kan requests
+            minInterval: 10,              // 0.01 seconds between Kan requests
             maxPerMinute: 250                // 250 Kan requests per minute
         },
         '13tv.co.il': {
@@ -31,7 +31,8 @@ module.exports = {
         // Domains that should NEVER switch from axios to got-scraping
         // (got-scraping gets blocked harder on these)
         AXIOS_ONLY_DOMAINS: [
-            'mass.mako.co.il'
+            'mass.mako.co.il',
+            'mako.co.il'  // Mako works better with axios
         ],
         
         // Domains that benefit from switching to got-scraping on errors
@@ -40,7 +41,7 @@ module.exports = {
             'kankids.org.il'
         ],
         RETRY_DELAY: 15000,//default delay between requests
-        REQUEST_TIMEOUT: 7000,
+        REQUEST_TIMEOUT: 30000,
         MAX_RETRIES: 5,  
         MAX_CONCURRENT_REQUESTS: 2
     },
