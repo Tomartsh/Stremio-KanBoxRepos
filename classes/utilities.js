@@ -521,7 +521,6 @@ async function writeJSONToFile(jsonObj, fileName) {
     const jsonContent = JSON.stringify(jsonWithTimestamp, null, 4);
 
     zip.addFile(jsonFileName, Buffer.from(jsonContent, "utf8"));
-    zip.writeZip(zipFilePath); 
 
     if (SAVE_MODE === "local" || SAVE_MODE === "both") {
         fs.writeFileSync(jsonFilePath, jsonContent);
