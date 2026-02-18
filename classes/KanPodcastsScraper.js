@@ -1,19 +1,11 @@
 const utils = require("./utilities.js");
 const {fetchData} = require("./utilities.js");
 const {
-    LOG4JS_LEVEL, 
-    MAX_LOG_SIZE, 
-    LOG_BACKUP_FILES,
-    LOG_FILENAME,
-    KAN_BASE_MOB_API,
-    KAN_PODCAST_CATEGORIES,
-    KAN_BASE_URL
+    LOG4JS,
+    PODCASTS,
+    KAN_BASE_URL,
+    SCRAPER_CONFIG
 } = require("./constants.js");
-const SUB_PREFIX = "podcasts";
-
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
-const KAN_WEBSITE_API_PAGE = "https://www.kan.org.il/api/v1/Content/Page";
-
 
 const log4js = require("log4js");
 
@@ -22,13 +14,13 @@ log4js.configure({
         out: { type: "stdout" },
         Stremio: 
         { 
-            type: "file", 
-            filename: LOG_FILENAME, 
-            maxLogSize: MAX_LOG_SIZE, 
-            backups: LOG_BACKUP_FILES, 
+            type: LOG4JS.TYPE, 
+            filename: LOG4JS.FILENAME, 
+            maxLogSize: LOG4JS.MAX_SIZE, 
+            backups: LOG4JS.BACKUP_FILES, 
         }
     },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS_LEVEL } },
+    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
 });
 
 const EXPORT_FILENAME = "stremio-kanpodcasts";
@@ -38,98 +30,251 @@ class KanPodcastsScraper {
 
     constructor() {
         this._kanPodcastsJSONObj = {};
-        this.seriesIdIterator = 10000;
         this.isRunning = false;
+
+        // Get scraper configuration
+        const scraperName = 'KanPodcastsScraper';
+        const config = SCRAPER_CONFIG[scraperName] || {};
+        this.config = {
+            parallelFetching: config.parallelFetching ?? SCRAPER_CONFIG.DEFAULT_PARALLEL_FETCHING,
+            batchSize: config.batchSize ?? SCRAPER_CONFIG.DEFAULT_BATCH_SIZE,
+            delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
+        };
+
+        logger.info(`KanPodcastsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
+    }
+
+    /**
+     * Helper method to process items in batches with detailed logging
+     * @param {Array} items - Array of items to process
+     * @param {Function} processor - Async function to process each item
+     * @param {String} itemType - Description of item type for logging (e.g., "series", "episodes")
+     * @returns {Promise<Array>} - Results from all processed items
+     */
+    async processBatch(items, processor, itemType = "items") {
+        if (!this.config.parallelFetching) {
+            // Sequential processing (original behavior)
+            logger.info(`[${itemType}] Processing ${items.length} ${itemType} sequentially`);
+            const results = [];
+            for (let i = 0; i < items.length; i++) {
+                const startTime = Date.now();
+                logger.debug(`[${itemType}] Processing ${i + 1}/${items.length}`);
+                try {
+                    const result = await processor(items[i], i);
+                    const duration = Date.now() - startTime;
+                    logger.debug(`[${itemType}] Completed ${i + 1}/${items.length} in ${duration}ms`);
+                    results.push(result);
+                } catch (error) {
+                    logger.error(`[${itemType}] Failed ${i + 1}/${items.length}: ${error.message}`);
+                    results.push(null);
+                }
+            }
+            return results;
+        }
+
+        // Parallel batch processing
+        const { batchSize, delayBetweenBatches } = this.config;
+        const totalBatches = Math.ceil(items.length / batchSize);
+        logger.info(`[${itemType}] Processing ${items.length} ${itemType} in ${totalBatches} batches (${batchSize} per batch)`);
+
+        const allResults = [];
+
+        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            const batchStart = batchIndex * batchSize;
+            const batchEnd = Math.min(batchStart + batchSize, items.length);
+            const batch = items.slice(batchStart, batchEnd);
+
+            const batchNum = batchIndex + 1;
+            const batchStartTime = Date.now();
+            logger.info(`[${itemType}] Starting batch ${batchNum}/${totalBatches} (${itemType} ${batchStart + 1}-${batchEnd} of ${items.length})`);
+
+            // Process batch in parallel
+            const batchPromises = batch.map(async (item, indexInBatch) => {
+                const globalIndex = batchStart + indexInBatch;
+                const itemStartTime = Date.now();
+                try {
+                    const result = await processor(item, globalIndex);
+                    const itemDuration = Date.now() - itemStartTime;
+                    logger.debug(`[${itemType}] ✓ Item ${globalIndex + 1}/${items.length} completed in ${itemDuration}ms`);
+                    return { success: true, result, index: globalIndex };
+                } catch (error) {
+                    const itemDuration = Date.now() - itemStartTime;
+                    logger.error(`[${itemType}] ✗ Item ${globalIndex + 1}/${items.length} failed after ${itemDuration}ms: ${error.message}`);
+                    return { success: false, error, index: globalIndex };
+                }
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            const batchDuration = Date.now() - batchStartTime;
+            const successCount = batchResults.filter(r => r.success).length;
+            const failCount = batchResults.length - successCount;
+
+            logger.info(`[${itemType}] Batch ${batchNum}/${totalBatches} completed: ${successCount}/${batch.length} successful, ${failCount} failed in ${batchDuration}ms`);
+
+            allResults.push(...batchResults.map(r => r.result));
+
+            // Delay between batches to avoid rate limiting (except after last batch)
+            if (batchIndex < totalBatches - 1 && delayBetweenBatches > 0) {
+                logger.debug(`[${itemType}] Waiting ${delayBetweenBatches}ms before next batch...`);
+                await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+            }
+        }
+
+        const successfulResults = allResults.filter(r => r !== null && r !== undefined);
+        logger.info(`[${itemType}] All batches completed: ${successfulResults.length}/${items.length} total successful`);
+
+        return allResults;
     }
 
     async crawl(isDoWriteFile = false){
-        logger.info("Started Crawling");
-        this.isRunning = true;
-        await this.crawlPodcasts();
-        logger.info("Done Crawling");
-        
-        if (isDoWriteFile){
-            logger.info("crawl => writing JSON file");
-            this.writeJSON();
-        }
-        this.isRunning = false;
-    }
+    logger.info("Started Crawling");
+    this.isRunning = true;
+    
+    // Crawl regular podcasts
+    await this.crawlPodcasts(PODCASTS.KAN_CATEGORIES, "p", "Podcasts");
 
-    /** 
+    // Crawl kids podcasts
+    //await this.crawlPodcasts(PODCASTS.KAN_CHILDREN_CATEGORIES, "h", "Podcasts");
+    
+    logger.info("Done Crawling");
+    
+    if (isDoWriteFile){
+        logger.info("crawl => writing JSON file");
+        this.writeJSON();
+    }
+    this.isRunning = false;
+}
+
+
+    /**
      * Main method:
      * 1. Fetch all podcast series from mobile JSON API (paged).
      * 2. For each series, fetch its episodes (JSON, same API family).
      * 3. Build Stremio‑ready structure in memory.
+     *
+     * @param {string} categoryId - The category ID to fetch (regular or kids)
+     * @param {string} subType - The subtype identifier ("p" for regular, "h" for kids)
+     * @param {string} type - The content type (usually "series")
      */
-    async crawlPodcasts(){
-        logger.trace("crawlPodcasts => Entering");
-        logger.debug("crawlPodcasts => Fetching podcast series list...");
-        
+    async crawlPodcasts(categoryId, subType, type){
+        logger.trace(`crawlPodcasts => Entering (category: ${categoryId}, subType: ${subType})`);
+        logger.debug(`crawlPodcasts => Fetching podcast series list for category ${categoryId}...`);
+
         let seriesList;
 
         try {
-            
-            seriesList = await this.getAllSeries(KAN_PODCAST_CATEGORIES);
+            seriesList = await this.getAllSeries(categoryId);
             logger.debug(`crawlPodcasts => Found ${seriesList.length} series.`);
         } catch (error) {
-            logger.error("crawlPodcasts => Error cannot get series list:", error);
+            logger.error(`crawlPodcasts => Error cannot get series list for category ${categoryId}:`, error);
             return;
         }
 
         if (!Array.isArray(seriesList) || seriesList.length === 0) {
-            logger.warn("crawlPodcasts => No series returned from mobile API");
+            logger.warn(`crawlPodcasts => No series returned from mobile API for category ${categoryId}`);
             return;
         }
 
-        try {
-            for (const series of seriesList) {
-                const pageUrl = series.link?.href?.replace('?app=true', '') || '';
-                // Exclude Kan 88 podcasts or invalid entries
-                if (!series.id || pageUrl.includes("kan88")) {
-                    continue; 
-                }
+        // Filter out invalid series before processing
+        const validSeriesList = seriesList.filter(series => {
+            const pageUrl = series.link?.href?.replace('?app=true', '') || '';
+            return series.id && !pageUrl.includes("kan88");
+        });
 
-                // Metadata extraction from the API response
-                const programId = series.id;
-                const title = series.title;
-                const description = series.description || "";
-                // Generate a unique ID for Stremio (e.g., podcasts_4451)
-                const stremioId = utils.generateSeriesId("", SUB_PREFIX, programId);
+        logger.info(`crawlPodcasts => Processing ${validSeriesList.length} valid series (filtered ${seriesList.length - validSeriesList.length})`);
 
-                // Extract Image (API structure: media_group -> media_item)
-                const podcastImageUrl = series.media_group?.[0]?.media_item?.[0]?.src || "";
+        // Process series using batch processor
+        await this.processBatch(
+            validSeriesList,
+            async (series) => {
+                return await this.processOneSeries(series, subType, type);
+            },
+            `podcast-series (${subType})`
+        );
 
-                logger.debug(`crawlPodcasts => Processing: ${title} (ID: ${programId})`);
-
-                //const episodes = await this.getEpisodes(programId, pageUrl);
-                const episodes = await this.getpodcastEpisodeVideos(pageUrl, programId);
-
-                if (episodes.length > 0) {
-                    logger.debug(`crawlPodcasts => Found ${episodes.length} episodes for ${title}`);
-                    this.addToJsonObject(stremioId, title, pageUrl, podcastImageUrl, description, episodes, [], "p", "series");
-                }
-
-            }
-        } catch (error) {
-            logger.error("crawlPodcasts => Error fetching series list:", error);
-            return;
-        }   
+        logger.trace(`crawlPodcasts => Exiting (category: ${categoryId})`);
     }
 
     /**
-     * Replicates GetRadioSeriesList logic: fetches all series entries.
-     * Uses chunks of 200 as seen in the Python code.
+     * Process a single podcast series (extracted from crawlPodcasts for batch processing)
      */
+    async processOneSeries(series, subType, type) {
+        const pageUrl = series.link?.href?.replace('?app=true', '') || '';
+        const programId = series.id;
+        const title = series.title;
+        const description = series.description || "";
+
+        // Generate numerical series ID using the utility function
+        const stremioId = utils.generateSeriesId(pageUrl, PODCASTS.SUBPREFIX, "0");
+        const podcastImageUrl = series.media_group?.[0]?.media_item?.[0]?.src || "";
+
+        logger.debug(`processOneSeries => Processing: ${title} (OriginalID: ${programId}, StremioID: ${stremioId})`);
+
+        try {
+            const episodes = await this.getEpisodes(programId, pageUrl);
+
+            if (episodes.length > 0) {
+                logger.debug(`processOneSeries => Found ${episodes.length} episodes for ${title}`);
+
+                // Convert episodes to videos format expected by Stremio
+                // Episode numbering: newest episode = highest number
+                // Streams are empty - resolved on-demand by the addon
+                const videosList = episodes.map((ep, index) => {
+                    const episodeNo = episodes.length - index;
+                    const episodeId = `${stremioId}:${episodeNo}`;
+
+                    return {
+                        id: episodeId,
+                        title: ep.title,
+                        overview: ep.description,
+                        thumbnail: ep.thumbnail,
+                        released: ep.released,
+                        episodeLink: ep.episodeLink,
+                        streams: [] // Resolved on-demand by the addon
+                    };
+                });
+
+                this.addToJsonObject(
+                    stremioId,
+                    title,
+                    pageUrl,
+                    podcastImageUrl,
+                    description,
+                    [],
+                    videosList,
+                    subType,
+                    type
+                );
+
+                return { stremioId, title, episodeCount: episodes.length };
+            } else {
+                logger.warn(`processOneSeries => No episodes found for ${title}`);
+                return null;
+            }
+        } catch (error) {
+            logger.error(`processOneSeries => Error processing ${title}:`, error.message);
+            return null;
+        }
+    }
+
+    /**
+    * Replicates GetRadioSeriesList logic: fetches all series entries.
+    * Uses chunks of 200 as seen in the Python code.
+    */
     async getAllSeries(categoryId) {
         let allEntries = [];
         let from = 1;
-        let pageCounter = 0;
         let hasMore = true;
+        const chunkSize = 200;
+
+        logger.info(`getAllSeries => Starting fetch for category ${categoryId}`);
 
         while (hasMore) {
-            const response = await fetchData(KAN_BASE_MOB_API, true, 
+            logger.debug(`getAllSeries => Fetching from=${from}`);
+            
+            const response = await fetchData(PODCASTS.BASE_MOB_API, true, 
                 { id: categoryId, from: from },
-               { 'User-Agent': USER_AGENT }
+                { 'User-Agent': PODCASTS.USER_AGENT }
             );
 
             if (!response) {
@@ -140,22 +285,36 @@ class KanPodcastsScraper {
             const entries = response.entry || [];
 
             if (!Array.isArray(entries) || entries.length === 0) {
+                logger.debug("getAllSeries => No more entries, stopping");
                 hasMore = false;
                 break;
             }
 
-            allEntries = allEntries.concat(entries);
+            logger.debug(`getAllSeries => Got ${entries.length} entries in this batch`);
 
-            if (entries.length >= 200) {
-                from += 200;
-            } else {
+            // Filter out duplicates based on ID before adding
+            const newEntries = entries.filter(entry => 
+                !allEntries.some(existing => existing.id === entry.id)
+            );
+
+            logger.debug(`getAllSeries => ${newEntries.length} new unique entries (filtered ${entries.length - newEntries.length} duplicates)`);
+
+            allEntries = allEntries.concat(newEntries);
+
+            // Stop if we got fewer entries than chunk size (last page)
+            if (entries.length < chunkSize) {
+                logger.debug(`getAllSeries => Last page reached (got ${entries.length} < ${chunkSize})`);
                 hasMore = false;
+            } else {
+                from += chunkSize;
             }
         }
-        logger.info(`getAllSeries => Accumulated ${allEntries.length} series entries`);
+
+        logger.info(`getAllSeries => Accumulated ${allEntries.length} unique series entries for category ${categoryId}`);
         return allEntries;
     }
 
+    
     /**
      * getEpisodes: Scrape HTML page with pagination support
      */
@@ -231,6 +390,8 @@ class KanPodcastsScraper {
 
     /**
      * Parse a single episode card element
+     * NOTE: Stream URLs are NOT fetched during scraping to avoid Cloudflare rate limiting.
+     * The episodeLink is stored and streams are resolved on-demand when user plays.
      */
     async parseEpisodeElement(episodeElem, programId) {
         logger.trace(`parseEpisodeElement => Parsing episode element`);
@@ -255,29 +416,20 @@ class KanPodcastsScraper {
             }
 
             // Extract title
-            let episodeTitle = "Unknown";
             const titleElem = episodeElem.querySelector("h2.card-title");
-            if (titleElem) {
-                episodeTitle = titleElem.text.trim();
-                episodeTitle = episodeTitle.replace(/^פרק \d+:\s*/, '').trim();
-            }
+            const episodeTitle = titleElem
+                ? titleElem.text.trim().replace(/^פרק \d+:\s*/, '').trim()
+                : "Unknown";
 
             // Extract image
-            let episodeImgUrl = "";
             const imgElem = episodeElem.querySelector("img.img-full");
-            if (imgElem) {
-                const srcUrl = imgElem.getAttribute("src");
-                if (srcUrl) {
-                    episodeImgUrl = utils.getImageFromUrl(srcUrl, "p");
-                }
-            }
+            const episodeImgUrl = imgElem
+                ? utils.getImageFromUrl(imgElem.getAttribute("src"), "p")
+                : "";
 
             // Extract description
-            let episodeDescription = "";
             const descElem = episodeElem.querySelector("div.description");
-            if (descElem) {
-                episodeDescription = descElem.text.trim();
-            }
+            const episodeDescription = descElem ? descElem.text.trim() : "";
 
             // Extract release date
             let released = "";
@@ -290,274 +442,24 @@ class KanPodcastsScraper {
                 }
             }
 
-            // STEP: Fetch episode page to get stream URL
-            let streamUrl = "";
-            try {
-                logger.trace(`parseEpisodeElement => Fetching episode page: ${episodeLink}`);
-                const episodePageDoc = await fetchData(episodeLink, false);
+            // Store episodeLink for on-demand stream resolution (no fetch needed here)
+            logger.debug(`parseEpisodeElement => ✓ ${episodeTitle} (stream on-demand from: ${episodeLink})`);
 
-                if (episodePageDoc) {
-                    // Look for figure with data-player-src
-                    const figureElem = episodePageDoc.querySelector("figure[data-player-src]");
-                    if (figureElem) {
-                        streamUrl = figureElem.getAttribute("data-player-src");
-                        if (streamUrl && streamUrl.includes("?")) {
-                            streamUrl = streamUrl.substring(0, streamUrl.indexOf("?"));
-                        }
-                    }
-
-                    logger.debug(`parseEpisodeElement => Found stream: ${streamUrl.substring(0, 50)}...`);
-                }
-            } catch (error) {
-                logger.warn(`parseEpisodeElement => Could not fetch stream from episode page:`, error.message);
-            }
-
-            if (!streamUrl) {
-                logger.warn(`parseEpisodeElement => No stream URL found for: ${episodeTitle}`);
-                return null;
-            }
-
-            const episode = {
-                id: `${programId}_${episodeTitle.replace(/\s+/g, '_')}`,
+            return {
                 title: episodeTitle,
                 description: episodeDescription,
                 thumbnail: episodeImgUrl,
                 released: released,
-                streamUrl: streamUrl
+                episodeLink: episodeLink,
+                streamUrl: "" // Resolved on-demand by the addon
             };
-
-            return episode;
 
         } catch (error) {
             logger.error(`parseEpisodeElement => Error:`, error.message);
             return null;
         }
     }
-
-    async getpodcastEpisodeVideos(podcastSeriesLink, id){
-        logger.trace("getpodcastEpisodeVideos => Entering");
-        
-        var podcastSeriesPageDoc = await fetchData(podcastSeriesLink); //get the series episodes 
-        if (podcastSeriesPageDoc == undefined){
-            logger.error("getpodcastEpisodeVideos => No podcast series page found for URL: " + podcastSeriesLink);
-            return;
-        }
-        var lastPageNo = '';
-
-        if (podcastSeriesPageDoc.querySelector('li[class*="pagination-page__item"][title*="Last page"]') != null){
-            lastPageNo = podcastSeriesPageDoc.querySelector('li[class*="pagination-page__item"][title*="Last page"]').getAttribute('data-num');
-            logger.trace("getpodcastEpisodeVideos => URL: " + podcastSeriesLink + ` has ${lastPageNo} pages`);
-        } else {
-            lastPageNo = 1;
-            logger.trace("getpodcastEpisodeVideos => URL: " + podcastSeriesLink + " has only 1 page");
-        }
-
-        logger.debug("getpodcastEpisodeVideos => podcast ID: " + id + " number of pages: " + lastPageNo);
-        var podcastEpisodes = []; //list of podcast episodes
-        if ((lastPageNo) && (parseInt(lastPageNo) >= 0) ){
-            var intLastPageNo = parseInt(lastPageNo);
-            for (var i = 0 ; i < intLastPageNo ; i++){
-                if (i == 0){
-                    var podcastEpisodesToCheck = podcastSeriesPageDoc.querySelectorAll("div.card.card-row");
-                    for (var episodeChecked of podcastEpisodesToCheck){
-                        var hrefObj = episodeChecked.querySelector("a.card-body")
-                        var episodeLink = hrefObj.getAttribute("href");
-                        logger.debug("getpodcastEpisodeVideos => episodeLink is: " + episodeLink);
-                        if (episodeLink.startsWith("/")){
-                            episodeLink = KAN_BASE_URL + episodeLink;
-                        }
-                        var docToCheck = await fetchData(episodeLink);//check if there is an episode on the oher side or more episodes
-                        var card;
-                        if (docToCheck.querySelector("h2.title") != undefined){
-                            card = docToCheck.querySelector("h2.title");
-                        } else {
-                            logger.error("getpodcastEpisodeVideos => No docToCheck for URL: " + episodeLink);
-                        }
-                        
-                        //var card = docToCheck.querySelector("h2.title");
-                        if (card != undefined){ //this is an episode so let's get the  stream while we have the data
-                            var streams = this.getPodcastStream(docToCheck);
-                            podcastEpisodes.push({
-                                episode: episodeChecked,
-                                stream: streams
-                            });
-                        } else {
-                            //var subPageHref = podcastEpisodesToCheck.querySelector("a.card-body").etAttribute("href");
-                            var docSubPage = await fetchData(episodeLink);
-                            var episodesToCheck = docSubPage.querySelectorAll("div.card.card-row");
-                            for (var episodeToCheck of episodesToCheck){
-                                var streams = this.getPodcastStream(episodeToCheck);
-                                podcastEpisodes.push({
-                                    episode: episodeToCheck,
-                                    stream: streams
-                            });
-                            }
-                        }                 
-                    }
-                    i = 1;
-                    continue
-                }
-                logger.trace("getpodcastEpisodeVideos => calling fetchPage with URL: " + podcastSeriesLink + "?page=" + i);
-                var podcastsAdditionalPages = await fetchData(podcastSeriesLink + "?page=" + i);
-                if (podcastsAdditionalPages == undefined){
-                    logger.warn("getpodcastEpisodeVideos => No additional pages found for URL: " + podcastSeriesLink + "?page=" + i);
-                    continue;
-                }
-                var podcastElems = podcastsAdditionalPages.querySelectorAll("div.card.card-row");
-
-                for (var additionalPodcast of podcastElems){
-                    var hrefObj = additionalPodcast.querySelector("a.card-body")
-                    var episodeLink = hrefObj.getAttribute("href");
-
-                    var docToCheck = await fetchData(episodeLink);//check if there is an episode on the oher side or more episodes
-                    if (docToCheck == undefined){ continue; }
-                    var card = docToCheck.querySelector("h2.title");
-                    if (card != undefined){ //this is an episode so let's get the  stream while we have the data
-                        var streams =  this.getPodcastStream(docToCheck);
-                        podcastEpisodes.push({
-                            episode: additionalPodcast,
-                            stream: streams
-                        });
-                    } else {
-                        var docSubPage = await fetchData(episodeLink);
-                        var episodesToCheck = docSubPage.querySelectorAll("div.card.card-row");
-                        for (var episodeToCheck of episodesToCheck){
-                            var streams = this.getPodcastStream(episodeToCheck);
-                            podcastEpisodes.push({
-                                episode: episodeToCheck,
-                                stream: streams
-                        });
-                        }
-                    }
-                }
-            }
-        }
-
-        var podcastEpisodesVideos = [];
-        //podcastEpisodes = podcastSeriesPageDoc.querySelectorAll("div.card.card-row");
-        var podcastEpisodeNo = podcastEpisodes.length;
-
-        for (var podcastEpisode of podcastEpisodes){ //iterate over episodes and get the video and stream
-            var episodeElement = podcastEpisode.episode;
-            var streams = podcastEpisode.stream;
-
-            var episodeLink = "";
-            var episodes_media = episodeElement.querySelector("a.card-img.card-media")
-            if (episodes_media != undefined){
-                var episodeLinkElem = episodeElement.querySelector("a.card-img.card-media")
-                episodeLink = episodeLinkElem.getAttribute("href");
-            } else {
-                var episodes_body = episodeElement.querySelector("a.card-body")
-                if (episodes_body != undefined){
-                    episodeLink = episodes_body.getAttribute("href");
-                    logger.debug("getPodcastEpisodeVideoArray => href card image empty. Using card href");
-                } else {
-                    logger.debug("getPodcastEpisodeVideoArray => No episode link found, skipping. Link");
-                }
-            }
-
-            var episodeTitle = "";
-            if (episodeElement.querySelector("h2.card-title") != null){
-                episodeTitle = episodeElement.querySelector("h2.card-title").text.trim();
-                episodeTitle = episodeTitle.replace(/^פרק \d+:/, '').trim();
-            }
-
-
-            var episodeImgUrl = "";
-            if (episodeElement.querySelector("img.img-full") != null){
-                episodeImgUrl = utils.getImageFromUrl(episodeElement.querySelector("img.img-full").getAttribute("src"), "p");
-            }
-            logger.debug("getpodcastEpisodeVideos => episodeImgUrl" + episodeImgUrl + " Name: " + episodeTitle);
-            
-            var episodeDescription = episodeElement.querySelector("div.description").text.trim();
-            var released = "";
-            if (episodeElement.querySelector("li.date-local") != undefined){
-                let tempDate = episodeElement.querySelector("li.date-local").getAttribute("data-date-utc").trim();
-                const date = new Date(tempDate);
-                released = isNaN(date.getTime()) ? "" : date.toISOString();
-            }
-            logger.debug("getpodcastEpisodeVideos => Calling streams with URL: " + episodeLink + " for episode: " + episodeTitle + " released: " + released);
-            var episodeId = id + ":1:" + podcastEpisodeNo;
-            this.addVideoToMeta(id,episodeId, episodeTitle,"1",podcastEpisodeNo,episodeDescription,episodeImgUrl,episodeLink,released,streams);
-            logger.debug("getpodcastEpisodeVideos => Added episode: " + episodeId);
-            podcastEpisodeNo--
-        }
-
-        logger.trace("getpodcastEpisodeVideos => Exiting");
-        return podcastEpisodesVideos;
-    }
-
-    getPodcastStream(streamElement){
-        logger.trace("getPodcastStream => Entering");
-        var episodeName = "";
-        if (streamElement.querySelector("h2.title") != undefined){
-            //episodeName = streamElement.querySelector("h2.title").text.trim();
-            episodeName = streamElement.querySelector("h2.title").text.trim();
-            episodeName = episodeName.replace(/^פרק \d+:/, '').trim();
-        } else {
-            logger.trace("getPodcastStreams => No name for the episode !");
-        }
-        var description = "";
-        if (streamElement.querySelector("div.item-content.hide-content") != null) {
-            description = streamElement.querySelector("div.item-content.hide-content").text.trim();
-        }else {
-            logger.trace("getPodcastStreams => No description for the episode !");
-        }
-        var urlRawElem = streamElement.querySelector("figure");
-        if (urlRawElem == undefined){
-            urlRawElem = streamElement.querySelector("button.btn-play"); //try alternative
-            if (urlRawElem == undefined) { return streams; }
-        }
-        
-        const urlRaw = urlRawElem?.getAttribute("data-player-src")?.trim();
-
-        let url = "";
-        try {
-            const urlObj = new URL(urlRaw);
-            url = urlObj.origin + urlObj.pathname;
-        } catch (e) {
-            logger.error("getPodcastStream => Failed to parse URL: " + urlRaw);
-            return streams;
-        }
-
-        logger.trace(`getPodcastStreams => Podcast stream name: ${episodeName}, Description: ${description}`);
-        
-        var streams = [
-            {
-                url: url,
-                type: "Podcast",
-                name: episodeName,
-                description: description
-            }
-        ];
-
-        logger.trace("getPodcastStream => Exiting");
-        return streams;
-
-    }
-
-    addVideoToMeta(key, episodeId, name, seasonNo, episodeNo, desc, thumb, episodeLink, released, streams){
-        var video = {
-            id: episodeId,
-            name: name,
-            season: seasonNo,
-            episode: episodeNo ,
-            description: desc,
-            thumbnail: thumb,
-            episodeLink: episodeLink,
-            streams: streams
-        };
-        if (released != "") {video["released"] = released;}
-
-        if (
-            this._kanPodcastsJSONObj[key] &&
-            this._kanPodcastsJSONObj[key].meta &&
-            this._kanPodcastsJSONObj[key].meta.videos
-            ) {
-            this._kanPodcastsJSONObj[key].meta.videos.push(video);
-        }
-    }
-
+    
     addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type){
         this._kanPodcastsJSONObj[id] =  {
             id: id, 

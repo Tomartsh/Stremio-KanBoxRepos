@@ -1,12 +1,10 @@
 const utils = require("./utilities.js");
 const {fetchData, getNameFromSeriesPage} = require("./utilities.js");
 const {
-    LOG4JS_LEVEL, 
-    MAX_LOG_SIZE, 
-    LOG_BACKUP_FILES,
-    LOG_FILENAME,
+    LOG4JS,
     KAN_URL_ADDRESS,
     KAN_DIGITAL_IMAGE_PREFIX,
+    SCRAPER_CONFIG
 } = require("./constants.js");
 const SUB_PREFIX = "dogital";
 const SUBTYPE = "d";
@@ -18,13 +16,13 @@ log4js.configure({
         out: { type: "stdout" },
         Stremio: 
         { 
-            type: "file", 
-            filename: LOG_FILENAME, 
-            maxLogSize: MAX_LOG_SIZE, 
-            backups: LOG_BACKUP_FILES, 
+            type: LOG4JS.TYPE, 
+            filename: LOG4JS.FILENAME, 
+            maxLogSize: LOG4JS.MAX_SIZE, 
+            backups: LOG4JS.BACKUP_FILES, 
         }
     },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS_LEVEL } },
+    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
 });
 
 const EXPORT_FILENAME = "stremio-kandigital";
@@ -36,13 +34,24 @@ class KanDigitalScraper {
         this._kanDigitalJSONObj = {};
         this.seriesIdIterator = 1000;
         this.isRunning = false;
+
+        // Get scraper configuration
+        const scraperName = 'KanDigitalScraper';
+        const config = SCRAPER_CONFIG[scraperName] || {};
+        this.config = {
+            parallelFetching: config.parallelFetching ?? SCRAPER_CONFIG.DEFAULT_PARALLEL_FETCHING,
+            batchSize: config.batchSize ?? SCRAPER_CONFIG.DEFAULT_BATCH_SIZE,
+            delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
+        };
+
+        logger.info(`KanDigitalScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
     }
 
     async crawl(isDoWriteFile = false){
         logger.info("Started Crawling");
         this.isRunning = true;
         await this.crawlVod();
-        logger.info("Done Crawling");     
+        logger.info("Done Crawling");
 
         if (isDoWriteFile){
             logger.info("crawl => writing JSON file");
@@ -51,10 +60,92 @@ class KanDigitalScraper {
         this.isRunning = false;
     }
 
+    /**
+     * Helper method to process items in batches with detailed logging
+     * @param {Array} items - Array of items to process
+     * @param {Function} processor - Async function to process each item
+     * @param {String} itemType - Description of item type for logging (e.g., "series", "episodes")
+     * @returns {Promise<Array>} - Results from all processed items
+     */
+    async processBatch(items, processor, itemType = "items") {
+        if (!this.config.parallelFetching) {
+            // Sequential processing (original behavior)
+            logger.info(`[${itemType}] Processing ${items.length} ${itemType} sequentially`);
+            const results = [];
+            for (let i = 0; i < items.length; i++) {
+                const startTime = Date.now();
+                logger.debug(`[${itemType}] Processing ${i + 1}/${items.length}`);
+                try {
+                    const result = await processor(items[i], i);
+                    const duration = Date.now() - startTime;
+                    logger.debug(`[${itemType}] Completed ${i + 1}/${items.length} in ${duration}ms`);
+                    results.push(result);
+                } catch (error) {
+                    logger.error(`[${itemType}] Failed ${i + 1}/${items.length}: ${error.message}`);
+                    results.push(null);
+                }
+            }
+            return results;
+        }
+
+        // Parallel batch processing
+        const { batchSize, delayBetweenBatches } = this.config;
+        const totalBatches = Math.ceil(items.length / batchSize);
+        logger.info(`[${itemType}] Processing ${items.length} ${itemType} in ${totalBatches} batches (${batchSize} per batch)`);
+
+        const allResults = [];
+
+        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            const batchStart = batchIndex * batchSize;
+            const batchEnd = Math.min(batchStart + batchSize, items.length);
+            const batch = items.slice(batchStart, batchEnd);
+
+            const batchNum = batchIndex + 1;
+            const batchStartTime = Date.now();
+            logger.info(`[${itemType}] Starting batch ${batchNum}/${totalBatches} (${itemType} ${batchStart + 1}-${batchEnd} of ${items.length})`);
+
+            // Process batch in parallel
+            const batchPromises = batch.map(async (item, indexInBatch) => {
+                const globalIndex = batchStart + indexInBatch;
+                const itemStartTime = Date.now();
+                try {
+                    const result = await processor(item, globalIndex);
+                    const itemDuration = Date.now() - itemStartTime;
+                    logger.debug(`[${itemType}] ✓ Item ${globalIndex + 1}/${items.length} completed in ${itemDuration}ms`);
+                    return { success: true, result, index: globalIndex };
+                } catch (error) {
+                    const itemDuration = Date.now() - itemStartTime;
+                    logger.error(`[${itemType}] ✗ Item ${globalIndex + 1}/${items.length} failed after ${itemDuration}ms: ${error.message}`);
+                    return { success: false, error, index: globalIndex };
+                }
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            const batchDuration = Date.now() - batchStartTime;
+            const successCount = batchResults.filter(r => r.success).length;
+            const failCount = batchResults.length - successCount;
+
+            logger.info(`[${itemType}] Batch ${batchNum}/${totalBatches} completed: ${successCount}/${batch.length} successful, ${failCount} failed in ${batchDuration}ms`);
+
+            allResults.push(...batchResults.map(r => r.result));
+
+            // Delay between batches to avoid rate limiting (except after last batch)
+            if (batchIndex < totalBatches - 1 && delayBetweenBatches > 0) {
+                logger.debug(`[${itemType}] Waiting ${delayBetweenBatches}ms before next batch...`);
+                await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+            }
+        }
+
+        const successfulResults = allResults.filter(r => r !== null && r !== undefined);
+        logger.info(`[${itemType}] All batches completed: ${successfulResults.length}/${items.length} total successful`);
+
+        return allResults;
+    }
+
     /***********************************************************
-     * 
+     *
      * Kan Digital handling
-     * 
+     *
      ***********************************************************/
     async crawlVod(){
         logger.trace("crawlVod => Entered");
@@ -98,71 +189,103 @@ class KanDigitalScraper {
              logger.debug("Could not find a script containing 'digitalSeries: ['");
         }
 
-        for (const item of items) { //iterate over series
-            
-            let title = item.ImageAlt; // Usually the show name
-            const pageUrl = item.Url; //URL of the series episodes
-            const description = item.Description;
-            //const season = item.Season;
+        // Process series using batch processor
+        logger.info(`crawlVod => Found ${items.length} digital series to process`);
+        await this.processBatch(
+            items,
+            async (item, index) => {
+                return await this.processOneDigitalSeries(item);
+            },
+            "digital-series"
+        );
 
-            //set the series URL
-            if (pageUrl == undefined) { return;} // if there is no link to the series then skip
-            if (pageUrl.includes("kan-actual")){return;} //skip news item
-            if (pageUrl.includes("archive")){return;} //skip archive item. Have a a separate scraper for those 
-            if (pageUrl.includes("podcasts")){return;} //skip podcasts. Separate scraper for those
-            if ((! pageUrl.includes("/content/kan/")) && (! pageUrl.includes("dig/digital"))) { return; }//if URL does not contain this string it is not digital series
-            if (pageUrl.startsWith("/")) { pageUrl = KAN_URL_ADDRESS + pageUrl; }
-
-            var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
-            var imgUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
-
-            //get the doc of the series
-            try{
-                var seriesPageDoc = await fetchData(`${pageUrl}?page=1&itemsToShow=1000`);
-            } catch (e){
-                logger.error(`crawlVod => could not retrieve series page doc from URL ${pageUrl}. Error: ${e}`);
-                return;
-            }
-            //verify there is a name to the series
-            if (title.trim() == ""){
-                logger.info("crawlVod => Title is empty. Attempting to retrieve it");
-                logger.trace("crawlVod => Attempting to retrieve from img.img-fluid");
-                if (seriesPageDoc.querySelector("img.img-fluid").getAttribute("title")){
-                    title = getNameFromSeriesPage(seriesPageDoc.querySelector("img.img-fluid").getAttribute("title"));
-                } else if (seriesPageDoc.querySelector("h2.title.h1")){
-                    title = getNameFromSeriesPage(seriesPageDoc.querySelector("h2.title.h1").text.trim());
-                }  
-            }
-
-            //set series genres
-            const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
-
-            //Get the seasons number
-            var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
-            var videoObj = [];
-            if ((seasons != undefined) && (seasons.length > 1)){ //generate videos object with media links(streams)
-                logger.debug("getSeries => seasons " + title + " length: " + seasons.length);
-                videoObj = await this.getVideos(seasons, id);
-
-            } else {
-                // probably no episodes, only a single movie
-                if (! seriesPageDoc.querySelector("a.btn.with-arrow")){
-                    continue
-                }
-                var moveiLink = seriesPageDoc.querySelector("a.btn.with-arrow").getAttribute("href");
-                videoObj = await this.getVideo(moveiLink, id);
-            } 
-            if ((videoObj == null) || (videoObj.length == 0)){
-                logger.warn(`crawlVod => could not find videos for series ${title} @ URL ${pageUrl}`);
-            } else {    
-                // last minute checks before add the series
-                //check that we have a valid name for the series   
-                
-                 this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series");   
-            } 
-        };
-        
         logger.trace("crawl() => Exiting");
+    }
+
+    /**
+     * Process a single digital series (extracted from crawlVod for batch processing)
+     */
+    async processOneDigitalSeries(item) {
+        let title = item.ImageAlt; // Usually the show name
+        let pageUrl = item.Url; //URL of the series episodes
+        const description = item.Description;
+
+        //set the series URL
+        if (pageUrl == undefined) {
+            logger.debug("processOneDigitalSeries => No pageUrl, skipping");
+            return null;
+        }
+        if (pageUrl.includes("kan-actual")){
+            logger.debug("processOneDigitalSeries => Skipping news item");
+            return null;
+        }
+        if (pageUrl.includes("archive")){
+            logger.debug("processOneDigitalSeries => Skipping archive item");
+            return null;
+        }
+        if (pageUrl.includes("podcasts")){
+            logger.debug("processOneDigitalSeries => Skipping podcast item");
+            return null;
+        }
+        if ((! pageUrl.includes("/content/kan/")) && (! pageUrl.includes("dig/digital"))) {
+            logger.debug("processOneDigitalSeries => URL doesn't match digital series pattern");
+            return null;
+        }
+        if (pageUrl.startsWith("/")) { pageUrl = KAN_URL_ADDRESS + pageUrl; }
+
+        var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
+        var imgUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
+
+        //get the doc of the series
+        var seriesPageDoc;
+        try{
+            seriesPageDoc = await fetchData(`${pageUrl}?page=1&itemsToShow=1000`);
+        } catch (e){
+            logger.error(`processOneDigitalSeries => could not retrieve series page doc from URL ${pageUrl}. Error: ${e}`);
+            return null;
+        }
+
+        //verify there is a name to the series
+        if (title.trim() == ""){
+            logger.info("processOneDigitalSeries => Title is empty. Attempting to retrieve it");
+            logger.trace("processOneDigitalSeries => Attempting to retrieve from img.img-fluid");
+            if (seriesPageDoc.querySelector("img.img-fluid").getAttribute("title")){
+                title = getNameFromSeriesPage(seriesPageDoc.querySelector("img.img-fluid").getAttribute("title"));
+            } else if (seriesPageDoc.querySelector("h2.title.h1")){
+                title = getNameFromSeriesPage(seriesPageDoc.querySelector("h2.title.h1").text.trim());
+            }
+        }
+
+        //set series genres
+        const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
+
+        //Get the seasons number
+        var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
+        var videoObj = [];
+        if ((seasons != undefined) && (seasons.length > 0)){ //generate videos object with media links(streams)
+            logger.debug("processOneDigitalSeries => seasons " + title + " length: " + seasons.length);
+            videoObj = await this.getVideos(seasons, id);
+
+        } else {
+            // probably no episodes, only a single movie
+            if (! seriesPageDoc.querySelector("a.btn.with-arrow")){
+                logger.debug("processOneDigitalSeries => No video button found, skipping");
+                return null;
+            }
+            var moveiLink = seriesPageDoc.querySelector("a.btn.with-arrow").getAttribute("href");
+            videoObj = await this.getVideo(moveiLink, id);
+        }
+        if ((videoObj == null) || (videoObj.length == 0)){
+            logger.warn(`processOneDigitalSeries => could not find videos for series ${title} @ URL ${pageUrl}`);
+            return null;
+        } else {
+            // last minute checks before add the series
+            //check that we have a valid name for the series
+
+            this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series");
+            logger.debug(`processOneDigitalSeries => Added series ${title}`);
+            return { id, title };
+        }
     }
 
      /**
@@ -177,8 +300,70 @@ class KanDigitalScraper {
             logger.error(`getVideo => could not retrieve movie page doc from URL ${url}. Error: ${e}`);
             return null;
         }
-        let scripts = movieDoc.querySelectorAll('script[type="application/ld+json"]');
 
+        // Try to get stream URL from redge-player element (new Kan player)
+        var playerElem = movieDoc.querySelector("[id^='redge-player-']");
+        if (playerElem && playerElem.getAttribute("data-hls-url")) {
+            let videoUrl = playerElem.getAttribute("data-hls-url");
+            if (videoUrl.startsWith("//")) {
+                videoUrl = "https:" + videoUrl;
+            }
+            logger.debug("getVideo => Found redge-player URL: " + videoUrl);
+
+            // Get metadata from the page
+            let name = "";
+            let desc = "";
+            let released = "";
+
+            if (movieDoc.querySelectorAll("div.info-title h1.h2").length > 0) {
+                name = movieDoc.querySelectorAll("div.info-title h1.h2")[0].text.trim();
+                name = this.getVideoNameFromEpisodePage(name);
+            } else if (movieDoc.querySelector("title")) {
+                name = movieDoc.querySelector("title").text.trim();
+                name = this.getVideoNameFromEpisodePage(name);
+            }
+
+            if (movieDoc.querySelector("div.info-description") != null) {
+                desc = movieDoc.querySelector("div.info-description").text.trim();
+            }
+
+            if (movieDoc.querySelector("li.date-local") != undefined) {
+                const dateStr = movieDoc.querySelector("li.date-local").getAttribute("data-date-utc");
+                logger.debug("getVideo => Found date string: " + dateStr);
+                if (dateStr) {
+                    // Parse DD.MM.YYYY HH:MM:SS format
+                    const match = dateStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
+                    if (match) {
+                        const [, day, month, year, hour = "00", min = "00", sec = "00"] = match;
+                        const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
+                        released = isNaN(date.getTime()) ? "" : date.toISOString();
+                        logger.debug("getVideo => Parsed release date: " + released);
+                    }
+                }
+            }
+
+            const episodeId = `${id}:1:1`;
+            let stream = {
+                url: videoUrl,
+                title: name,
+                name: name
+            };
+
+            return [{
+                id: episodeId,
+                name: name,
+                season: 1,
+                episode: 1,
+                description: desc,
+                thumbnail: "",
+                episodeLink: url,
+                released: released,
+                streams: [stream]
+            }];
+        }
+
+        // Fallback to VideoObject method (legacy)
+        let scripts = movieDoc.querySelectorAll('script[type="application/ld+json"]');
         let videosList = this.getStream(scripts, id, url);
 
         if ((videosList == null) || (videosList.length == 0)) {
@@ -306,18 +491,19 @@ getStream (scripts, id, url){
                 return videosList;
             }
 
+
             const episodeId = `${id}:1:1`;
             let stream = {
                     url: episodeLink,
-                    type: "series",
-                    name: name,
-                    description: desc,
-                    released: released
+                    title: name,
+                    name: name
             }
 
             videosList.push({
+                id: episodeId,
                 name: name,
-                episode: episodeId,
+                season: 1,
+                episode: 1,
                 description: desc,
                 thumbnail: thumb,
                 episodeLink: url,
@@ -345,78 +531,109 @@ getStream (scripts, id, url){
         var videosArr = [];
 
         var noOfSeasons = videosElems.length;
+        logger.info(`getVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
+
         for (var i = 0 ; i < noOfSeasons; i++){//iterate over seasons
             var seasonNo = noOfSeasons - i;
             var seasonEpisodesElems = videosElems[i].querySelectorAll("a.card-link");
-            
-            for (var iter = 0; iter < seasonEpisodesElems.length; iter ++) {//iterate over episodes
-                logger.trace("getVideos => season: " + seasonNo + " episode: " + (iter +1));
-                var seasonEpisodesElem = seasonEpisodesElems[iter];
-                var episodePageLink = seasonEpisodesElem.getAttribute("href");
 
-                if (episodePageLink.includes("p-12385/s4")){//season 4 of this series yields no episode. Skipping.
-                    logger.debug(`getVideos => Skipping season: ${seasonNo} of id ${id} due to no episodes`);
-                    return videosArr;
-                }
-                if (episodePageLink.startsWith("/")){
-                    episodePageLink = KAN_DIGITAL_IMAGE_PREFIX;
-                }
-                var title = "";
-                if (seasonEpisodesElem.querySelector("div.card-title")) {
-                    title = seasonEpisodesElem.querySelector("div.card-title").text.trim();
-                } else {
-                    title = seasonEpisodesElem.attrs("title");
-                }
-                var description = "";
-                if (seasonEpisodesElem.querySelector("div.card-text") != undefined) {
-                    description = seasonEpisodesElem.querySelector("div.card-text").text.trim();
-                }
-                var  videoId = id + ":" + seasonNo + ":" + (iter + 1);
+            logger.info(`getVideos => Season ${seasonNo} has ${seasonEpisodesElems.length} episode(s)`);
 
-                var episodeLogoUrl = "";
-                if (seasonEpisodesElem.querySelector("div.card-img")){
-                    var elemImage = seasonEpisodesElem.querySelector("div.card-img");
-                    try {
-                        if ((elemImage != null) && (elemImage.querySelector("img.img-full") != null)) {
-                            var elemEpisodeLogo = elemImage.querySelector("img.img-full");
-                            
-                            if (elemEpisodeLogo != null) {
-                                episodeLogoUrl = utils.getImageFromUrl(elemEpisodeLogo.attrs["src"],SUBTYPE);
-                            }
-                            logger.trace("getVideos => episodeLogoUrl location: " + episodeLogoUrl);                          
-                        }
-                    } catch(ex) {
-                        logger.error("getVideos => episodeLogoUrl:" + ex);                       
-                    }
-                }
-                logger.trace ("getVideos => episodeLogoUrl: " + episodeLogoUrl + " Name: " + title); 
+            // Prepare episode data for batch processing
+            const episodeData = [];
+            for (let iter = 0; iter < seasonEpisodesElems.length; iter++) {
+                episodeData.push({
+                    elem: seasonEpisodesElems[iter],
+                    seasonNo: seasonNo,
+                    episodeNo: iter + 1
+                });
+            }
 
+            // Process episodes in batches
+            const episodeResults = await this.processBatch(
+                episodeData,
+                async (epData, index) => {
+                    return await this.processOneDigitalEpisode(epData, id);
+                },
+                `episodes (Season ${seasonNo})`
+            );
 
-                //get streams
-                var streams = await this.getStreams(episodePageLink);
-
-                //check streams is not empty, and if so, remove from list
-                if (streams ){
-                    var episodeNo = iter +1;
-                    videosArr.push ({
-                        id: videoId,
-                        name: title,
-                        season: seasonNo,
-                        episode: episodeNo ,
-                        description: description,
-                        thumbnail: episodeLogoUrl,
-                        episodeLink: episodePageLink,
-                        released: streams.released,
-                        streams: [streams]
-                    });
-                    logger.debug(`getVideos => processed episode : ${title}\n    season:${seasonNo}, episode: ${iter +1}`);
-                } else {
-                    logger.warn(`getVideos => Episode has no media : ${title}\n    season: ${seasonNo}, episode: ${iter +1}`);
+            // Add successful episodes to videosArr
+            for (const result of episodeResults) {
+                if (result && result.video) {
+                    videosArr.push(result.video);
                 }
             }
-        } 
+        }
 
-        return videosArr;     
+        logger.debug(`getVideos => Completed processing all seasons for series ID: ${id}`);
+        return videosArr;
+    }
+
+    /**
+     * Process a single digital episode (extracted from getVideos for batch processing)
+     * NOTE: Stream URLs are NOT fetched during scraping to avoid rate limiting.
+     * The episodeLink is stored and streams are resolved on-demand when user plays.
+     */
+    async processOneDigitalEpisode(epData, id) {
+        const { elem: seasonEpisodesElem, seasonNo, episodeNo } = epData;
+
+        logger.trace(`processOneDigitalEpisode => season: ${seasonNo} episode: ${episodeNo}`);
+
+        var episodePageLink = seasonEpisodesElem.getAttribute("href");
+
+        if (episodePageLink.includes("p-12385/s4")){//season 4 of this series yields no episode. Skipping.
+            logger.debug(`processOneDigitalEpisode => Skipping season: ${seasonNo} of id ${id} due to no episodes`);
+            return null;
+        }
+        if (episodePageLink.startsWith("/")){
+            episodePageLink = KAN_DIGITAL_IMAGE_PREFIX + episodePageLink;
+        }
+        var title = "";
+        if (seasonEpisodesElem.querySelector("div.card-title")) {
+            title = seasonEpisodesElem.querySelector("div.card-title").text.trim();
+        } else {
+            title = seasonEpisodesElem.attrs("title");
+        }
+        var description = "";
+        if (seasonEpisodesElem.querySelector("div.card-text") != undefined) {
+            description = seasonEpisodesElem.querySelector("div.card-text").text.trim();
+        }
+        var  videoId = id + ":" + seasonNo + ":" + episodeNo;
+
+        var episodeLogoUrl = "";
+        if (seasonEpisodesElem.querySelector("div.card-img")){
+            var elemImage = seasonEpisodesElem.querySelector("div.card-img");
+            try {
+                if ((elemImage != null) && (elemImage.querySelector("img.img-full") != null)) {
+                    var elemEpisodeLogo = elemImage.querySelector("img.img-full");
+
+                    if (elemEpisodeLogo != null) {
+                        episodeLogoUrl = utils.getImageFromUrl(elemEpisodeLogo.attrs["src"],SUBTYPE);
+                    }
+                    logger.trace("processOneDigitalEpisode => episodeLogoUrl location: " + episodeLogoUrl);
+                }
+            } catch(ex) {
+                logger.error("processOneDigitalEpisode => episodeLogoUrl:" + ex);
+            }
+        }
+        logger.trace ("processOneDigitalEpisode => episodeLogoUrl: " + episodeLogoUrl + " Name: " + title);
+
+        // Create video object with episodeLink for on-demand stream resolution
+        // Stream URL will be fetched when user actually plays the episode
+        const video = {
+            id: videoId,
+            name: title,
+            season: seasonNo,
+            episode: episodeNo,
+            description: description,
+            thumbnail: episodeLogoUrl,
+            episodeLink: episodePageLink,
+            released: "",
+            streams: [] // Streams will be resolved on-demand by the addon
+        };
+        logger.debug(`processOneDigitalEpisode => ✓ processed episode : ${title} season:${seasonNo}, episode: ${episodeNo} (stream on-demand)`);
+        return { video, videoId, title };
     }
 
     async getStreams(link){
@@ -424,7 +641,7 @@ getStream (scripts, id, url){
         logger.trace("getStreams => Link: " + link);
 
         var doc = await fetchData(link);
-        
+
         if (doc == undefined){
             logger.debug("getStreams => Error retrieving do from " + link);
             return null;
@@ -432,18 +649,44 @@ getStream (scripts, id, url){
         var released = "";
         var videoUrl = "";
         var nameVideo = "";
-        var descVideo = "";
 
         if (doc.querySelector("li.date-local") != undefined){
-            const date = new Date(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
-            released = isNaN(date.getTime()) ? "" : date.toISOString();
-        } 
-        var scriptElems = doc.querySelectorAll("script");
-        
-        for (var scriptElem of scriptElems){         
-            if (scriptElem.toString().includes("VideoObject")) {
-                videoUrl = this.getEpisodeUrl(scriptElem.toString());
-                break;
+            const dateStr = doc.querySelector("li.date-local").getAttribute("data-date-utc");
+            logger.debug("getStreams => Found date string: " + dateStr);
+            if (dateStr) {
+                // Parse DD.MM.YYYY HH:MM:SS format
+                const match = dateStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
+                if (match) {
+                    const [, day, month, year, hour = "00", min = "00", sec = "00"] = match;
+                    const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
+                    released = isNaN(date.getTime()) ? "" : date.toISOString();
+                    logger.debug("getStreams => Parsed release date: " + released);
+                }
+            }
+        }
+
+        // Try to get stream URL from redge-player element (new Kan player)
+        var playerElem = doc.querySelector("[id^='redge-player-']");
+        if (playerElem && playerElem.getAttribute("data-hls-url")) {
+            videoUrl = playerElem.getAttribute("data-hls-url");
+            // Ensure URL has protocol
+            if (videoUrl.startsWith("//")) {
+                videoUrl = "https:" + videoUrl;
+            }
+            logger.debug("getStreams => Found redge-player URL: " + videoUrl);
+        } else {
+            // Fallback to VideoObject method (legacy - Kaltura URLs, may not work)
+            logger.debug("getStreams => No redge-player found, falling back to VideoObject");
+            var scriptElems = doc.querySelectorAll("script");
+            for (var scriptElem of scriptElems){
+                if (scriptElem.toString().includes("VideoObject")) {
+                    videoUrl = this.getEpisodeUrl(scriptElem.toString());
+                    // Ensure URL has protocol
+                    if (videoUrl.startsWith("//")) {
+                        videoUrl = "https:" + videoUrl;
+                    }
+                    break;
+                }
             }
         }
         
@@ -455,19 +698,13 @@ getStream (scripts, id, url){
             nameVideo = this.getVideoNameFromEpisodePage(nameVideo);
         }
 
-        if (doc.querySelector("div.info-description") != null){
-            descVideo = doc.querySelector("div.info-description").text.trim();
-        }
-
         var streamsJSONObj = {
             url: videoUrl,
-            type: "series",
+            title: nameVideo,
             name: nameVideo,
-            description: descVideo,
             released: released
         };
 
-        //if (released != "") {streamsJSONObj["released"] = released;}
         logger.trace("getStreams => Exiting");
         return streamsJSONObj;
     }

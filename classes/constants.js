@@ -3,26 +3,29 @@ module.exports = {
     
     // Rate Limiting Configuration (per domain)
     RATE_LIMITING: {
-        DEFAULT_MIN_INTERVAL: 1000,        // 1 second between requests (default)
-        DEFAULT_MAX_PER_MINUTE: 180,        // 180 requests per minute (default)
+        DEFAULT_MIN_INTERVAL: 0,
+        DEFAULT_MAX_PER_MINUTE: 1000,
+        DEFAULT_JITTER: [10, 50],  // ← Add default jitter range [min, max]
         
-        // Domain-specific overrides
-        // NOTE: More specific domains should come first (mass.mako.co.il before mako.co.il)
         'mass.mako.co.il': {
-            minInterval: 500,              // 0.5 second between mass.mako requests (entitlement service)
-            maxPerMinute: 200             // 200 requests per minute (very conservative)
+            minInterval: 50,
+            maxPerMinute: 200,
+            jitter: [10, 100]  // ← 10-100ms jitter for Mako entitlement
         },
         'mako.co.il': {
-            minInterval: 10,              // 0.01 seconds between Mako requests
-            maxPerMinute: 250                // 250 Mako requests per minute
+            minInterval: 50,
+            maxPerMinute: 300,
+            jitter: [10, 100]   // ← 10-100ms jitter for Mako
         },
         'kan.org.il': {
-            minInterval: 10,              // 0.01 seconds between Kan requests
-            maxPerMinute: 250                // 250 Kan requests per minute
+            minInterval: 500,        // 500ms minimum between requests
+            maxPerMinute: 30,        // Max 30 requests per minute (very conservative)
+            jitter: [200, 800]       // Random 200-800ms jitter to appear more human
         },
         '13tv.co.il': {
-            minInterval: 50,              // 0.05 seconds between Reshet requests
-            maxPerMinute: 250                // 250 Reshet requests per minute
+            minInterval: 0,
+            maxPerMinute: 1000,
+            jitter: [0, 0]      // ← NO jitter for Reshet
         }
     },
 
@@ -34,16 +37,77 @@ module.exports = {
             'mass.mako.co.il',
             'mako.co.il'  // Mako works better with axios
         ],
-        
+
         // Domains that benefit from switching to got-scraping on errors
         PREFERS_GOT_SCRAPING: [
-            'kan.org.il',
-            'kankids.org.il'
+            'kan.org.il',      // Lobby/series pages work fine with got-scraping
+            'kankids.org.il'   // Kids site also works with got-scraping
         ],
+
+        // Domains that require Playwright (Cloudflare-protected)
+        // Only needed for sites where got-scraping fails completely
+        REQUIRES_PLAYWRIGHT: [
+            // kan.org.il removed - no longer fetching episode pages during scraping
+            // Episode streams are resolved on-demand by the addon
+        ],
+
         RETRY_DELAY: 15000,//default delay between requests
         REQUEST_TIMEOUT: 30000,
-        MAX_RETRIES: 5,  
-        MAX_CONCURRENT_REQUESTS: 2
+        MAX_RETRIES: 5,
+        MAX_CONCURRENT_REQUESTS: 10
+    },
+
+    // Scraper-Specific Configuration for Parallel Fetching
+    SCRAPER_CONFIG: {
+        // Default behavior for all scrapers (conservative to avoid 403s)
+        DEFAULT_PARALLEL_FETCHING: true,
+        DEFAULT_BATCH_SIZE: 25,
+        DEFAULT_DELAY_BETWEEN_BATCHES: 500, // 0.5 second delay between batches
+
+        // Per-scraper overrides
+        'KanArchiveScraper': {
+            parallelFetching: false,     // Sequential to avoid Cloudflare bans
+            batchSize: 5,                // One request at a time
+            delayBetweenBatches: 1000    // 3s delay between requests
+        },
+
+        'KanPodcastsScraper': {
+            parallelFetching: false,     // Sequential to avoid Cloudflare bans
+            batchSize: 10,                // 10 request at a time
+            delayBetweenBatches: 1000    // 1s delay between requests
+        },
+
+        'Kan88Scraper': {
+            parallelFetching: false,     // Sequential to avoid Cloudflare bans
+            batchSize: 5,                // 5 requests at a time
+            delayBetweenBatches: 1000    // 1s delay between requests
+        },
+
+        'KanDigitalScraper': {
+            parallelFetching: false,     // Sequential processing to avoid bans
+            batchSize: 5,                // 5 requests at a time
+            delayBetweenBatches: 1000    // 1s delay between requests
+        },
+
+        'KanKidsScraper': {
+            parallelFetching: false,     // Sequential to avoid Cloudflare bans
+            batchSize: 10,                // 10 requests at a time
+            delayBetweenBatches: 500    // 0.5 delay between requests
+        },
+
+        'KanTeensScraper': {
+            parallelFetching: false,      // Sequential to avoid Cloudflare bans
+            batchSize: 10,                // 10 requests at a time
+            delayBetweenBatches: 500      // 0.5s delay between requests
+        },
+
+        'ReshetScraper': {
+            parallelFetching: true,
+            batchSize: 15,
+            delayBetweenBatches: 1000
+        }
+
+        // Other scrapers will use defaults (sequential) unless specified here
     },
     
     LOG4JS: {
@@ -76,10 +140,14 @@ module.exports = {
 
     //Kan constants
     KAN_URL_ADDRESS: "https://www.kan.org.il/lobby/kan11",
-    KAN_ARCHIVE_URL_ADDRESS: "https://www.kan.org.il/lobby/series/",
     KAN_DIGITAL_IMAGE_PREFIX: "https://www.kan.org.il",
     KAN_BASE_URL: "https://www.kan.org.il",
     
+    KAN_ARCHIVE: {
+        IMAGE_PREFIX: "https://www.kan.org.il",
+        URL_ADDRESS: "https://www.kan.org.il/lobby/series/",
+    },
+
     HINUKHIT: {
         URL_TINY: "https://www.kankids.org.il/lobby-kids/tiny/",
         URL_TEENS: "https://www.kankids.org.il/lobby-kids/kids-teens",

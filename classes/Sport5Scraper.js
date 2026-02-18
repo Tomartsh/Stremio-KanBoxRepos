@@ -1,10 +1,11 @@
 const utils = require("./utilities.js");
 const {
+    LOG4JS,
     URL_SPORT5_VOD, 
     PREFIX, 
-    LOG4JS_LEVEL,
-    MAX_LOG_SIZE, 
-    LOG_BACKUP_FILES
+    //LOG4JS_LEVEL,
+    //MAX_LOG_SIZE, 
+    //LOG_BACKUP_FILES
 } = require ("./constants");
 const {fetchData, writeLog} = require("./utilities.js");
 const log4js = require("log4js");
@@ -14,13 +15,13 @@ log4js.configure({
         out: { type: "stdout" },
         Stremio: 
         { 
-            type: "file", 
-            filename: "logs/Stremio_addon.log", 
-            maxLogSize: MAX_LOG_SIZE, 
-            backups: LOG_BACKUP_FILES,
+            type: LOG4JS.TYPE, 
+            filename: LOG4JS.FILENAME, 
+            maxLogSize: LOG4JS.MAX_SIZE, 
+            backups: LOG4JS.BACKUP_FILES, 
         }
     },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS_LEVEL } },
+    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
 });
 
 var logger = log4js.getLogger("Sport5Scraper");

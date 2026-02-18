@@ -1,5 +1,10 @@
 const utils = require("./utilities.js");
-const {URL_RESHET_VOD, URL_RESHET_BASE,PREFIX, RESHET_HEADERS,RESHET_PARTNER_ID, RESHET_URL_STREAM,LOG4JS_LEVEL,MAX_LOG_SIZE, LOG_BACKUP_FILES} = require ("./constants");
+const {
+    LOG4JS,
+    RESHET,
+    PREFIX,
+    SCRAPER_CONFIG
+} = require ("./constants");
 const {fetchData, writeLog} = require("./utilities.js");
 const log4js = require("log4js");
 
@@ -8,13 +13,13 @@ log4js.configure({
         out: { type: "stdout" },
         Stremio: 
         { 
-            type: "file", 
-            filename: "logs/Stremio_addon.log", 
-            maxLogSize: MAX_LOG_SIZE, 
-            backups: LOG_BACKUP_FILES,
+            type: LOG4JS.TYPE, 
+            filename: LOG4JS.FILENAME, 
+            maxLogSize: LOG4JS.MAX_SIZE, 
+            backups: LOG4JS.BACKUP_FILES, 
         }
     },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS_LEVEL } },
+    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
 });
 
 var logger = log4js.getLogger("ReshetScraper");
@@ -25,6 +30,17 @@ class ReshetScraper {
         this._reshetJSONObj = {};
         this._buildId = "";
         this._videos = [];
+
+        // Get scraper configuration
+        const scraperName = 'ReshetScraper';
+        const config = SCRAPER_CONFIG[scraperName] || {};
+        this.config = {
+            parallelFetching: config.parallelFetching ?? SCRAPER_CONFIG.DEFAULT_PARALLEL_FETCHING,
+            batchSize: config.batchSize ?? SCRAPER_CONFIG.DEFAULT_BATCH_SIZE,
+            delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
+        };
+
+        logger.info(`ReshetScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
     }
 
     async crawl(isDoWriteFile = false){
@@ -35,45 +51,145 @@ class ReshetScraper {
         }
     }
 
+    /**
+     * Helper method to process items in batches with detailed logging
+     * @param {Array} items - Array of items to process
+     * @param {Function} processor - Async function to process each item
+     * @param {String} itemType - Description of item type for logging (e.g., "series", "episodes")
+     * @returns {Promise<Array>} - Results from all processed items
+     */
+    async processBatch(items, processor, itemType = "items") {
+        if (!this.config.parallelFetching) {
+            // Sequential processing (original behavior)
+            logger.info(`[${itemType}] Processing ${items.length} ${itemType} sequentially`);
+            const results = [];
+            for (let i = 0; i < items.length; i++) {
+                const startTime = Date.now();
+                logger.debug(`[${itemType}] Processing ${i + 1}/${items.length}`);
+                try {
+                    const result = await processor(items[i], i);
+                    const duration = Date.now() - startTime;
+                    logger.debug(`[${itemType}] Completed ${i + 1}/${items.length} in ${duration}ms`);
+                    results.push(result);
+                } catch (error) {
+                    logger.error(`[${itemType}] Failed ${i + 1}/${items.length}: ${error.message}`);
+                    results.push(null);
+                }
+            }
+            return results;
+        }
+
+        // Parallel batch processing
+        const { batchSize, delayBetweenBatches } = this.config;
+        const totalBatches = Math.ceil(items.length / batchSize);
+        logger.info(`[${itemType}] Processing ${items.length} ${itemType} in ${totalBatches} batches (${batchSize} per batch)`);
+
+        const allResults = [];
+
+        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            const batchStart = batchIndex * batchSize;
+            const batchEnd = Math.min(batchStart + batchSize, items.length);
+            const batch = items.slice(batchStart, batchEnd);
+
+            const batchNum = batchIndex + 1;
+            const batchStartTime = Date.now();
+            logger.info(`[${itemType}] Starting batch ${batchNum}/${totalBatches} (${itemType} ${batchStart + 1}-${batchEnd} of ${items.length})`);
+
+            // Process batch in parallel
+            const batchPromises = batch.map(async (item, indexInBatch) => {
+                const globalIndex = batchStart + indexInBatch;
+                const itemStartTime = Date.now();
+                try {
+                    const result = await processor(item, globalIndex);
+                    const itemDuration = Date.now() - itemStartTime;
+                    logger.debug(`[${itemType}] ✓ Item ${globalIndex + 1}/${items.length} completed in ${itemDuration}ms`);
+                    return { success: true, result, index: globalIndex };
+                } catch (error) {
+                    const itemDuration = Date.now() - itemStartTime;
+                    logger.error(`[${itemType}] ✗ Item ${globalIndex + 1}/${items.length} failed after ${itemDuration}ms: ${error.message}`);
+                    return { success: false, error, index: globalIndex };
+                }
+            });
+
+            const batchResults = await Promise.all(batchPromises);
+            const batchDuration = Date.now() - batchStartTime;
+            const successCount = batchResults.filter(r => r.success).length;
+            const failCount = batchResults.length - successCount;
+
+            logger.info(`[${itemType}] Batch ${batchNum}/${totalBatches} completed: ${successCount}/${batch.length} successful, ${failCount} failed in ${batchDuration}ms`);
+
+            allResults.push(...batchResults.map(r => r.result));
+
+            // Delay between batches to avoid rate limiting (except after last batch)
+            if (batchIndex < totalBatches - 1 && delayBetweenBatches > 0) {
+                logger.debug(`[${itemType}] Waiting ${delayBetweenBatches}ms before next batch...`);
+                await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+            }
+        }
+
+        const successfulResults = allResults.filter(r => r !== null && r !== undefined);
+        logger.info(`[${itemType}] All batches completed: ${successfulResults.length}/${items.length} total successful`);
+
+        return allResults;
+    }
 
     async crawlVOD(){    
         logger.trace("crawl() => Entering");
         //writeLog("TRACE","ReshetScraper-crawl() => Entering");
         
-        var seriesListJson =  await this.getJson(URL_RESHET_VOD);
+        var seriesListJson =  await this.getJson(RESHET.URL_VOD);
         this._buildId = seriesListJson["buildId"];
+        const shows = seriesListJson["props"]["pageProps"]["page"]["Content"]["PageGrid"][0]["shows"];
+
+        // Process series using batch processor
+        logger.info(`crawlVOD => Found ${shows.length} Reshet series to process`);
         var reshetId = 1;
-        for (var series of seriesListJson["props"]["pageProps"]["page"]["Content"]["PageGrid"][0]["shows"]){
-            var seriesUrl = series["url"];
-            //if no URL we skip
-            if ((seriesUrl == undefined) || (seriesUrl.startsWith("/?"))) {continue;}
+        await this.processBatch(
+            shows,
+            async (series, index) => {
+                const result = await this.processOneReshetSeries(series, reshetId + index);
+                return result;
+            },
+            "reshet-series"
+        );
 
-            var id = PREFIX + "reshet_" + reshetId;
-            var picUrl = series["poster"];
-            var title = series["title"];
-            var seriesReshetId = series["id"];
-            logger.debug(`crawlVOD() => seriesReshetId: ${seriesReshetId} seriesUrl: ${seriesUrl} `);
-            seriesUrl = seriesUrl.substring(0,seriesUrl.length -1);            
-            var seriesReshetName = seriesUrl.substring(seriesUrl.lastIndexOf("/") + 1);
-            logger.debug(`crawlVOD() => seriesReshetName: ${seriesReshetName}`);
-            var videos = await this.getEpisodes(seriesReshetName, id)
-            if (videos == "-1"){
-                logger.error("crawl() => Invalid KulturaId or page non existing. Skipping");
-                //writeLog("DEBUG","ReshetScraper-crawl() => Invalid KulturaId. Skipping");
-                continue;
-            }
-            this.addToJsonObject(id, title, URL_RESHET_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series" )
-            reshetId++;
-
-        }
         logger.info("crawl() => Exiting");
         //writeLog("TRACE","ReshetScraper-crawl() => Exiting");
+    }
+
+    /**
+     * Process a single Reshet series (extracted from crawlVOD for batch processing)
+     */
+    async processOneReshetSeries(series, reshetId) {
+        var seriesUrl = series["url"];
+        //if no URL we skip
+        if ((seriesUrl == undefined) || (seriesUrl.startsWith("/?"))) {
+            logger.debug("processOneReshetSeries => No valid URL, skipping");
+            return null;
+        }
+
+        var id = PREFIX + "reshet_" + reshetId;
+        var picUrl = series["poster"];
+        var title = series["title"];
+        var seriesReshetId = series["id"];
+        logger.debug(`processOneReshetSeries => seriesReshetId: ${seriesReshetId} seriesUrl: ${seriesUrl} `);
+        seriesUrl = seriesUrl.substring(0,seriesUrl.length -1);
+        var seriesReshetName = seriesUrl.substring(seriesUrl.lastIndexOf("/") + 1);
+        logger.debug(`processOneReshetSeries => seriesReshetName: ${seriesReshetName}`);
+        var videos = await this.getEpisodes(seriesReshetName, id)
+        if (videos == "-1"){
+            logger.error("processOneReshetSeries => Invalid KulturaId or page non existing. Skipping");
+            return null;
+        }
+        this.addToJsonObject(id, title, RESHET.URL_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series" )
+        logger.debug(`processOneReshetSeries => Added series ${title}`);
+        return { id, title };
     }
 
     async getEpisodes(seriesReshetName, id){
         logger.debug("getEpisodes() => Entering");
         //writeLog("TRACE","ReshetScraper-getEpisodes() => Entering");
-        var link = URL_RESHET_BASE + "/_next/data/" + this._buildId + "/he/all-shows/" + seriesReshetName + ".json?all=all-shows&all=" + seriesReshetName;
+        var link = RESHET.URL_BASE + "/_next/data/" + this._buildId + "/he/all-shows/" + seriesReshetName + ".json?all=all-shows&all=" + seriesReshetName;
         logger.debug("getEpisodes() => link used " + link);
         var seriesJson =  await fetchData(link, true);
         if (seriesJson == undefined){ 
@@ -104,39 +220,37 @@ class ReshetScraper {
                     var seasonName = episodesList["name"];
                     var seasonId = this.setSeasonId(seasonName,key);
 
-                    logger.debug("getEpisodes() => Retrieveing season " + seasonName + " with ID " + seasonId );
-                    //writeLog("TRACE","ReshetScraper-getEpisodes() => Retrieveing season " + seasonName + " with ID " + seasonId );
+                    logger.debug("getEpisodes() => Retrieving season " + seasonName + " with ID " + seasonId );
                     var episodes = episodesList["episodes"]
-                    //var noOfEpisodes = episodes.length;
-                    var seasonVideos = [];
-                    for (var i = 0; i < episodes.length ; i++){
-                        
-                        var kalturaId = episodes[i]["video"]["kalturaId"];
-                        if (kalturaId == undefined){return "-1";}
-                        var streams = await this.getStream(kalturaId, episodes[i]["title"]);
-                        var episodeId = episodes.length - i;
-                        
-                        const date = new Date(episodes[i]["air_date"]);
-                        var released = isNaN(date.getTime()) ? "" : date.toISOString();
-                        
-                        var video = {
-                            reshetEpisodeId: episodes[i]["id"],
-                            id: id + ":" + seasonId + ":" ,
-                            name: episodes[i]["title"],
-                            season: seasonId,
-                            episode: "",
-                            description: episodes[i]["secondaryTitle"],
-                            thumbnail: episodes[i]["video"]["poster"],
-                            episodeLink: URL_RESHET_BASE + episodes[i]["link"],
-                            streams: streams
-                        }
-                        if (released != "") {video["released"] = released;}
-                        
-                        //noOfEpisodes--;
-                        logger.debug("getEpisodes() => pushed episode  " + episodeId + " of season " + seasonId);
-                        //writeLog("DEBUG","ReshetScraper-getEpisodes() => pushed episode  " + episodeId + " of season " + seasonId);
-                        seasonVideos.push(video);
+
+                    // Prepare episode data for batch processing
+                    const episodeData = [];
+                    for (let i = 0; i < episodes.length; i++) {
+                        episodeData.push({
+                            episode: episodes[i],
+                            index: i,
+                            seasonId: seasonId
+                        });
                     }
+
+                    // Process episodes in batches
+                    logger.info(`getEpisodes() => Processing ${episodeData.length} episodes for season ${seasonId}`);
+                    const episodeResults = await this.processBatch(
+                        episodeData,
+                        async (epData, index) => {
+                            return await this.processOneReshetEpisode(epData, id);
+                        },
+                        `reshet-episodes (Season ${seasonId})`
+                    );
+
+                    // Collect successful videos
+                    var seasonVideos = [];
+                    for (const result of episodeResults) {
+                        if (result && result.video) {
+                            seasonVideos.push(result.video);
+                        }
+                    }
+
                     //sort the video items so we can set the correct episode numbers
                     logger.debug("getEpisodes() => Sorting the episodes of the season");
                     seasonVideos.sort((a, b) => a.reshetEpisodeId - b.reshetEpisodeId);
@@ -149,12 +263,44 @@ class ReshetScraper {
 
                         videos.push(videoItem);
                         iter ++;
-
-                    } 
+                    }
                 }
             }
         }
         return videos;
+    }
+
+    /**
+     * Process a single Reshet episode (extracted from getEpisodes for batch processing)
+     */
+    async processOneReshetEpisode(epData, id) {
+        const { episode, index, seasonId } = epData;
+
+        var kalturaId = episode["video"]["kalturaId"];
+        if (kalturaId == undefined){
+            logger.warn("processOneReshetEpisode => No kalturaId found");
+            return null;
+        }
+        var streams = await this.getStream(kalturaId, episode["title"]);
+
+        const date = new Date(episode["air_date"]);
+        var released = isNaN(date.getTime()) ? "" : date.toISOString();
+
+        var video = {
+            reshetEpisodeId: episode["id"],
+            id: id + ":" + seasonId + ":" ,
+            name: episode["title"],
+            season: seasonId,
+            episode: "",
+            description: episode["secondaryTitle"],
+            thumbnail: episode["video"]["poster"],
+            episodeLink: RESHET.URL_BASE + episode["link"],
+            streams: streams
+        }
+        if (released != "") {video["released"] = released;}
+
+        logger.debug("processOneReshetEpisode => ✓ processed episode  " + episode["title"] + " of season " + seasonId);
+        return { video };
     }
 
     async getStream(kalturaId, streamName){
@@ -164,7 +310,7 @@ class ReshetScraper {
             "1":{
                 "service":"session",
                 "action":"startWidgetSession",
-                "widgetId":"_" + RESHET_PARTNER_ID
+                "widgetId":"_" + RESHET.PARTNER_ID
             },
             "2":{
                 "service":"baseEntry",
@@ -201,10 +347,10 @@ class ReshetScraper {
             "format":1,
             "ks":"",
             "clientTag":"html5:v0.56.1",
-            "partnerId": RESHET_PARTNER_ID
+            "partnerId": RESHET.PARTNER_ID
         }
         logger.trace("getStream() => Kaltura ID: " + kalturaId);
-        var streamJsonObj = await fetchData(RESHET_URL_STREAM, true, user_data, RESHET_HEADERS);
+        var streamJsonObj = await fetchData(RESHET.URL_STREAM, true, user_data, RESHET.HEADERS);
         if (streamJsonObj != undefined) {
             var sources = streamJsonObj[2]["sources"];
             if (sources == undefined){

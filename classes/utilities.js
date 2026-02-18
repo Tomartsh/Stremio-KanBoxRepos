@@ -5,6 +5,7 @@ const axios = require('axios');
 const { gotScraping } = require('got-scraping');
 const AdmZip = require("adm-zip");
 const fs = require('fs');
+const { chromium } = require('playwright');
 
 const {PREFIX } = require ("./constants");
 
@@ -41,24 +42,188 @@ var logger = log4js.getLogger("utillities");
  * =============================================================================
  * FETCH METHOD SELECTION
  * =============================================================================
- * 
+ *
  * The fetchData function now supports explicit method selection:
- * 
+ *
  * Usage Examples:
- * 
+ *
  * 1. Auto method (default behavior - uses axios first, switches on errors):
  *    const doc = await fetchData(url);
  *    const jsonData = await fetchData(url, true);
- * 
+ *
  * 2. Explicit axios (useful for endpoints that block got-scraping):
  *    const doc = await fetchData(url, false, {}, HEADERS, 'axios');
- * 
+ *
  * 3. Explicit got-scraping (useful for sites that need advanced scraping):
  *    const doc = await fetchData(url, false, {}, HEADERS, 'got-scraping');
- * 
+ *
+ * 4. Explicit playwright (for Cloudflare-protected sites):
+ *    const doc = await fetchData(url, false, {}, HEADERS, 'playwright');
+ *
  * The system will still apply rate limiting and retry logic regardless of method.
  * =============================================================================
  */
+
+// --- Playwright Browser Manager ---
+// Manages a persistent browser instance for Playwright-based fetching
+// Uses a single page with sequential navigation to avoid Cloudflare detection
+class PlaywrightBrowserManager {
+    constructor() {
+        this.browser = null;
+        this.context = null;
+        this.page = null;
+        this.isLaunching = false;
+        this.launchPromise = null;
+        // Request queue for sequential processing
+        this.requestQueue = [];
+        this.isProcessing = false;
+    }
+
+    // Queue a request and process sequentially
+    async queueRequest(requestFn) {
+        return new Promise((resolve, reject) => {
+            this.requestQueue.push({ requestFn, resolve, reject });
+            this.processQueue();
+        });
+    }
+
+    async processQueue() {
+        if (this.isProcessing || this.requestQueue.length === 0) {
+            return;
+        }
+
+        this.isProcessing = true;
+
+        while (this.requestQueue.length > 0) {
+            const { requestFn, resolve, reject } = this.requestQueue.shift();
+            try {
+                const result = await requestFn();
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+            // Longer delay between requests to avoid Cloudflare rate limiting
+            if (this.requestQueue.length > 0) {
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+
+        this.isProcessing = false;
+    }
+
+    // Acquire a slot for a new page (waits if at max capacity)
+    async acquirePageSlot() {
+        // Now handled by queue - just return immediately
+        return;
+    }
+
+    // Release a page slot
+    releasePageSlot() {
+        // Now handled by queue - no-op
+    }
+
+    async getBrowser() {
+        if (this.browser && this.browser.isConnected()) {
+            return this.browser;
+        }
+
+        // Prevent multiple simultaneous launches
+        if (this.isLaunching) {
+            return this.launchPromise;
+        }
+
+        this.isLaunching = true;
+        this.launchPromise = this._launchBrowser();
+
+        try {
+            this.browser = await this.launchPromise;
+            return this.browser;
+        } finally {
+            this.isLaunching = false;
+        }
+    }
+
+    async _launchBrowser() {
+        logger.info('PlaywrightBrowserManager => Launching browser...');
+        const browser = await chromium.launch({
+            headless: true,
+            args: [
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu'
+            ]
+        });
+        logger.info('PlaywrightBrowserManager => Browser launched successfully');
+        return browser;
+    }
+
+    async getContext() {
+        const browser = await this.getBrowser();
+
+        if (!this.context || this.context.browser() !== browser) {
+            this.context = await browser.newContext({
+                userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                viewport: { width: 1920, height: 1080 },
+                locale: 'he-IL',
+                timezoneId: 'Asia/Jerusalem',
+                extraHTTPHeaders: {
+                    'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7'
+                }
+            });
+            // Reset page when context changes
+            this.page = null;
+        }
+
+        return this.context;
+    }
+
+    // Get a reusable page (avoids creating new pages for each request)
+    async getPage() {
+        const context = await this.getContext();
+
+        if (!this.page || this.page.isClosed()) {
+            this.page = await context.newPage();
+            logger.debug('PlaywrightBrowserManager => Created new page');
+        }
+
+        return this.page;
+    }
+
+    async close() {
+        if (this.page) {
+            await this.page.close().catch(() => {});
+            this.page = null;
+        }
+        if (this.context) {
+            await this.context.close().catch(() => {});
+            this.context = null;
+        }
+        if (this.browser) {
+            await this.browser.close().catch(() => {});
+            this.browser = null;
+        }
+        logger.info('PlaywrightBrowserManager => Browser closed');
+    }
+}
+
+const playwrightManager = new PlaywrightBrowserManager();
+
+// Cleanup on process exit
+process.on('exit', () => {
+    playwrightManager.close().catch(() => {});
+});
+process.on('SIGINT', async () => {
+    await playwrightManager.close();
+    process.exit(0);
+});
+process.on('SIGTERM', async () => {
+    await playwrightManager.close();
+    process.exit(0);
+});
 
 // --- Request Tracking for Rate Limiting ---
 class RequestTracker {
@@ -69,7 +234,7 @@ class RequestTracker {
     getRateLimits(hostname) {
         // Sort domains by length (longest first) to match most specific domain
         const domains = Object.keys(RATE_LIMITING)
-            .filter(key => key !== 'DEFAULT_MIN_INTERVAL' && key !== 'DEFAULT_MAX_PER_MINUTE')
+            .filter(key => !['DEFAULT_MIN_INTERVAL', 'DEFAULT_MAX_PER_MINUTE', 'DEFAULT_JITTER'].includes(key))
             .sort((a, b) => b.length - a.length); // Longest first
         
         for (const domain of domains) {
@@ -81,12 +246,13 @@ class RequestTracker {
         // Return defaults
         return {
             minInterval: RATE_LIMITING.DEFAULT_MIN_INTERVAL,
-            maxPerMinute: RATE_LIMITING.DEFAULT_MAX_PER_MINUTE
+            maxPerMinute: RATE_LIMITING.DEFAULT_MAX_PER_MINUTE,
+            jitter: RATE_LIMITING.DEFAULT_JITTER || [10, 50]  // ← Add default jitter
         };
     }
 
     async trackAndDelay(hostname) {
-        const { minInterval, maxPerMinute } = this.getRateLimits(hostname);
+        const { minInterval, maxPerMinute, jitter: jitterRange } = this.getRateLimits(hostname);
         const now = Date.now();
         
         if (!this.requestsByDomain.has(hostname)) {
@@ -119,9 +285,14 @@ class RequestTracker {
             }
         }
         
-        // Add random jitter (100-500ms) to appear more human-like
-        const jitter = Math.floor(Math.random() * 400) + 100;
-        await this.sleep(jitter);
+        // Add random jitter based on domain configuration
+        const [minJitter, maxJitter] = jitterRange || [10, 50];
+        const jitterDuration = minJitter === maxJitter ? minJitter : 
+            Math.floor(Math.random() * (maxJitter - minJitter)) + minJitter;
+        
+        if (jitterDuration > 0) {
+            await this.sleep(jitterDuration);
+        }
         
         // Record this request
         timestamps.push(Date.now());
@@ -265,13 +436,32 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
         // Determine initial method:
         // 1. If preferredMethod is specified, use it
         // 2. Otherwise, use sticky method for this domain
-        // 3. Default to 'axios'
+        // 3. Check if domain prefers got-scraping
+        // 4. Default to 'axios'
         let currentMethod;
         if (preferredMethod) {
             currentMethod = preferredMethod;
             logger.debug(`fetchWithRetries => Using explicitly requested method: ${preferredMethod}`);
+        } else if (stickyMethods.has(hostname)) {
+            currentMethod = stickyMethods.get(hostname);
         } else {
-            currentMethod = stickyMethods.get(hostname) || 'axios';
+            // Check if domain requires Playwright (Cloudflare-protected)
+            const requiresPlaywright = FETCH_METHOD_CONFIG.REQUIRES_PLAYWRIGHT?.some(domain =>
+                hostname.includes(domain)
+            );
+            if (requiresPlaywright) {
+                currentMethod = 'playwright';
+                logger.debug(`fetchWithRetries => Using Playwright for ${hostname} (Cloudflare-protected)`);
+            } else {
+                // Check if domain prefers got-scraping
+                const prefersGotScraping = FETCH_METHOD_CONFIG.PREFERS_GOT_SCRAPING?.some(domain =>
+                    hostname.includes(domain)
+                );
+                currentMethod = prefersGotScraping ? 'got-scraping' : 'axios';
+                if (prefersGotScraping) {
+                    logger.debug(`fetchWithRetries => Using got-scraping for ${hostname} (in PREFERS_GOT_SCRAPING list)`);
+                }
+            }
         }
 
         let lastError; // Track the last error for final throw
@@ -298,31 +488,44 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
                 const errorMsg = error.message || 'Unknown error';
                 logger.warn(`${currentMethod} failed (Status: ${status || 'Timeout'}): ${errorMsg}`);
                 
-                // If we get a 403 or 401, immediately rotate to a more powerful tool
+                // If we get a 403 or 401, escalate to more powerful tools
                 if (status === 403 || status === 401) {
                     logger.warn(`Authorization issue (${status}) with ${currentMethod}.`);
-    
+
                     // Check if this domain should stay with axios
-                    const shouldStayWithAxios = FETCH_METHOD_CONFIG.AXIOS_ONLY_DOMAINS.some(domain => 
+                    const shouldStayWithAxios = FETCH_METHOD_CONFIG.AXIOS_ONLY_DOMAINS.some(domain =>
                         hostname.includes(domain)
                     );
-                    
+
                     if (shouldStayWithAxios) {
                         logger.warn(`Keeping axios for ${hostname} (in AXIOS_ONLY list), adding long delay...`);
                         const rateLimitDelay = 60000 * attempt; // 1min, 2min, 3min...
                         await new Promise(r => setTimeout(r, rateLimitDelay));
                         continue;
                     }
-                    
-                    // For other domains, switching to got-scraping may help
-                    logger.warn(`Switching to got-scraping for ${hostname}...`);
-                    currentMethod = 'got-scraping';
-                    stickyMethods.delete(hostname);
-                    
-                    const rateLimitDelay = 30000 * attempt;
-                    logger.warn(`Waiting ${rateLimitDelay}ms due to possible rate limiting...`);
-                    await new Promise(r => setTimeout(r, rateLimitDelay));
-                    continue;
+
+                    // Escalation chain: axios -> got-scraping -> playwright
+                    if (currentMethod === 'axios') {
+                        logger.warn(`Switching to got-scraping for ${hostname}...`);
+                        currentMethod = 'got-scraping';
+                        stickyMethods.delete(hostname);
+                        const rateLimitDelay = 5000; // Short delay before trying got-scraping
+                        await new Promise(r => setTimeout(r, rateLimitDelay));
+                        continue;
+                    } else if (currentMethod === 'got-scraping') {
+                        logger.warn(`Switching to Playwright for ${hostname} (Cloudflare detected)...`);
+                        currentMethod = 'playwright';
+                        stickyMethods.delete(hostname);
+                        const rateLimitDelay = 2000; // Short delay before trying Playwright
+                        await new Promise(r => setTimeout(r, rateLimitDelay));
+                        continue;
+                    } else {
+                        // Already using Playwright, add delay and retry
+                        const rateLimitDelay = 30000 * attempt;
+                        logger.warn(`Waiting ${rateLimitDelay}ms due to possible rate limiting...`);
+                        await new Promise(r => setTimeout(r, rateLimitDelay));
+                        continue;
+                    }
                 }
 
                 if (status === 429) {
@@ -354,7 +557,7 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
                     await new Promise(r => setTimeout(r, 5000));
                 }
 
-                if (attempt === FETCH_METHOD_CONFIG.NAX_RETRIES) {
+                if (attempt === FETCH_METHOD_CONFIG.MAX_RETRIES) {
                     logger.error(`Max retries reached for ${url}`);
                     throw error;
 
@@ -457,6 +660,65 @@ async function executeRequest(method, url, asJson, params, headers) {
             }
             
             return asJson ? gotRes.body : parse(gotRes.body.toString());
+
+        case 'playwright':
+            // Queue the request for sequential processing to avoid Cloudflare rate limiting
+            return await playwrightManager.queueRequest(async () => {
+                const page = await playwrightManager.getPage();
+
+                // Build URL with params if needed
+                let fetchUrl = url;
+                if (params && Object.keys(params).length > 0) {
+                    const urlObj = new URL(url);
+                    Object.entries(params).forEach(([key, value]) => {
+                        urlObj.searchParams.append(key, value);
+                    });
+                    fetchUrl = urlObj.toString();
+                }
+
+                logger.trace(`executeRequest => [PLAYWRIGHT] Navigating to ${fetchUrl}`);
+
+                // Navigate with retry for Cloudflare challenge
+                const response = await page.goto(fetchUrl, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: FETCH_METHOD_CONFIG.REQUEST_TIMEOUT
+                });
+
+                // Wait for Cloudflare challenge to complete if present
+                const pageContent = await page.content();
+                if (pageContent.includes('Just a moment') || pageContent.includes('Checking your browser')) {
+                    logger.debug('executeRequest => [PLAYWRIGHT] Cloudflare challenge detected, waiting...');
+                    await page.waitForTimeout(5000);
+                    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
+                }
+
+                const status = response?.status() || 200;
+                if (status >= 400) {
+                    const error = new Error(`HTTP ${status}`);
+                    error.statusCode = status;
+                    error.response = { status };
+                    throw error;
+                }
+
+                const content = await page.content();
+
+                if (asJson) {
+                    // Extract JSON from page - might be wrapped in HTML
+                    const bodyText = await page.evaluate(() => document.body.innerText);
+                    try {
+                        return JSON.parse(bodyText);
+                    } catch (e) {
+                        // Try to find JSON in a <pre> tag
+                        const preContent = await page.$eval('pre', el => el.textContent).catch(() => null);
+                        if (preContent) {
+                            return JSON.parse(preContent);
+                        }
+                        throw new Error('Failed to parse JSON from Playwright response');
+                    }
+                }
+
+                return parse(content);
+            });
 
         default:
             throw new Error(`Unknown method: ${method}`);
@@ -908,16 +1170,33 @@ async function getStreams(link){
     if (doc.querySelector("li.date-local") != undefined){
         const date = new Date(doc.querySelector("li.date-local").getAttribute("data-date-utc"));
         released = isNaN(date.getTime()) ? "" : date.toISOString();
-    } 
-    var scriptElems = doc.querySelectorAll("script");
-    
-    for (var scriptElem of scriptElems){         
-        if (scriptElem.toString().includes("VideoObject")) {
-            videoUrl = this.getEpisodeUrl(scriptElem.toString());
-            break;
+    }
+
+    // Try to get stream URL from redge-player element (new Kan player)
+    var playerElem = doc.querySelector("[id^='redge-player-']");
+    if (playerElem && playerElem.getAttribute("data-hls-url")) {
+        videoUrl = playerElem.getAttribute("data-hls-url");
+        // Ensure URL has protocol
+        if (videoUrl.startsWith("//")) {
+            videoUrl = "https:" + videoUrl;
+        }
+        logger.debug("getStreams => Found redge-player URL: " + videoUrl);
+    } else {
+        // Fallback to VideoObject method (legacy - Kaltura URLs, may not work)
+        logger.debug("getStreams => No redge-player found, falling back to VideoObject");
+        var scriptElems = doc.querySelectorAll("script");
+        for (var scriptElem of scriptElems){
+            if (scriptElem.toString().includes("VideoObject")) {
+                videoUrl = getEpisodeUrl(scriptElem.toString());
+                // Ensure URL has protocol
+                if (videoUrl.startsWith("//")) {
+                    videoUrl = "https:" + videoUrl;
+                }
+                break;
+            }
         }
     }
-    
+
     if (videoUrl == "") {
         return "-1";
     }
@@ -994,8 +1273,139 @@ function generateSeriesId(link, subPrefix, seriesId = "0"){
     }
 
     retId = PREFIX + "kan_" + subPrefix + "_" + retId;
-    
+
     return retId;
+}
+
+/**
+ * =============================================================================
+ * ON-DEMAND STREAM RESOLVER
+ * =============================================================================
+ *
+ * This function resolves stream URLs on-demand when a user plays an episode.
+ * Instead of pre-fetching all episode streams during scraping (which triggers
+ * Cloudflare rate limiting), we store episode page URLs and resolve them
+ * when the user actually requests playback.
+ *
+ * Usage in Stremio addon stream handler:
+ *   const { resolveStreamUrl } = require('./utilities.js');
+ *   const stream = await resolveStreamUrl(episodeLink);
+ *   if (stream) {
+ *       return { streams: [{ url: stream.url, title: stream.title }] };
+ *   }
+ *
+ * @param {string} episodePageUrl - The URL of the episode page (stored in episodeLink)
+ * @returns {Promise<Object|null>} - Stream object with url, title, name, released or null on failure
+ */
+async function resolveStreamUrl(episodePageUrl) {
+    logger.info(`resolveStreamUrl => Resolving stream for: ${episodePageUrl}`);
+
+    if (!episodePageUrl) {
+        logger.warn('resolveStreamUrl => No episode URL provided');
+        return null;
+    }
+
+    try {
+        // Fetch the episode page
+        const doc = await fetchData(episodePageUrl);
+
+        if (!doc) {
+            logger.warn(`resolveStreamUrl => Failed to fetch episode page: ${episodePageUrl}`);
+            return null;
+        }
+
+        let videoUrl = "";
+        let nameVideo = "";
+        let released = "";
+
+        // Extract release date
+        if (doc.querySelector("li.date-local") != undefined) {
+            const dateStr = doc.querySelector("li.date-local").getAttribute("data-date-utc");
+            if (dateStr) {
+                // Parse DD.MM.YYYY HH:MM:SS format
+                const match = dateStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
+                if (match) {
+                    const [, day, month, year, hour = "00", min = "00", sec = "00"] = match;
+                    const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
+                    released = isNaN(date.getTime()) ? "" : date.toISOString();
+                }
+            }
+        }
+
+        // Try to get stream URL from redge-player element (Kan Digital video)
+        var playerElem = doc.querySelector("[id^='redge-player-']");
+        if (playerElem && playerElem.getAttribute("data-hls-url")) {
+            videoUrl = playerElem.getAttribute("data-hls-url");
+            if (videoUrl.startsWith("//")) {
+                videoUrl = "https:" + videoUrl;
+            }
+            logger.debug("resolveStreamUrl => Found redge-player URL: " + videoUrl);
+        }
+
+        // Try podcast player: figure[data-player-src] or button.btn-play[data-player-src]
+        if (!videoUrl) {
+            const figureElem = doc.querySelector("figure[data-player-src]");
+            if (figureElem) {
+                videoUrl = figureElem.getAttribute("data-player-src");
+                if (videoUrl && videoUrl.includes("?")) {
+                    videoUrl = videoUrl.substring(0, videoUrl.indexOf("?"));
+                }
+                logger.debug("resolveStreamUrl => Found podcast figure stream: " + videoUrl);
+            } else {
+                const buttonElem = doc.querySelector("button.btn-play[data-player-src]");
+                if (buttonElem) {
+                    videoUrl = buttonElem.getAttribute("data-player-src");
+                    if (videoUrl && videoUrl.includes("?")) {
+                        videoUrl = videoUrl.substring(0, videoUrl.indexOf("?"));
+                    }
+                    logger.debug("resolveStreamUrl => Found podcast button stream: " + videoUrl);
+                }
+            }
+        }
+
+        // Fallback to VideoObject method (legacy - Kaltura URLs)
+        if (!videoUrl) {
+            logger.debug("resolveStreamUrl => Trying VideoObject fallback");
+            var scriptElems = doc.querySelectorAll("script");
+            for (var scriptElem of scriptElems) {
+                if (scriptElem.toString().includes("VideoObject")) {
+                    videoUrl = getEpisodeUrl(scriptElem.toString());
+                    if (videoUrl.startsWith("//")) {
+                        videoUrl = "https:" + videoUrl;
+                    }
+                    break;
+                }
+            }
+        }
+
+        if (!videoUrl) {
+            logger.warn(`resolveStreamUrl => No stream URL found on page: ${episodePageUrl}`);
+            return null;
+        }
+
+        // Extract video name/title
+        if (doc.querySelectorAll("div.info-title h1.h2").length > 0) {
+            nameVideo = doc.querySelectorAll("div.info-title h1.h2")[0].text.trim();
+            nameVideo = getVideoNameFromEpisodePage(nameVideo);
+        } else if (doc.querySelector("title")) {
+            nameVideo = doc.querySelector("title").text.trim();
+            nameVideo = getVideoNameFromEpisodePage(nameVideo);
+        }
+
+        const streamObj = {
+            url: videoUrl,
+            title: nameVideo,
+            name: nameVideo,
+            released: released
+        };
+
+        logger.info(`resolveStreamUrl => Successfully resolved stream: ${nameVideo}`);
+        return streamObj;
+
+    } catch (error) {
+        logger.error(`resolveStreamUrl => Error resolving stream for ${episodePageUrl}: ${error.message}`);
+        return null;
+    }
 }
 
 function sleeperTimer(delay = FETCH_METHOD_CONFIG.RETRY_DELAY) {
@@ -1003,14 +1413,15 @@ function sleeperTimer(delay = FETCH_METHOD_CONFIG.RETRY_DELAY) {
 }
 
 module.exports = {
-    fetchData, 
-    writeJSONToFile, 
-    getImageFromUrl, 
-    setGenreFromString, 
-    getNameFromSeriesPage, 
+    fetchData,
+    writeJSONToFile,
+    getImageFromUrl,
+    setGenreFromString,
+    getNameFromSeriesPage,
     getStreams,
     getEpisodeUrl,
     getVideoNameFromEpisodePage,
     generateSeriesId,
-    sleeperTimer 
+    sleeperTimer,
+    resolveStreamUrl
 };
