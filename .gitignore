@@ -29,5 +29,5 @@ logs/stremio*.*
 backups
 backups/*.*
 
-
-
+#ignore claude code settings
+.claude/
