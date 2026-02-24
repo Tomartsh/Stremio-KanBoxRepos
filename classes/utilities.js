@@ -528,6 +528,12 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
                     }
                 }
 
+                // 404 means the page doesn't exist - no point retrying
+                if (status === 404) {
+                    logger.warn(`Page not found (404) for ${url} - skipping retries`);
+                    throw error;
+                }
+
                 if (status === 429) {
                     logger.warn(`Rate limit (429) detected. Long delay before retry...`);
                     const rateLimitDelay = 60000 * attempt; // 1min, 2min, 3min...

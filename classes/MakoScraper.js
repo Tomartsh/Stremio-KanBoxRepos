@@ -221,7 +221,7 @@ class MakoScraper {
                     continue;
                 }
 
-                const streams = await this.getStream(episodeData.episodeAjax);
+                const streams = await this.getStream(episodeData.episodeAjax, episodeData.episodeTitle, episodeNumber);
 
                 const videoJsonObj = {
                     id: episodeData.episodeId,
@@ -308,17 +308,20 @@ class MakoScraper {
         }
     }
 
-    async getStream(episodeAjax) {
+    async getStream(episodeAjax, episodeTitle, episodeNumber) {
         const streams = [];
-        
+
         if (!episodeAjax?.media || !Array.isArray(episodeAjax.media)) {
             logger.warn('getStream => No media found in episode data');
             return streams;
         }
 
+        const label = episodeTitle || ("פרק " + episodeNumber);
+        let streamIndex = 1;
+
         for (let i = 0; i < episodeAjax.media.length; i++) {
             const cdn = episodeAjax.media[i];
-            
+
             try {
                 if (!cdn.url || !cdn.cdn) {
                     logger.warn('getStream => Missing URL or CDN info');
@@ -329,8 +332,10 @@ class MakoScraper {
                 const stream = {
                     url: cdn.url,
                     cdn: cdn.cdn,
-                    cdnLB: cdn.cdnLB || 0
+                    cdnLB: cdn.cdnLB || 0,
+                    name: label + " - stream " + streamIndex
                 };
+                streamIndex++;
                 
                 streams.push(stream);
                 logger.debug(`getStream => Added stream info from ${cdn.cdn}`);

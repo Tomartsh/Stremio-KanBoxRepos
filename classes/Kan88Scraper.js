@@ -149,14 +149,28 @@ class Kan88Scraper {
         
         //first page is already retrieved. We need to continue from page 2 an on
         var podcastsKan88SeriesElements = kan88Series.querySelectorAll("div.card.card-row");
-       
+
         for (var i = 1 ; i < lastPageNo ; i++ ){
             var tempKanDoc = await fetchData(KAN88_POCASTS_URL + "?page=" + (i + 1));
             var podcastsKan88AdditionalPageSeriesElements = tempKanDoc.querySelectorAll("div.card.card-row");
             for( var podcast of podcastsKan88AdditionalPageSeriesElements){
                 podcastsKan88SeriesElements.push(podcast);
-            } 
+            }
         }
+
+        // Deduplicate by link URL to prevent same podcasts from appearing twice across pages
+        var seenLinks = new Set();
+        var uniquePodcasts = [];
+        for (var podcast of podcastsKan88SeriesElements) {
+            var link = this.getPodcastLink(podcast);
+            if (!seenLinks.has(link)) {
+                seenLinks.add(link);
+                uniquePodcasts.push(podcast);
+            } else {
+                logger.debug("crawlKan88 => Skipping duplicate podcast: " + link);
+            }
+        }
+        podcastsKan88SeriesElements = uniquePodcasts;
 
         // Process podcasts using batch processor
         logger.info(`crawlKan88 => Found ${podcastsKan88SeriesElements.length} Kan 88 podcasts to process`);
