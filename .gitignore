@@ -2,7 +2,7 @@
 node_modules
 package-lock.json
 
-config/.env
+classes/.env
 .env
 
 #ignore output folder
