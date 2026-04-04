@@ -4,7 +4,8 @@ const {
     LOG4JS,
     KAN_ARCHIVE,
     KAN_DIGITAL_IMAGE_PREFIX,
-    SCRAPER_CONFIG
+    SCRAPER_CONFIG,
+    TMDB
 } = require("./constants.js");
 const SUB_PREFIX = "archive";
 
@@ -32,6 +33,8 @@ class KanArchiveScraper {
     constructor() {
         this._kanArchiveJSONObj = {};
         this.isRunning = false;
+        this._tmdbEnabled = TMDB.ENABLED;
+        this._tmdbCache = new Map(); // Cache TMDB results to avoid duplicate searches
 
         // Get scraper configuration
         const scraperName = 'KanArchiveScraper';
@@ -42,7 +45,7 @@ class KanArchiveScraper {
             delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
         };
 
-        logger.info(`KanArchiveScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
+        logger.info(`KanArchiveScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this._tmdbEnabled}`);
     }
 
     /**
@@ -256,12 +259,26 @@ class KanArchiveScraper {
         this._kanArchiveJSONObj[key]["meta"]["name"] = title;
         this._kanArchiveJSONObj[key]["name"] = title;
 
+        // Search TMDB for this series
+        let tmdbSeriesId = null;
+        if (this._tmdbEnabled) {
+            tmdbSeriesId = await this.searchTMDBSeries(title);
+            if (tmdbSeriesId) {
+                logger.info(`processOneSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
+                // Add TMDB ID to the series object
+                this._kanArchiveJSONObj[key].tmdbId = tmdbSeriesId;
+                this._kanArchiveJSONObj[key].meta.tmdbId = tmdbSeriesId;
+            } else {
+                logger.debug(`processOneSeries => No TMDB ID found for "${title}"`);
+            }
+        }
+
         const seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
         logger.debug(`processOneSeries => Series "${title}" has ${seasons.length} season(s)`);
 
         if (seasons.length > 0) {
             // Multiple seasons and episodes
-            await this.getVideos(seasons, id, subType);
+            await this.getVideos(seasons, id, subType, tmdbSeriesId);
         } else {
             // Single episode (movie)
             const movieTitle = seriesPageDoc.querySelector("h2").text.trim();
@@ -303,9 +320,10 @@ class KanArchiveScraper {
      * @param {*} videosElems
      * @param {*} id
      * @param {*} subType
+     * @param {*} tmdbSeriesId
      * @returns Array of video json objects
      *********************************************************/
-    async getVideos(videosElems, id, subType){
+    async getVideos(videosElems, id, subType, tmdbSeriesId = null){
         const noOfSeasons = videosElems.length;
         logger.info(`getVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
 
@@ -329,7 +347,7 @@ class KanArchiveScraper {
             await this.processBatch(
                 episodeData,
                 async (epData, index) => {
-                    return await this.processOneEpisode(epData, id, subType);
+                    return await this.processOneEpisode(epData, id, subType, tmdbSeriesId);
                 },
                 `episodes (Season ${seasonNo})`
             );
@@ -341,7 +359,7 @@ class KanArchiveScraper {
     /**
      * Process a single episode (extracted from getVideos for batch processing)
      */
-    async processOneEpisode(epData, id, subType) {
+    async processOneEpisode(epData, id, subType, tmdbSeriesId = null) {
         const { elem: seasonEpisodesElem, seasonNo, episodeNo } = epData;
 
         logger.trace(`processOneEpisode => Season: ${seasonNo}, Episode: ${episodeNo}`);
@@ -390,6 +408,15 @@ class KanArchiveScraper {
             return null;
         }
 
+        // Search TMDB for this episode if we have a series ID
+        let tmdbEpisodeId = null;
+        if (this._tmdbEnabled && tmdbSeriesId) {
+            tmdbEpisodeId = await this.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
+            if (tmdbEpisodeId) {
+                logger.debug(`processOneEpisode => Found TMDB episode ID ${tmdbEpisodeId} for ${videoId}`);
+            }
+        }
+
         const streamsArr = [
             {
                 url: streams.url,
@@ -399,7 +426,7 @@ class KanArchiveScraper {
             }
         ];
 
-        this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr);
+        this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr, tmdbEpisodeId);
         logger.debug(`processOneEpisode => ✓ Added episode "${title}" (S${seasonNo}E${episodeNo})`);
 
         return { videoId, title, seasonNo, episodeNo };
@@ -526,7 +553,7 @@ class KanArchiveScraper {
         return utils.setGenreFromString(genres);
     }
 
-    addVideoToMeta(key, episodeId, name, seasonNo, episodeNo, desc, thumb, episodeLink, released, streams){
+    addVideoToMeta(key, episodeId, name, seasonNo, episodeNo, desc, thumb, episodeLink, released, streams, tmdbEpisodeId = null){
         var video  = {
             id: episodeId,
             name: name,
@@ -538,21 +565,22 @@ class KanArchiveScraper {
             streams: streams
         };
         if (released != "") {video["released"] = released;}
+        if (tmdbEpisodeId) {video["tmdbEpisodeId"] = tmdbEpisodeId;}
 
         this._kanArchiveJSONObj[key]["meta"]["videos"].push(video);
 
     }
 
-    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type){
-        this._kanArchiveJSONObj[id] =  {
-            id: id, 
-            name: seriesTitle, 
-            poster: imgUrl, 
-            description: seriesDescription, 
+    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
+        const seriesObj = {
+            id: id,
+            name: seriesTitle,
+            poster: imgUrl,
+            description: seriesDescription,
             link: seriesPage,
-            background: imgUrl, 
+            background: imgUrl,
             genres: genres,
-            type: type, 
+            type: type,
             subtype: subType,
             meta: {
                 id: id,
@@ -567,9 +595,106 @@ class KanArchiveScraper {
                 genres: genres,
                 videos: videosList
             }
+        };
+
+        // Add TMDB series ID if found
+        if (tmdbSeriesId) {
+            seriesObj.meta.tmdbId = tmdbSeriesId;
+            seriesObj.tmdbId = tmdbSeriesId; // Also at top level for easy access
+            logger.debug(`addToJsonObject => Added TMDB ID ${tmdbSeriesId} to series "${seriesTitle}"`);
         }
 
+        this._kanArchiveJSONObj[id] = seriesObj;
+
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
+    }
+
+    /**
+     * Search TMDB for a series by title (Hebrew)
+     * @param {string} title - The series title
+     * @param {string} year - Optional year for better matching
+     * @returns {Promise<number|null>} - TMDB ID or null if not found
+     */
+    async searchTMDBSeries(title, year = null) {
+        if (!this._tmdbEnabled) {
+            logger.debug(`searchTMDBSeries => TMDB not enabled, skipping search for "${title}"`);
+            return null;
+        }
+
+        // Check cache first
+        const cacheKey = `${title}${year ? `_${year}` : ''}`;
+        if (this._tmdbCache.has(cacheKey)) {
+            logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
+            return this._tmdbCache.get(cacheKey);
+        }
+
+        try {
+            // Build search URL with Hebrew language
+            let searchUrl = `${TMDB.BASE_URL}${TMDB.SEARCH_ENDPOINT}?api_key=${TMDB.API_KEY}&language=${TMDB.LANGUAGE}&query=${encodeURIComponent(title)}`;
+
+            if (year) {
+                searchUrl += `&first_air_date_year=${year}`;
+            }
+
+            logger.debug(`searchTMDBSeries => Searching TMDB for "${title}"${year ? ` (${year})` : ''}`);
+
+            const response = await fetchData(searchUrl, false);
+
+            if (!response || !response.results || response.results.length === 0) {
+                logger.debug(`searchTMDBSeries => No results found for "${title}"`);
+                this._tmdbCache.set(cacheKey, null);
+                return null;
+            }
+
+            // Get first result's TMDB ID
+            const tmdbId = response.results[0].id;
+            logger.info(`searchTMDBSeries => Found TMDB ID ${tmdbId} for "${title}" (original_title: ${response.results[0].original_name || 'N/A'})`);
+
+            // Cache the result
+            this._tmdbCache.set(cacheKey, tmdbId);
+
+            return tmdbId;
+
+        } catch (error) {
+            logger.error(`searchTMDBSeries => Error searching TMDB for "${title}":`, error.message);
+            this._tmdbCache.set(cacheKey, null);
+            return null;
+        }
+    }
+
+    /**
+     * Search TMDB for an episode by series ID, season, and episode number
+     * @param {number} tmdbSeriesId - The TMDB series ID
+     * @param {number} seasonNumber - Season number
+     * @param {number} episodeNumber - Episode number
+     * @returns {Promise<number|null>} - TMDB episode ID or null if not found
+     */
+    async searchTMDBEpisode(tmdbSeriesId, seasonNumber, episodeNumber) {
+        if (!this._tmdbEnabled || !tmdbSeriesId) {
+            return null;
+        }
+
+        try {
+            const episodeUrl = `${TMDB.BASE_URL}/tv/${tmdbSeriesId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB.API_KEY}`;
+
+            logger.debug(`searchTMDBEpisode => Fetching TMDB episode data for series ${tmdbSeriesId}, S${seasonNumber}E${episodeNumber}`);
+
+            const response = await fetchData(episodeUrl, false);
+
+            if (!response || !response.id) {
+                logger.debug(`searchTMDBEpisode => Episode not found for S${seasonNumber}E${episodeNumber}`);
+                return null;
+            }
+
+            const tmdbEpisodeId = response.id;
+            logger.debug(`searchTMDBEpisode => Found TMDB episode ID ${tmdbEpisodeId} for S${seasonNumber}E${episodeNumber}`);
+
+            return tmdbEpisodeId;
+
+        } catch (error) {
+            logger.error(`searchTMDBEpisode => Error searching TMDB for episode:`, error.message);
+            return null;
+        }
     }
 
     writeJSON(){

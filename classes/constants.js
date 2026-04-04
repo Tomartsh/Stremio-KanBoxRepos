@@ -201,5 +201,16 @@ module.exports = {
     URL_SPORT5_VOD: "https://vod.sport5.co.il/HTML/External/VodCentertDS.txt",
 
     //Knesset
-    KNESSET_URL_TV: "https://www.knesset.tv"
+    KNESSET_URL_TV: "https://www.knesset.tv",
+
+    //TMDB (The Movie Database) API
+    TMDB: {
+        API_KEY: process.env.TMDB_API_KEY || "",
+        BASE_URL: "https://api.themoviedb.org/3",
+        ENABLED: !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY !== "your_tmdb_api_key_here"),
+        SEARCH_ENDPOINT: "/search/tv",
+        SERIES_ENDPOINT: "/tv",
+        TIMEOUT: 10000, // 10 second timeout for TMDB requests
+        LANGUAGE: "he" // Default to Hebrew for Israeli content
+    }
 };

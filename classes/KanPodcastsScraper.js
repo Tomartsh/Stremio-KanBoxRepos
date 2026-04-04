@@ -4,7 +4,8 @@ const {
     LOG4JS,
     PODCASTS,
     KAN_BASE_URL,
-    SCRAPER_CONFIG
+    SCRAPER_CONFIG,
+    TMDB
 } = require("./constants.js");
 
 const log4js = require("log4js");
@@ -31,6 +32,8 @@ class KanPodcastsScraper {
     constructor() {
         this._kanPodcastsJSONObj = {};
         this.isRunning = false;
+        this._tmdbEnabled = TMDB.ENABLED;
+        this._tmdbCache = new Map();
 
         // Get scraper configuration
         const scraperName = 'KanPodcastsScraper';
@@ -41,7 +44,7 @@ class KanPodcastsScraper {
             delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
         };
 
-        logger.info(`KanPodcastsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
+        logger.info(`KanPodcastsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this._tmdbEnabled}`);
     }
 
     /**
@@ -210,6 +213,15 @@ class KanPodcastsScraper {
 
         logger.debug(`processOneSeries => Processing: ${title} (OriginalID: ${programId}, StremioID: ${stremioId})`);
 
+        // Search TMDB for this series
+        let tmdbSeriesId = null;
+        if (this._tmdbEnabled) {
+            tmdbSeriesId = await this.searchTMDBSeries(title);
+            if (tmdbSeriesId) {
+                logger.info(`processOneSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
+            }
+        }
+
         try {
             const episodes = await this.getEpisodes(programId, pageUrl);
 
@@ -243,7 +255,8 @@ class KanPodcastsScraper {
                     [],
                     videosList,
                     subType,
-                    type
+                    type,
+                    tmdbSeriesId
                 );
 
                 return { stremioId, title, episodeCount: episodes.length };
@@ -460,16 +473,16 @@ class KanPodcastsScraper {
         }
     }
     
-    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type){
-        this._kanPodcastsJSONObj[id] =  {
-            id: id, 
-            name: seriesTitle, 
-            poster: imgUrl, 
-            description: seriesDescription, 
+    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
+        const seriesObj = {
+            id: id,
+            name: seriesTitle,
+            poster: imgUrl,
+            description: seriesDescription,
             link: seriesPage,
-            background: imgUrl, 
+            background: imgUrl,
             genres: genres,
-            type: type, 
+            type: type,
             subtype: subType,
             meta: {
                 id: id,
@@ -484,9 +497,71 @@ class KanPodcastsScraper {
                 genres: genres,
                 videos: videosList
             }
+        };
+
+        // Add TMDB series ID if found
+        if (tmdbSeriesId) {
+            seriesObj.meta.tmdbId = tmdbSeriesId;
+            seriesObj.tmdbId = tmdbSeriesId;
+            logger.debug(`addToJsonObject => Added TMDB ID ${tmdbSeriesId} to series "${seriesTitle}"`);
         }
 
+        this._kanPodcastsJSONObj[id] = seriesObj;
+
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
+    }
+
+    /**
+     * Search TMDB for a series by title (Hebrew)
+     * @param {string} title - The series title
+     * @param {string} year - Optional year for better matching
+     * @returns {Promise<number|null>} - TMDB ID or null if not found
+     */
+    async searchTMDBSeries(title, year = null) {
+        if (!this._tmdbEnabled) {
+            logger.debug(`searchTMDBSeries => TMDB not enabled, skipping search for "${title}"`);
+            return null;
+        }
+
+        // Check cache first
+        const cacheKey = `${title}${year ? `_${year}` : ''}`;
+        if (this._tmdbCache.has(cacheKey)) {
+            logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
+            return this._tmdbCache.get(cacheKey);
+        }
+
+        try {
+            // Build search URL with Hebrew language
+            let searchUrl = `${TMDB.BASE_URL}${TMDB.SEARCH_ENDPOINT}?api_key=${TMDB.API_KEY}&language=${TMDB.LANGUAGE}&query=${encodeURIComponent(title)}`;
+
+            if (year) {
+                searchUrl += `&first_air_date_year=${year}`;
+            }
+
+            logger.debug(`searchTMDBSeries => Searching TMDB for "${title}"${year ? ` (${year})` : ''}`);
+
+            const response = await fetchData(searchUrl, false);
+
+            if (!response || !response.results || response.results.length === 0) {
+                logger.debug(`searchTMDBSeries => No results found for "${title}"`);
+                this._tmdbCache.set(cacheKey, null);
+                return null;
+            }
+
+            // Get first result's TMDB ID
+            const tmdbId = response.results[0].id;
+            logger.info(`searchTMDBSeries => Found TMDB ID ${tmdbId} for "${title}" (original_title: ${response.results[0].original_name || 'N/A'})`);
+
+            // Cache the result
+            this._tmdbCache.set(cacheKey, tmdbId);
+
+            return tmdbId;
+
+        } catch (error) {
+            logger.error(`searchTMDBSeries => Error searching TMDB for "${title}":`, error.message);
+            this._tmdbCache.set(cacheKey, null);
+            return null;
+        }
     }
 
     writeJSON(){

@@ -3,7 +3,8 @@ const {
     LOG4JS,
     RESHET,
     PREFIX,
-    SCRAPER_CONFIG
+    SCRAPER_CONFIG,
+    TMDB
 } = require ("./constants");
 const {fetchData, writeLog} = require("./utilities.js");
 const log4js = require("log4js");
@@ -30,6 +31,8 @@ class ReshetScraper {
         this._reshetJSONObj = {};
         this._buildId = "";
         this._videos = [];
+        this._tmdbEnabled = TMDB.ENABLED;
+        this._tmdbCache = new Map();
 
         // Get scraper configuration
         const scraperName = 'ReshetScraper';
@@ -40,7 +43,7 @@ class ReshetScraper {
             delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
         };
 
-        logger.info(`ReshetScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
+        logger.info(`ReshetScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this._tmdbEnabled}`);
     }
 
     async crawl(isDoWriteFile = false){
@@ -176,12 +179,22 @@ class ReshetScraper {
         seriesUrl = seriesUrl.substring(0,seriesUrl.length -1);
         var seriesReshetName = seriesUrl.substring(seriesUrl.lastIndexOf("/") + 1);
         logger.debug(`processOneReshetSeries => seriesReshetName: ${seriesReshetName}`);
+
+        // Search TMDB for this series
+        let tmdbSeriesId = null;
+        if (this._tmdbEnabled) {
+            tmdbSeriesId = await this.searchTMDBSeries(title);
+            if (tmdbSeriesId) {
+                logger.info(`processOneReshetSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
+            }
+        }
+
         var videos = await this.getEpisodes(seriesReshetName, id)
         if (videos == "-1"){
             logger.error("processOneReshetSeries => Invalid KulturaId or page non existing. Skipping");
             return null;
         }
-        this.addToJsonObject(id, title, RESHET.URL_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series" )
+        this.addToJsonObject(id, title, RESHET.URL_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series", tmdbSeriesId )
         logger.debug(`processOneReshetSeries => Added series ${title}`);
         return { id, title };
     }
@@ -369,7 +382,7 @@ class ReshetScraper {
         return streams
     }
 
-    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type){
+    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
         var jsonObj = {
             id: id,
             link: seriesPage,
@@ -389,6 +402,13 @@ class ReshetScraper {
                 genres: genres,
                 videos: videosList
             }
+        };
+
+        // Add TMDB series ID if found
+        if (tmdbSeriesId) {
+            jsonObj.meta.tmdbId = tmdbSeriesId;
+            jsonObj.tmdbId = tmdbSeriesId;
+            logger.debug(`addToJsonObject => Added TMDB ID ${tmdbSeriesId} to series "${seriesTitle}"`);
         }
 
         this._reshetJSONObj[id] = jsonObj;
@@ -404,6 +424,59 @@ class ReshetScraper {
         logger.trace("getJson() => JSON: " + retJson);
         return retJson;
     }
+    /**
+     * Search TMDB for a series by title (Hebrew)
+     * @param {string} title - The series title
+     * @param {string} year - Optional year for better matching
+     * @returns {Promise<number|null>} - TMDB ID or null if not found
+     */
+    async searchTMDBSeries(title, year = null) {
+        if (!this._tmdbEnabled) {
+            logger.debug(`searchTMDBSeries => TMDB not enabled, skipping search for "${title}"`);
+            return null;
+        }
+
+        // Check cache first
+        const cacheKey = `${title}${year ? `_${year}` : ''}`;
+        if (this._tmdbCache.has(cacheKey)) {
+            logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
+            return this._tmdbCache.get(cacheKey);
+        }
+
+        try {
+            // Build search URL with Hebrew language
+            let searchUrl = `${TMDB.BASE_URL}${TMDB.SEARCH_ENDPOINT}?api_key=${TMDB.API_KEY}&language=${TMDB.LANGUAGE}&query=${encodeURIComponent(title)}`;
+
+            if (year) {
+                searchUrl += `&first_air_date_year=${year}`;
+            }
+
+            logger.debug(`searchTMDBSeries => Searching TMDB for "${title}"${year ? ` (${year})` : ''}`);
+
+            const response = await fetchData(searchUrl, false);
+
+            if (!response || !response.results || response.results.length === 0) {
+                logger.debug(`searchTMDBSeries => No results found for "${title}"`);
+                this._tmdbCache.set(cacheKey, null);
+                return null;
+            }
+
+            // Get first result's TMDB ID
+            const tmdbId = response.results[0].id;
+            logger.info(`searchTMDBSeries => Found TMDB ID ${tmdbId} for "${title}" (original_title: ${response.results[0].original_name || 'N/A'})`);
+
+            // Cache the result
+            this._tmdbCache.set(cacheKey, tmdbId);
+
+            return tmdbId;
+
+        } catch (error) {
+            logger.error(`searchTMDBSeries => Error searching TMDB for "${title}":`, error.message);
+            this._tmdbCache.set(cacheKey, null);
+            return null;
+        }
+    }
+
     writeJSON(){
         logger.trace("writeJSON => Entered");
         logger.debug("writeJSON => writing file");
