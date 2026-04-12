@@ -40,8 +40,9 @@ class LiveTV {
     crawl(isDoWriteFile = false){
         logger.info("Start Crawling");
 
+
         // Kan channels - default referer is kan.org.il
-        this.addToLiveJSON("il_kanTV_04", "כאן 11", ["actuality", "news", "חדשות", "אקטואליה"], URLS_ASSETS_BASE + "kan.jpg", "Kan 11 Live Stream From Israel", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan11/live.livx/playlist.m3u8");
+        this.addToLiveJSON("il_kanTV_04", "כאן 11", ["actuality", "news", "חדשות", "אקטואליה"], URLS_ASSETS_BASE + "kan.jpg", "Kan 11 Live Stream From Israel", "https://n-121-7.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan11/live.livx/playlist.m3u8");
         this.addToLiveJSON("il_kanTV_05", "חינוכית", ["Kids","ילדים ונוער"], URLS_ASSETS_BASE + "hinuchit.jpg", "שידורי הטלויזיה החינוכית", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan_edu/live.livx/playlist.m3u8");
         this.addToLiveJSON("il_kanTV_07", "שידורי ערוץ השידור הערבי", ["Actuality","אקטואליה"], "https://www.makan.org.il/media/d3if2qoj/לוגו-ראשי-מכאן.png", "שידורי ערוץ השידור הערבי", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/makan/live.livx/playlist.m3u8");
 
@@ -49,9 +50,10 @@ class LiveTV {
         this.addToLiveJSON("il_kan_TV_06", "שידורי ערוץ הכנסת 99", ["Actuality","אקטואליה"], "https://www.knesset.tv/media/20004/logo-new.png", "שידורי ערוץ הכנסת - 99", "https://kneset.gostreaming.tv/p2-kneset/_definst_/myStream/index.m3u8");
 
         // Mako/Keshet - Channel 12 & 24
-        // Base URLs without tokens - the addon resolves tokens at runtime via entitlement service
-        this.addToLiveJSON("il_makoTV_01", "מאקו ערוץ 12", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "LIVE_push_mako_tv.jpg", "שידור חי מאקו ערוץ 12", "/direct/hls/live/2033791/k12/index.m3u8");
-        this.addToLiveJSON("il_24_01", "ערוץ 24 חדשות", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "channel24_square.png", "שידור חי ערוץ 24 חדשות", "/direct/hls/live/2035340/ch24live/index.m3u8");
+        // Note: These streams may require entitlement service or have changed
+        // URLs are based on Limelight CDN pattern but may need updating
+        this.addToLiveJSON("il_makoTV_01", "מאקו ערוץ 12", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "LIVE_push_mako_tv.jpg", "שידור חי מאקו ערוץ 12", "https://ll.cdn.mako.co.il/direct/hls/live/2033791/k12/index.m3u8");
+        this.addToLiveJSON("il_24_01", "ערוץ 24 חדשות", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "channel24_square.png", "שידור חי ערוץ 24 חדשות", "https://ll.cdn.mako.co.il/direct/hls/live/2035340/ch24live/index.m3u8");
 
         // Reshet - Channel 13
         this.addToLiveJSON("il_reshetTV_01", "רשת ערוץ 13", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "13.jpg", "שידור חי רשת ערוץ 13", "https://dsk76kvc9kie6.cloudfront.net/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8");
@@ -83,34 +85,57 @@ class LiveTV {
     }
 
     addToLiveJSON(id, name, genres, bkgImg, desc, streamUrl){
+        // Get current date for released field
+        const today = new Date().toISOString().split('T')[0];
+
+        // ALL live TV channels use empty streams array
+        // Stream URLs are stored in a separate field for the stream handler
         this._liveTVJSONObj[id] = {
             id: id,
             type: "tv",
             subtype: "t",
             name: name,
+            //poster: bkgImg,
+            //link: "",
+            //background: bkgImg,
+            //genres: genres,
+            //description: desc,
+            //streamUrl: streamUrl,  // Store URL for stream handler
             meta: {
                 id: id,
                 name: name,
                 type: "tv",
-                genres: genres,
+                subtype: "t",
+                //link: "",
                 background: bkgImg,
                 poster: bkgImg,
                 posterShape: "square",
+                logo: bkgImg,
                 description: desc,
-                videos: [
+                genres: genres,
+                streamUrl: streamUrl,
+                streams: [{
+                            url: streamUrl,  
+                            name: name,
+                            title: name,
+                            //description: desc
+                        }]
+                /*videos: [
                     {
                         id: id,
                         name: name,
                         title: name,
                         description: desc,
+                        thumbnail: bkgImg,
+                        released: today,
                         streams: [{
-                            url: streamUrl,
-                            title: name,
+                            url: streamUrl, 
                             name: name,
+                            title: name,
                             description: desc
                         }]
                     }
-                ]
+                ]*/
             }
         }
         logger.debug(`addToLiveJSON => Added Live TV - ${name} ID: ${id}`);
