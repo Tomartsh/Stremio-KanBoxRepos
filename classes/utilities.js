@@ -7,6 +7,11 @@ const AdmZip = require("adm-zip");
 const fs = require('fs');
 const { chromium } = require('playwright');
 
+// Load .env file
+require("dotenv").config({
+    path: path.resolve(__dirname, '.env')
+});
+
 const {PREFIX } = require ("./constants");
 
 let seriesIterator = 1000;
