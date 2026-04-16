@@ -25,7 +25,7 @@ const {
     RATE_LIMITING,
     FETCH_METHOD_CONFIG
 } = require ("./constants");
-
+/*
 log4js.configure({
     appenders: { 
         out: { type: "stdout" },
@@ -39,7 +39,7 @@ log4js.configure({
     },
     categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
 });
-
+*/
 var logger = log4js.getLogger("utillities");
 
 
