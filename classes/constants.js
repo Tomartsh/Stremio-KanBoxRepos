@@ -136,7 +136,7 @@ module.exports = {
     },
     
     URL_JSON_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/output/", 
-    URLS_ASSETS_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/assets/",
+    URLS_ASSETS_BASE: "https://raw.githubusercontent.com/tomartsh/Stremio-KanBoxAddon/main/assets/",
 
     //Kan constants
     KAN_URL_ADDRESS: "https://www.kan.org.il/lobby/kan11",
