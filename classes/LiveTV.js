@@ -43,17 +43,17 @@ class LiveTV {
 
         // Kan channels - default referer is kan.org.il
         this.addToLiveJSON("il_kanTV_04", "כאן 11", ["actuality", "news", "חדשות", "אקטואליה"], URLS_ASSETS_BASE + "kan.jpg", "Kan 11 Live Stream From Israel", "https://n-121-7.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan11/live.livx/playlist.m3u8");
-        this.addToLiveJSON("il_kanTV_05", "חינוכית", ["Kids","ילדים ונוער"], URLS_ASSETS_BASE + "hinuchit.jpg", "שידורי הטלויזיה החינוכית", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan_edu/live.livx/playlist.m3u8");
-        this.addToLiveJSON("il_kanTV_07", "שידורי ערוץ השידור הערבי", ["Actuality","אקטואליה"], "https://www.makan.org.il/media/d3if2qoj/לוגו-ראשי-מכאן.png", "שידורי ערוץ השידור הערבי", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/makan/live.livx/playlist.m3u8");
+        this.addToLiveJSON("il_kanTV_05", "חינוכית", ["Kids","ילדים ונוער"], URLS_ASSETS_BASE + URLS_ASSETS_BASE +  + "hinuchit.jpg", "שידורי הטלויזיה החינוכית", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan_edu/live.livx/playlist.m3u8");
+        this.addToLiveJSON("il_kanTV_07", "שידורי ערוץ השידור הערבי", ["Actuality","אקטואליה"], URLS_ASSETS_BASE +  + "makan.png", "שידורי ערוץ השידור הערבי", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/makan/live.livx/playlist.m3u8");
 
         // Knesset
-        this.addToLiveJSON("il_kan_TV_06", "שידורי ערוץ הכנסת 99", ["Actuality","אקטואליה"], "https://www.knesset.tv/media/20004/logo-new.png", "שידורי ערוץ הכנסת - 99", "https://kneset.gostreaming.tv/p2-kneset/_definst_/myStream/index.m3u8");
+        this.addToLiveJSON("il_kan_TV_06", "שידורי ערוץ הכנסת 99", ["Actuality","אקטואליה"], URLS_ASSETS_BASE +  +"knesset.png", "שידורי ערוץ הכנסת - 99", "https://kneset.gostreaming.tv/p2-kneset/_definst_/myStream/index.m3u8");
 
         // Mako/Keshet - Channel 12 & 24
         // Note: These streams may require entitlement service or have changed
         // URLs are based on Limelight CDN pattern but may need updating
         this.addToLiveJSON("il_makoTV_01", "מאקו ערוץ 12", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "LIVE_push_mako_tv.jpg", "שידור חי מאקו ערוץ 12", "https://ll.cdn.mako.co.il/direct/hls/live/2033791/k12/index.m3u8");
-        this.addToLiveJSON("il_24_01", "ערוץ 24 חדשות", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "channel24_square.png", "שידור חי ערוץ 24 חדשות", "https://ll.cdn.mako.co.il/direct/hls/live/2035340/ch24live/index.m3u8");
+        this.addToLiveJSON("il_24_01", "ערוץ 24 חדשות", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE +  "channel24_square.png", "שידור חי ערוץ 24 חדשות", "https://ll.cdn.mako.co.il/direct/hls/live/2035340/ch24live/index.m3u8");
 
         // Reshet - Channel 13
         this.addToLiveJSON("il_reshetTV_01", "רשת ערוץ 13", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "13.jpg", "שידור חי רשת ערוץ 13", "https://dsk76kvc9kie6.cloudfront.net/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8");
@@ -62,7 +62,7 @@ class LiveTV {
         this.addToLiveJSON("il_14TV_01", "ערוץ 14", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "14square.png", "שידור חי ערוץ 14", "https://ch14channel14.encoders.immergo.tv/app/2/streamPlaylist.m3u8");
 
         // Ynet
-        this.addToLiveJSON("il_ynetTv_01", "שידור חי ynet", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "ynet_logo_gif_ynet.gif", "שידור חי ynet", "https://ynet-live-01.ynet-pic1.yit.co.il/ynet/live.m3u8");
+        this.addToLiveJSON("il_ynetTv_01", "שידור חי ynet", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "ynet.jpg", "שידור חי ynet", "https://ynet-live-01.ynet-pic1.yit.co.il/ynet/live.m3u8");
 
         // i24 News (Fastly/Brightcove CDN)
         this.addToLiveJSON("il_24newsEng_01", "שידור חי באנגלית i24", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "i24new_english_square.png", "שידור חי באנגלית i24", "https://fastly.live.brightcove.com/6386790908112/eu-central-1/5377161796001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiZXJmajYzLmVncmVzcy53YzQ3bTEiLCJhY2NvdW50X2lkIjoiNTM3NzE2MTc5NjAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI1Mzc3MTYxNzk2MDAxIl0sImp0aSI6IjYzODY3OTA5MDgxMTIifQ._w5c3EwfnEecDCEpDaKuVz07uuEyUb3vXvQN3svv-oU/playlist-hls.m3u8");
