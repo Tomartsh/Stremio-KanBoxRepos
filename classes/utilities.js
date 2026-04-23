@@ -1423,6 +1423,182 @@ function sleeperTimer(delay = FETCH_METHOD_CONFIG.RETRY_DELAY) {
     return new Promise(resolve => setTimeout(resolve, delay));
 }
 
+/**
+ * =============================================================================
+ * DELTA SYNC TRACKING
+ * =============================================================================
+ *
+ * Track changes during scraping for efficient bulk database updates
+ */
+
+class DeltaTracker {
+    constructor() {
+        this.changes = {
+            newSeries: [],
+            updatedSeries: [],
+            newVideos: [],
+            updatedVideos: [],
+            skippedSeries: 0,
+            errors: []
+        };
+    }
+
+    addNewSeries(seriesId, seriesData) {
+        this.changes.newSeries.push({ id: seriesId, ...seriesData });
+    }
+
+    addUpdatedSeries(seriesId, seriesData) {
+        this.changes.updatedSeries.push({ id: seriesId, ...seriesData });
+    }
+
+    addNewVideo(videoId, videoData) {
+        this.changes.newVideos.push({ id: videoId, ...videoData });
+    }
+
+    addUpdatedVideo(videoId, videoData) {
+        this.changes.updatedVideos.push({ id: videoId, ...videoData });
+    }
+
+    skipSeries() {
+        this.changes.skippedSeries++;
+    }
+
+    addError(error, context) {
+        this.changes.errors.push({ error: error.message, context, timestamp: new Date() });
+    }
+
+    getSummary() {
+        return {
+            newSeries: this.changes.newSeries.length,
+            updatedSeries: this.changes.updatedSeries.length,
+            newVideos: this.changes.newVideos.length,
+            updatedVideos: this.changes.updatedVideos.length,
+            skippedSeries: this.changes.skippedSeries,
+            errors: this.changes.errors.length,
+            totalChanges: this.changes.newSeries.length +
+                          this.changes.updatedSeries.length +
+                          this.changes.newVideos.length +
+                          this.changes.updatedVideos.length
+        };
+    }
+
+    hasChanges() {
+        return this.getSummary().totalChanges > 0;
+    }
+
+    clear() {
+        this.changes = {
+            newSeries: [],
+            updatedSeries: [],
+            newVideos: [],
+            updatedVideos: [],
+            skippedSeries: 0,
+            errors: []
+        };
+    }
+}
+
+/**
+ * Extract release date from a date-local element
+ * @param {HTMLElement} dateElement - The li.date-local element
+ * @returns {string} - ISO date string or empty string
+ */
+function extractReleaseDate(dateElement) {
+    if (!dateElement) return "";
+
+    const dateUtc = dateElement.getAttribute("data-date-utc");
+    if (!dateUtc) return "";
+
+    try {
+        // Parse common date formats
+        // Format 1: DD.MM.YYYY HH:MM:SS (Israeli format)
+        const matchIso = dateUtc.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+        if (matchIso) {
+            const date = new Date(dateUtc);
+            return isNaN(date.getTime()) ? "" : date.toISOString();
+        }
+
+        // Format 2: DD.MM.YYYY HH:MM:SS
+        const matchIl = dateUtc.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
+        if (matchIl) {
+            const [, day, month, year, hour = "00", min = "00", sec = "00"] = matchIl;
+            const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
+            return isNaN(date.getTime()) ? "" : date.toISOString();
+        }
+
+        // Format 3: Try direct parsing
+        const date = new Date(dateUtc);
+        if (!isNaN(date.getTime())) {
+            return date.toISOString();
+        }
+
+        logger.warn(`extractReleaseDate => Could not parse date format: ${dateUtc}`);
+        return "";
+    } catch (error) {
+        logger.error(`extractReleaseDate => Error parsing date: ${error.message}`);
+        return "";
+    }
+}
+
+/**
+ * Extract latest episode date from series list element (lightweight check)
+ * @param {HTMLElement} seriesElem - Series element from list page
+ * @returns {string} - ISO date string or empty string
+ */
+function extractLatestDateFromList(seriesElem) {
+    if (!seriesElem) return "";
+
+    // Try to find date element in series card
+    const dateElem = seriesElem.querySelector("li.date-local");
+    if (dateElem) {
+        return extractReleaseDate(dateElem);
+    }
+
+    // Alternative: look for data attributes
+    const dateAttr = seriesElem.getAttribute("data-date-utc");
+    if (dateAttr) {
+        const date = new Date(dateAttr);
+        return isNaN(date.getTime()) ? "" : date.toISOString();
+    }
+
+    return "";
+}
+
+/**
+ * Check if series has new episodes compared to database
+ * @param {Object} listData - Series data from list page
+ * @param {Object} dbSeries - Series data from database
+ * @returns {boolean} - True if new episode detected
+ */
+function hasNewEpisode(listData, dbSeries) {
+    if (!dbSeries) return true; // New series
+
+    const listDate = listData.latestEpisodeDate;
+    const dbDate = dbSeries.latest_episode_date;
+
+    if (!listDate) return false; // Can't determine, assume no change
+    if (!dbDate) return true; // DB has no date, treat as new
+
+    return new Date(listDate) > new Date(dbDate);
+}
+
+/**
+ * Check if series metadata changed (poster, description, etc.)
+ * @param {Object} listData - Series data from list page
+ * @param {Object} dbSeries - Series data from database
+ * @returns {boolean} - True if metadata changed
+ */
+function hasSeriesChanged(listData, dbSeries) {
+    if (!dbSeries) return true;
+
+    // Check key fields for changes
+    if (listData.name && listData.name !== dbSeries.name) return true;
+    if (listData.poster && listData.poster !== dbSeries.poster) return true;
+    if (listData.description && listData.description !== dbSeries.description) return true;
+
+    return false;
+}
+
 module.exports = {
     fetchData,
     writeJSONToFile,
@@ -1434,5 +1610,10 @@ module.exports = {
     getVideoNameFromEpisodePage,
     generateSeriesId,
     sleeperTimer,
-    resolveStreamUrl
+    resolveStreamUrl,
+    extractReleaseDate,
+    DeltaTracker,
+    extractLatestDateFromList,
+    hasNewEpisode,
+    hasSeriesChanged
 };
