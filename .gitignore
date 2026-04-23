@@ -31,3 +31,5 @@ backups/*.*
 
 #ignore claude code settings
 .claude/
+
+build/
