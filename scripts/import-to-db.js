@@ -26,23 +26,26 @@ if (!process.env.SUPABASE_URL) {
     process.exit(1);
 }
 
-// Use service role key if available, otherwise fall back to anon key
-const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-
-if (!apiKey) {
-    console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY in .env file');
-    console.error('\nCreate a .env file with:');
-    console.error('   SUPABASE_URL=https://your-project.supabase.co');
-    console.error('   SUPABASE_ANON_KEY=your-anon-key');
-    console.error('   # OR for full permissions:');
-    console.error('   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key');
+// Service role key is REQUIRED for writes (anon key only has read access)
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY in .env file');
+    console.error('\nThe anon key only has read access due to RLS policies.');
+    console.error('You must use the service role key for database imports.');
+    console.error('\nTo get your service role key:');
+    console.error('1. Go to https://supabase.com/dashboard/project/YOUR-PROJECT/settings/api');
+    console.error('2. Scroll down to "Project API keys"');
+    console.error('3. Copy the "service_role" key (NOT the anon key)');
+    console.error('4. Add it to your .env file:');
+    console.error('   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here');
+    console.error('\n⚠️  WARNING: Never share or commit the service role key!');
     process.exit(1);
 }
 
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.warn('⚠️  Using SUPABASE_ANON_KEY (limited permissions)');
-    console.warn('   For full write access, use SUPABASE_SERVICE_ROLE_KEY instead');
-}
+// Initialize Supabase client with service role key
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 // Initialize Supabase client
 const supabase = createClient(
