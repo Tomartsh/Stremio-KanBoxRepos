@@ -218,10 +218,7 @@ class DatabaseImporter {
             video_id: videoId,
             url: stream.url,
             title: stream.name || 'Stream',
-            description: stream.description || null,
-            quality: stream.quality || null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            quality: stream.quality || null
         };
 
         const { error } = await this.db
