@@ -218,6 +218,7 @@ class DatabaseImporter {
             video_id: videoId,
             url: stream.url,
             title: stream.name || 'Stream',
+            description: stream.description || null,
             quality: stream.quality || null
         };
 
