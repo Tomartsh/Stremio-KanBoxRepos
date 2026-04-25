@@ -303,13 +303,21 @@ class DatabaseImporter {
 
         for (const table of requiredTables) {
             try {
-                const { data, error } = await this.db
+                const { data, error, status } = await this.db
                     .from(table)
                     .select('*')
                     .limit(1);
 
-                validationResults[table] = !error;
-                logger.info(`DatabaseImporter => Table '${table}': ${error ? '❌ Missing' : '✅ OK'}`);
+                // Table exists if we got a successful HTTP status or if error is not about missing table
+                const tableExists = status >= 200 && status < 300 ||
+                                  (error && !error.message.includes('does not exist'));
+
+                validationResults[table] = tableExists;
+                logger.info(`DatabaseImporter => Table '${table}': ${tableExists ? '✅ OK' : '❌ Missing'}`);
+
+                if (error && tableExists) {
+                    logger.debug(`DatabaseImporter => Note: ${error.message} (but table exists)`);
+                }
             } catch (error) {
                 validationResults[table] = false;
                 logger.error(`DatabaseImporter => Table '${table}': ❌ Error - ${error.message}`);
