@@ -217,9 +217,9 @@ class DatabaseImporter {
         const streamData = {
             video_id: videoId,
             url: stream.url,
-            name: stream.name || 'Stream',
+            title: stream.name || 'Stream',
+            description: stream.description || null,
             quality: stream.quality || null,
-            language: stream.language || null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
