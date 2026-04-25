@@ -32,7 +32,7 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('\nThe anon key only has read access due to RLS policies.');
     console.error('You must use the service role key for database imports.');
     console.error('\nTo get your service role key:');
-    console.error('1. Go to https://supabase.com/dashboard/project/YOUR-PROJECT/settings/api');
+    console.error('1. Go to https://supabase.com/dashboard/project/grozkfpxiyuqwreapayx/settings/api');
     console.error('2. Scroll down to "Project API keys"');
     console.error('3. Copy the "service_role" key (NOT the anon key)');
     console.error('4. Add it to your .env file:');
@@ -45,12 +45,6 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-// Initialize Supabase client
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    apiKey
 );
 
 console.log('🚀 Starting Database Import...');
