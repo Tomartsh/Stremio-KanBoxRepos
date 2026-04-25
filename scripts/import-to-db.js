@@ -21,19 +21,33 @@ const { createClient } = require('@supabase/supabase-js');
 const DatabaseImporter = require('../classes/DatabaseImporter');
 
 // Validate environment variables
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('❌ Missing environment variables:');
-    console.error('   SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env file');
+if (!process.env.SUPABASE_URL) {
+    console.error('❌ Missing SUPABASE_URL in .env file');
+    process.exit(1);
+}
+
+// Use service role key if available, otherwise fall back to anon key
+const apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+
+if (!apiKey) {
+    console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY in .env file');
     console.error('\nCreate a .env file with:');
     console.error('   SUPABASE_URL=https://your-project.supabase.co');
+    console.error('   SUPABASE_ANON_KEY=your-anon-key');
+    console.error('   # OR for full permissions:');
     console.error('   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key');
     process.exit(1);
+}
+
+if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn('⚠️  Using SUPABASE_ANON_KEY (limited permissions)');
+    console.warn('   For full write access, use SUPABASE_SERVICE_ROLE_KEY instead');
 }
 
 // Initialize Supabase client
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    apiKey
 );
 
 console.log('🚀 Starting Database Import...');

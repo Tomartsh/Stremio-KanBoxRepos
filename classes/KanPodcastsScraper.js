@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker} = require("./utilities.js");
 const {
     LOG4JS,
     PODCASTS,
@@ -34,8 +34,8 @@ class KanPodcastsScraper {
         this.isRunning = false;
         this._tmdbEnabled = TMDB.ENABLED;
         this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
 
-        // Get scraper configuration
         const scraperName = 'KanPodcastsScraper';
         const config = SCRAPER_CONFIG[scraperName] || {};
         this.config = {
@@ -132,15 +132,16 @@ class KanPodcastsScraper {
     async crawl(isDoWriteFile = false){
     logger.info("Started Crawling");
     this.isRunning = true;
-    
+
     // Crawl regular podcasts
     await this.crawlPodcasts(PODCASTS.KAN_CATEGORIES, "p", "Podcasts");
 
     // Crawl kids podcasts
     //await this.crawlPodcasts(PODCASTS.KAN_CHILDREN_CATEGORIES, "h", "Podcasts");
-    
+
     logger.info("Done Crawling");
-    
+    logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
+
     if (isDoWriteFile){
         logger.info("crawl => writing JSON file");
         this.writeJSON();
@@ -384,7 +385,7 @@ class KanPodcastsScraper {
                         const episode = await this.parseEpisodeElement(episodeElem, programId);
                         if (episode) {
                             allEpisodes.push(episode);
-                            logger.debug(`getEpisodes => Added: ${episode.title}`);
+                            logger.info(`Added: ${episode.title}`);
                         }
                     } catch (error) {
                         logger.warn(`getEpisodes => Error parsing episode element:`, error.message);

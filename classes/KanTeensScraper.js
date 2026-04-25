@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker} = require("./utilities.js");
 const {
     LOG4JS,
     HINUKHIT,
@@ -33,8 +33,8 @@ class KanTeensScraper {
         this.isRunning = false;
         this._tmdbEnabled = TMDB.ENABLED;
         this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
 
-        // Get scraper configuration
         const scraperName = 'KanTeensScraper';
         const config = SCRAPER_CONFIG[scraperName] || {};
         this.config = {
@@ -51,7 +51,8 @@ class KanTeensScraper {
         this.isRunning = true;
         await this.crawlTeens();
         logger.info("Done Crawling");
-        
+        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
+
         if (isDoWriteFile){
             logger.info("crawl => writing JSON file");
             this.writeJSON();
@@ -364,6 +365,7 @@ class KanTeensScraper {
         if (tmdbEpisodeId) {video["tmdbEpisodeId"] = tmdbEpisodeId;}
 
         this._kanTeenJSONObj[key]["meta"]["videos"].push(video);
+        logger.info(`Added: S${seasonNo} E${episodeNo} - ${name}`);
 
     }
 

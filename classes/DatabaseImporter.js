@@ -37,6 +37,7 @@ class DatabaseImporter {
             filesProcessed: 0,
             seriesImported: 0,
             videosImported: 0,
+            streamsImported: 0,
             errors: [],
             startTime: null,
             endTime: null
@@ -170,6 +171,13 @@ class DatabaseImporter {
         for (const video of videos) {
             await this.importVideo(video, scraperType);
             this.results.videosImported++;
+
+            // Import streams for this video
+            const streams = video.streams || [];
+            for (const stream of streams) {
+                await this.importStream(stream, video.id);
+                this.results.streamsImported++;
+            }
         }
     }
 
@@ -199,6 +207,30 @@ class DatabaseImporter {
 
         if (error) {
             throw new Error(`Failed to insert video ${videoData.id}: ${error.message}`);
+        }
+    }
+
+    /**
+     * Import a single stream
+     */
+    async importStream(stream, videoId) {
+        const streamData = {
+            video_id: videoId,
+            url: stream.url,
+            name: stream.name || 'Stream',
+            quality: stream.quality || null,
+            language: stream.language || null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        const { error } = await this.db
+            .from('streams')
+            .upsert(streamData);
+
+        if (error) {
+            // Log warning but don't fail the entire import for stream errors
+            logger.warn(`Failed to insert stream for ${videoId}: ${error.message}`);
         }
     }
 
@@ -245,6 +277,7 @@ class DatabaseImporter {
         logger.info(`Files Processed:    ${this.results.filesProcessed}`);
         logger.info(`Series Imported:    ${this.results.seriesImported}`);
         logger.info(`Videos Imported:    ${this.results.videosImported}`);
+        logger.info(`Streams Imported:   ${this.results.streamsImported}`);
         logger.info(`Errors:             ${this.results.errors.length}`);
         logger.info(`Duration:           ${duration} seconds`);
         logger.info('============================================================');

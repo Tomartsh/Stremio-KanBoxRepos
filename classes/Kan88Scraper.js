@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker} = require("./utilities.js");
 const {
     LOG4JS,
     KAN88_POCASTS_URL,
@@ -35,8 +35,8 @@ class Kan88Scraper {
         this.isRunning = false;
         this._tmdbEnabled = TMDB.ENABLED;
         this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
 
-        // Get scraper configuration
         const scraperName = 'Kan88Scraper';
         const config = SCRAPER_CONFIG[scraperName] || {};
         this.config = {
@@ -53,6 +53,7 @@ class Kan88Scraper {
         this.isRunning = true;
         await this.crawlKan88();
         logger.info("Done Crawling");
+        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
         if (isDoWriteFile){
             logger.info("crawl => writing JSON file");
@@ -459,6 +460,7 @@ class Kan88Scraper {
         if (released != "") { video["released"] = released;}
 
         this._kanPodcastsJSONObj[key]["meta"]["videos"].push(video);
+        logger.info(`Added: S${seasonNo} E${episodeNo} - ${name}`);
 
     }
 

@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, getNameFromSeriesPage} = require("./utilities.js");
+const {fetchData, getNameFromSeriesPage, extractReleaseDate, DeltaTracker, extractLatestDateFromList, hasNewEpisode, hasSeriesChanged} = require("./utilities.js");
 const {
     LOG4JS,
     KAN_URL_ADDRESS,
@@ -36,9 +36,9 @@ class KanDigitalScraper {
         this.seriesIdIterator = 1000;
         this.isRunning = false;
         this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map(); // Cache TMDB results to avoid duplicate searches
+        this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
 
-        // Get scraper configuration
         const scraperName = 'KanDigitalScraper';
         const config = SCRAPER_CONFIG[scraperName] || {};
         this.config = {
@@ -53,8 +53,12 @@ class KanDigitalScraper {
     async crawl(isDoWriteFile = false){
         logger.info("Started Crawling");
         this.isRunning = true;
+        this.deltaTracker.clear();
+
         await this.crawlVod();
+
         logger.info("Done Crawling");
+        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
         if (isDoWriteFile){
             logger.info("crawl => writing JSON file");
@@ -577,6 +581,7 @@ getStream (scripts, id, url){
             for (const result of episodeResults) {
                 if (result && result.video) {
                     videosArr.push(result.video);
+                    logger.info(`Added: S${result.video.season} E${result.video.episode} - ${result.video.name}`);
                 }
             }
         }
@@ -634,6 +639,21 @@ getStream (scripts, id, url){
         }
         logger.trace ("processOneDigitalEpisode => episodeLogoUrl: " + episodeLogoUrl + " Name: " + title);
 
+        // Extract release date from episode page
+        let released = "";
+        try {
+            const episodeDoc = await fetchData(episodePageLink);
+            if (episodeDoc) {
+                const dateElement = episodeDoc.querySelector("li.date-local");
+                released = extractReleaseDate(dateElement);
+                if (released) {
+                    logger.debug(`processOneDigitalEpisode => Extracted release date: ${released} for ${title}`);
+                }
+            }
+        } catch (error) {
+            logger.warn(`processOneDigitalEpisode => Could not extract release date for ${title}: ${error.message}`);
+        }
+
         // Search TMDB for this episode if we have a series ID
         let tmdbEpisodeId = null;
         if (this._tmdbEnabled && tmdbSeriesId) {
@@ -653,7 +673,7 @@ getStream (scripts, id, url){
             description: description,
             thumbnail: episodeLogoUrl,
             episodeLink: episodePageLink,
-            released: "",
+            released: released,
             streams: [] // Streams will be resolved on-demand by the addon
         };
         if (tmdbEpisodeId) {

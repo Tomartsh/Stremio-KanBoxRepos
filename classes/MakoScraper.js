@@ -7,7 +7,7 @@ const {
     PREFIX,
     TMDB
 } = require("./constants");
-const {fetchData, sleeperTimer} = require("./utilities.js");
+const {fetchData, sleeperTimer, DeltaTracker} = require("./utilities.js");
 const { v1: uuidv1 } = require('uuid');
 const log4js = require("log4js");
 
@@ -32,26 +32,29 @@ class MakoScraper {
         this._deviceId = "";
         this.seriesId = 100;
         this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map(); // Cache TMDB results to avoid duplicate searches
+        this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
     }
 
     async crawl(isDoWriteFile = false) {
         logger.trace("crawl() => Entering");
         this.generateDeviceID();
+        this.deltaTracker.clear();
         logger.debug("crawl() => setting device ID to: " + this._deviceId);
-        
+
         try {
             await this.getSeries();
 
             if (isDoWriteFile) {
                 logger.info("crawl => writing JSON file");
+                logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
                 this.writeJSON(this._makoJSONObj);
             }
         } catch (error) {
             logger.error("crawl() => Fatal error:", error);
             throw error;
         }
-        
+
         logger.debug("crawl() => Exiting");
     }
 
@@ -145,7 +148,7 @@ class MakoScraper {
         }
     }
 
-    async handleSeriesWithoutSeasons(seasons, id, seriesUrl, title, background, poster, description, genres) {
+    async handleSeriesWithoutSeasons(seasons, id, seriesUrl, title, background, poster, description, genres, tmdbSeriesId = null) {
         if (!seasons.menu?.[0]) {
             logger.warn(`handleSeriesWithoutSeasons => No menu found for ${title}`);
             return;
@@ -156,10 +159,10 @@ class MakoScraper {
             return;
         }
 
-        const videos = await this.getEpisodes(seasons.menu, id, "-1", null);
+        const videos = await this.getEpisodes(seasons.menu, id, "-1", tmdbSeriesId);
 
         if (videos && videos.length > 0) {
-            this.addToJsonObject(id, seriesUrl, title, background, poster, description, genres, videos, null);
+            this.addToJsonObject(id, seriesUrl, title, background, poster, description, genres, videos, tmdbSeriesId);
             this.seriesId++;
             logger.info(`handleSeriesWithoutSeasons => Successfully processed ${title}`);
         }
@@ -256,7 +259,7 @@ class MakoScraper {
                 }
                 
                 videos.push(videoJsonObj);
-                logger.debug(`getEpisodes => Added episode ${episodeNumber}: ${episodeData.episodeTitle}`);
+                logger.info(`Added: S${seasonId} E${episodeNumber} - ${episodeData.episodeTitle}`);
                 
             } catch (error) {
                 logger.error(`getEpisodes => Error processing episode:`, error.message);
@@ -735,8 +738,9 @@ class MakoScraper{
                 streams: streams
             }
             if (episodeReleased != "") {videoJsonObj["released"] = episodeReleased;}
-            
+
             videos.push(videoJsonObj);
+            logger.info(`Added: S${seasonId} E${noOfEpisodes} - ${episodeTitle}`);
             noOfEpisodes--;
             i++;
         }

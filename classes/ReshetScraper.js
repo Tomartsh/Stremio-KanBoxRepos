@@ -6,7 +6,7 @@ const {
     SCRAPER_CONFIG,
     TMDB
 } = require ("./constants");
-const {fetchData, writeLog} = require("./utilities.js");
+const {fetchData, writeLog, extractReleaseDate, DeltaTracker} = require("./utilities.js");
 const log4js = require("log4js");
 
 log4js.configure({
@@ -33,6 +33,7 @@ class ReshetScraper {
         this._videos = [];
         this._tmdbEnabled = TMDB.ENABLED;
         this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
 
         // Get scraper configuration
         const scraperName = 'ReshetScraper';
@@ -47,7 +48,10 @@ class ReshetScraper {
     }
 
     async crawl(isDoWriteFile = false){
+        this.deltaTracker.clear();
         await this.crawlVOD();
+        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
+
         if (isDoWriteFile){
             logger.info("crawl => writing JSON file");
             this.writeJSON();
@@ -194,6 +198,7 @@ class ReshetScraper {
             logger.error("processOneReshetSeries => Invalid KulturaId or page non existing. Skipping");
             return null;
         }
+
         this.addToJsonObject(id, title, RESHET.URL_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series", tmdbSeriesId )
         logger.debug(`processOneReshetSeries => Added series ${title}`);
         return { id, title };
@@ -275,6 +280,7 @@ class ReshetScraper {
                         videoItem.episode = iter;
 
                         videos.push(videoItem);
+                        logger.info(`Added: S${videoItem.season} E${iter} - ${videoItem.name}`);
                         iter ++;
                     }
                 }

@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker, extractLatestDateFromList, hasNewEpisode, hasSeriesChanged} = require("./utilities.js");
 const {
     LOG4JS,
     KAN_ARCHIVE,
@@ -34,9 +34,9 @@ class KanArchiveScraper {
         this._kanArchiveJSONObj = {};
         this.isRunning = false;
         this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map(); // Cache TMDB results to avoid duplicate searches
+        this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
 
-        // Get scraper configuration
         const scraperName = 'KanArchiveScraper';
         const config = SCRAPER_CONFIG[scraperName] || {};
         this.config = {
@@ -133,9 +133,12 @@ class KanArchiveScraper {
     async crawl(isDoWriteFile = false){
         logger.info("Started Crawling");
         this.isRunning = true;
+        this.deltaTracker.clear();
+
         await this.crawlVod();
         logger.info("Done Crawling");
-        
+        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
+
         if (isDoWriteFile){
             logger.info("crawl => writing JSON file");
             this.writeJSON();
@@ -447,10 +450,11 @@ class KanArchiveScraper {
         var nameVideo = "";
         var descVideo = "";
 
-        if (doc.querySelector("li.date-local") != undefined){
-            let tempDate = doc.querySelector("li.date-local").getAttribute("data-date-utc");
-            const date = new Date(tempDate);
-            released = isNaN(date.getTime()) ? "" : date.toISOString();
+        // Use centralized date extraction utility
+        const dateElement = doc.querySelector("li.date-local");
+        released = extractReleaseDate(dateElement);
+        if (released) {
+            logger.debug("getStreams => Extracted release date: " + released);
         }
 
         // Try to get stream URL from redge-player element (new Kan player)
@@ -568,6 +572,7 @@ class KanArchiveScraper {
         if (tmdbEpisodeId) {video["tmdbEpisodeId"] = tmdbEpisodeId;}
 
         this._kanArchiveJSONObj[key]["meta"]["videos"].push(video);
+        logger.info(`Added: S${seasonNo} E${episodeNo} - ${name}`);
 
     }
 

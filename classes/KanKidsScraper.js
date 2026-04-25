@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker} = require("./utilities.js");
 const {
     LOG4JS,
     HINUKHIT,
@@ -33,9 +33,9 @@ class KanKidsScraper {
         this._kanKidsJSONObj = {};
         this.isRunning = false;
         this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map(); // Cache TMDB results to avoid duplicate searches
+        this._tmdbCache = new Map();
+        this.deltaTracker = new DeltaTracker();
 
-        // Get scraper configuration
         const scraperName = 'KanKidsScraper';
         const config = SCRAPER_CONFIG[scraperName] || {};
         this.config = {
@@ -51,8 +51,8 @@ class KanKidsScraper {
         logger.info("Started Crawling");
         this.isRunning = true;
         await this.crawlKids();
-        logger.info("Done Crawling");      
-        logger.info("crawl => writing series to master list");
+        logger.info("Done Crawling");
+        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
          if (isDoWriteFile){
             logger.info("crawl => writing JSON file");
@@ -368,7 +368,7 @@ class KanKidsScraper {
         logger.trace("getStreams => Link: " + link);
 
         var doc = await fetchData(link);
-        
+
         if (doc == undefined){
             logger.debug("getStreams => Error retrieving do from " + link);
         }
@@ -377,10 +377,11 @@ class KanKidsScraper {
         var nameVideo = "";
         var descVideo = "";
 
-        if (doc.querySelector("li.date-local") != undefined){
-            let tempDate = doc.querySelector("li.date-local").getAttribute("data-date-utc");
-            const date = new Date(tempDate);
-            released = isNaN(date.getTime()) ? "" : date.toISOString();
+        // Use centralized date extraction utility
+        const dateElement = doc.querySelector("li.date-local");
+        released = extractReleaseDate(dateElement);
+        if (released) {
+            logger.debug("getStreams => Extracted release date: " + released);
         }
 
         // Try to get stream URL from redge-player element (new Kan player)
@@ -458,6 +459,7 @@ class KanKidsScraper {
         if (tmdbEpisodeId) {video["tmdbEpisodeId"] = tmdbEpisodeId;}
 
         this._kanKidsJSONObj[key]["meta"]["videos"].push(video);
+        logger.info(`Added: S${seasonNo} E${episodeNo} - ${name}`);
     }
 
     addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
