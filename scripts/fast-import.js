@@ -53,6 +53,7 @@ async function importAll() {
                 seriesUpdates.push({
                     id: series.id,
                     scraper: scraperType,
+                    name: series.name || series.meta?.name,
                     poster: series.meta?.poster || null,
                     background: series.meta?.background || series.meta?.poster || null
                 });
