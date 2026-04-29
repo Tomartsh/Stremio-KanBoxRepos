@@ -1518,11 +1518,14 @@ function extractReleaseDate(dateElement) {
             return isNaN(date.getTime()) ? "" : date.toISOString();
         }
 
-        // Format 2: DD.MM.YYYY HH:MM:SS
-        const matchIl = dateUtc.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
+        // Format 2: DD.MM.YYYY HH:MM:SS or D.M.YYYY HH:MM:SS (single/double digits)
+        const matchIl = dateUtc.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
         if (matchIl) {
             const [, day, month, year, hour = "00", min = "00", sec = "00"] = matchIl;
-            const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
+            // Pad single digits with leading zero
+            const paddedDay = day.padStart(2, '0');
+            const paddedMonth = month.padStart(2, '0');
+            const date = new Date(`${year}-${paddedMonth}-${paddedDay}T${hour}:${min}:${sec}`);
             return isNaN(date.getTime()) ? "" : date.toISOString();
         }
 
@@ -1599,6 +1602,35 @@ function hasSeriesChanged(listData, dbSeries) {
     return false;
 }
 
+/**
+ * =============================================================================
+ * SHARED DATABASE UPDATE FUNCTION
+ * =============================================================================
+ */
+
+/**
+ * Shared updateDatabase function for all scrapers
+ * Updates database in bulk from JSON object
+ * @param {string} scraperName - Scraper name (e.g., 'mako', 'kanteens')
+ * @param {object} jsonData - The scraped JSON object
+ * @param {object} logger - Logger instance
+ */
+async function updateDatabaseFromJSON(scraperName, jsonData, logger) {
+    const DatabaseUpdater = require('./DatabaseUpdater');
+    const dbUpdater = new DatabaseUpdater();
+
+    logger.info(`updateDatabase => Starting bulk database update for ${scraperName}...`);
+
+    try {
+        const result = await dbUpdater.updateFromJSON(scraperName, jsonData);
+        logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+        return result;
+    } catch (error) {
+        logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
+        throw error;
+    }
+}
+
 module.exports = {
     fetchData,
     writeJSONToFile,
@@ -1615,5 +1647,6 @@ module.exports = {
     DeltaTracker,
     extractLatestDateFromList,
     hasNewEpisode,
-    hasSeriesChanged
+    hasSeriesChanged,
+    updateDatabaseFromJSON
 };
