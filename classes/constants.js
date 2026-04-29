@@ -18,9 +18,9 @@ module.exports = {
             jitter: [10, 100]   // ← 10-100ms jitter for Mako
         },
         'kan.org.il': {
-            minInterval: 500,        // 500ms minimum between requests
-            maxPerMinute: 30,        // Max 30 requests per minute (very conservative)
-            jitter: [200, 800]       // Random 200-800ms jitter to appear more human
+            minInterval: 200,        // 200ms minimum between requests (reduced)
+            maxPerMinute: 120,       // Max 120 requests per minute (much more reasonable)
+            jitter: [100, 500]       // Random 100-500ms jitter to appear human
         },
         '13tv.co.il': {
             minInterval: 0,
@@ -121,6 +121,10 @@ module.exports = {
     SAVE_MODE: "github", // "local", "github", or "both"
     SAVE_FOLDER: "output",
     PREFIX: "il_",
+
+    // Database Update Configuration
+    WRITE_TO_GITHUB: true,     // Write JSON files to GitHub after scraping
+    UPDATE_DATABASE: true,     // Update database after scraping
     HEADERS: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -142,6 +146,19 @@ module.exports = {
     KAN_URL_ADDRESS: "https://www.kan.org.il/lobby/kan11",
     KAN_DIGITAL_IMAGE_PREFIX: "https://www.kan.org.il",
     KAN_BASE_URL: "https://www.kan.org.il",
+
+    // Kan-Box constants
+    KAN_BOX_URL: 'https://www.kan.org.il/lobby/kan-box/',
+    KAN_BOX_IGNORE_LIST: [
+        'הליגה הלאומית',
+        'דוקו מהארכיון',
+        'בידור ואירוח מהארכיון',
+        'ילדים ונוער מהארכיון',
+        'תרבות ופנאי מהארכיון',
+        'קומדיה וסאטירה מהארכיון',
+        'אוצרות הארכיון',
+        'ילדים ונוער'
+    ],
     
     KAN_ARCHIVE: {
         IMAGE_PREFIX: "https://www.kan.org.il",
@@ -153,7 +170,9 @@ module.exports = {
         URL_TEENS: "https://www.kankids.org.il/lobby-kids/kids-teens",
         URL_KIDS_CONTENT_PREFIX: "https://www.kankids.org.il",
         SUBPREFIX_KIDS: "kids",
-        SUBPREFIX_TEENS: "teens"
+        SUBPREFIX_TEENS: "teens",
+        // Kan-Box category for teens (single category to scrape)
+        KAN_BOX_CATEGORY: 'ילדים ונוער'
     },
 
     KAN88_POCASTS_URL: "https://www.kan.org.il/content/kan/podcasts/kan88/",
