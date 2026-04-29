@@ -30,14 +30,14 @@ npm install @supabase/supabase-js
 
 ### 5. Run Initial Import
 ```bash
-node scripts/import-to-db.js
+node scripts/initial-load.js
 ```
 
 This will:
-- Validate database schema
-- Show pre-import statistics
-- Import all existing JSON files
-- Report results
+- Download all JSON files from GitHub
+- Extract and load data into database
+- Populate series, videos, and streams tables
+- Report summary statistics
 
 ## Usage After Setup
 
@@ -70,25 +70,27 @@ const { data } = await supabase
 ## File Locations
 
 - `scripts/schema.sql` - Database schema (run in Supabase SQL Editor)
-- `scripts/import-to-db.js` - One-time import script
-- `classes/DatabaseImporter.js` - Import logic class
+- `scripts/initial-load.js` - Initial database load (downloads from GitHub)
+- `scripts/quick-import.js` - Fast import from local `build/` directory
+- `classes/DatabaseUpdater.js` - Bulk database update logic
 
 ## Troubleshooting
 
 ### Import Fails
-- Check `.env` has correct credentials
+- Check `.env` has correct credentials (in `classes/` directory)
 - Verify tables were created (run schema.sql first)
-- Ensure `build/` directory has JSON files
+- Check network connectivity to GitHub
+- Verify GitHub repository has JSON files
 
 ### Connection Issues
 - Verify Supabase project is active
 - Check network connectivity
-- Validate API keys
+- Validate API keys (use SERVICE_ROLE_KEY for bulk operations)
 
-### Data Missing
-- Check `logs/database-import.log` for details
-- Verify JSON files exist in `build/` directory
-- Confirm scraper was run before import
+### Data Missing After Import
+- Verify all JSON files were downloaded from GitHub
+- Check Supabase dashboard for data
+- Review import logs for errors
 
 ## Next Steps
 
