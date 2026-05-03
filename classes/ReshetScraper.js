@@ -6,7 +6,7 @@ const {
     SCRAPER_CONFIG,
     TMDB
 } = require ("./constants");
-const {fetchData, writeLog, extractReleaseDate, DeltaTracker} = require("./utilities.js");
+const {fetchData, writeLog, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const log4js = require("log4js");
 
 log4js.configure({
@@ -52,7 +52,20 @@ class ReshetScraper {
         await this.crawlVOD();
         logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        if (isDoWriteFile){
+        const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
+
+        if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
+            if (WRITE_TO_GITHUB) {
+                logger.info("crawl => writing JSON file to GitHub");
+                this.writeJSON();
+            }
+
+            if (UPDATE_DATABASE) {
+                logger.info("crawl => updating database in bulk");
+                await this.updateDatabase();
+            }
+        } else if (isDoWriteFile) {
+            // Backward compatibility
             logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
@@ -302,8 +315,8 @@ class ReshetScraper {
         }
         var streams = await this.getStream(kalturaId, episode["title"]);
 
-        const date = new Date(episode["air_date"]);
-        var released = isNaN(date.getTime()) ? "" : date.toISOString();
+        // Parse Israeli date format
+        var released = this.parseIsraeliDate(episode["air_date"]);
 
         var video = {
             reshetEpisodeId: episode["id"],
@@ -389,6 +402,13 @@ class ReshetScraper {
     }
 
     addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
+        // Sort videos by released date (newest first)
+        const sortedVideos = videosList.sort((a, b) => {
+            if (!a.released) return 1;
+            if (!b.released) return -1;
+            return new Date(b.released) - new Date(a.released);
+        });
+
         var jsonObj = {
             id: id,
             link: seriesPage,
@@ -406,7 +426,7 @@ class ReshetScraper {
                 logo: imgUrl,
                 description: seriesDescription,
                 genres: genres,
-                videos: videosList
+                videos: sortedVideos
             }
         };
 
@@ -483,6 +503,21 @@ class ReshetScraper {
         }
     }
 
+    async updateDatabase() {
+        logger.trace("updateDatabase => Entered");
+        logger.debug("updateDatabase => Starting bulk database update");
+
+        try {
+            const result = await updateDatabaseFromJSON('reshet', this._reshetJSONObj, logger);
+            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+        } catch (error) {
+            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("updateDatabase => Leaving");
+    }
+
     writeJSON(){
         logger.trace("writeJSON => Entered");
         logger.debug("writeJSON => writing file");
@@ -496,6 +531,50 @@ class ReshetScraper {
             return seasonName;
         } else {
             return seasonKey;
+        }
+    }
+
+    /**
+     * Parse Israeli date format (DD.MM.YYYY or D.M.YYYY) to ISO format
+     * @param {string} dateStr - Date string in Israeli format
+     * @returns {string} - ISO date string or empty string if parsing fails
+     */
+    parseIsraeliDate(dateStr) {
+        if (!dateStr || typeof dateStr !== 'string') return "";
+
+        try {
+            // Try ISO format first
+            const isoMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+            if (isoMatch) {
+                const date = new Date(dateStr);
+                if (!isNaN(date.getTime())) {
+                    return date.toISOString();
+                }
+            }
+
+            // Parse D.M.YYYY, DD.MM.YYYY, D/M/YYYY, DD/MM/YYYY format
+            const ilMatch = dateStr.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+            if (ilMatch) {
+                const [, day, month, year] = ilMatch;
+                const paddedDay = day.padStart(2, '0');
+                const paddedMonth = month.padStart(2, '0');
+                const date = new Date(`${year}-${paddedMonth}-${paddedDay}T00:00:00`);
+                if (!isNaN(date.getTime())) {
+                    return date.toISOString();
+                }
+            }
+
+            // Try direct parsing as last resort
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) {
+                return date.toISOString();
+            }
+
+            logger.warn(`parseIsraeliDate => Could not parse date: ${dateStr}`);
+            return "";
+        } catch (error) {
+            logger.error(`parseIsraeliDate => Error: ${error.message}`);
+            return "";
         }
     }
 }

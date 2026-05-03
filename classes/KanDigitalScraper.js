@@ -4,6 +4,8 @@ const {
     LOG4JS,
     KAN_URL_ADDRESS,
     KAN_DIGITAL_IMAGE_PREFIX,
+    KAN_BOX_URL,
+    KAN_BOX_IGNORE_LIST,
     SCRAPER_CONFIG,
     TMDB
 } = require("./constants.js");
@@ -55,15 +57,41 @@ class KanDigitalScraper {
         this.isRunning = true;
         this.deltaTracker.clear();
 
-        await this.crawlVod();
+        try {
+            await this.crawlVod();
+        } catch (error) {
+            logger.error(`crawl => Kan-Digital scraping failed: ${error.message}`);
+            logger.error(error.stack);
+        }
+
+        try {
+            await this.crawlKanBox();
+        } catch (error) {
+            logger.error(`crawl => Kan-Box scraping failed: ${error.message}`);
+            logger.error(error.stack);
+        }
 
         logger.info("Done Crawling");
         logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        if (isDoWriteFile){
+        const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require('./constants.js');
+
+        if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
+            if (WRITE_TO_GITHUB) {
+                logger.info("crawl => writing JSON file to GitHub");
+                this.writeJSON();
+            }
+
+            if (UPDATE_DATABASE) {
+                logger.info("crawl => updating database in bulk");
+                await this.updateDatabase();
+            }
+        } else if (isDoWriteFile) {
+            // Backward compatibility with old parameter
             logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
+
         this.isRunning = false;
     }
 
@@ -178,22 +206,37 @@ class KanDigitalScraper {
             const scriptContent = targetScript.rawText;
 
             try {
-                // Extract the JSON portion
-                const jsonMatch = scriptContent.match(/digitalSeries:\s*(\[[\s\S]*?\])/);
+                // Extract the JSON portion - use better regex to handle full array
+                const jsonMatch = scriptContent.match(/digitalSeries:\s*(\[[\s\S]*\])\s*,\s*[\w]+:/);
 
                 if (jsonMatch && jsonMatch[1]) {
                     let rawJsonString = jsonMatch[1].trim();
-                
+
                     //Parse it
                     items = JSON.parse(rawJsonString);
 
-                    logger.debug(`Success! Found ${items.length} Digital Series items.`);
+                    logger.info(`Success! Found ${items.length} Digital Series items.`);
+
+                    // Warn if pagination detected
+                    if (items.length === 100 || items.length === 50 || items.length === 20) {
+                        logger.warn(`⚠️  Found exactly ${items.length} series - this might be a pagination limit`);
+                        logger.warn(`⚠️  Last series ID: ${items[items.length - 1]?.Url || 'unknown'}`);
+                    }
+                } else {
+                    // Fallback to original method
+                    const fallbackMatch = scriptContent.match(/digitalSeries:\s*(\[[\s\S]*?\])/);
+                    if (fallbackMatch && fallbackMatch[1]) {
+                        let rawJsonString = fallbackMatch[1].trim();
+                        items = JSON.parse(rawJsonString);
+                        logger.debug(`Fallback method found ${items.length} Digital Series items.`);
+                    }
                 }
             } catch (error) {
-                logger.error("Found the script, but failed to parse the JSON. It might not be strict JSON format.");
+                logger.error(`Failed to parse digitalSeries JSON: ${error.message}`);
+                logger.error("The website structure might have changed");
             }
         } else {
-             logger.debug("Could not find a script containing 'digitalSeries: ['");
+             logger.error("Could not find a script containing 'digitalSeries: [' - website structure may have changed");
         }
 
         // Process series using batch processor
@@ -207,6 +250,131 @@ class KanDigitalScraper {
         );
 
         logger.trace("crawl() => Exiting");
+    }
+
+    /***********************************************************
+     *
+     * Kan-Box handling
+     *
+     ***********************************************************/
+    async crawlKanBox(){
+        logger.trace("crawlKanBox => Entering");
+        logger.info("crawlKanBox => Starting Kan-Box scraping");
+
+        const { parse } = require('node-html-parser');
+
+        try {
+            // Fetch Kan-Box lobby page
+            logger.info(`crawlKanBox => Fetching: ${KAN_BOX_URL}`);
+            const response = await fetchData(KAN_BOX_URL, false);
+            const html = response;
+            const root = parse(html);
+
+            // Find all block-list items (categories)
+            const blockLists = root.querySelectorAll('.block-list');
+            logger.info(`crawlKanBox => Found ${blockLists.length} block-list sections`);
+
+            let allCategories = [];
+
+            // Extract categories and their series from all block-lists
+            blockLists.forEach((blockList, index) => {
+                const items = blockList.querySelectorAll('.block-list-item');
+                logger.debug(`crawlKanBox => Section ${index + 1}: ${items.length} categories`);
+
+                items.forEach((item) => {
+                    const titleElem = item.querySelector('.h3.title-elem');
+                    const linkElem = item.querySelector('a.unstyled-link');
+
+                    if (titleElem && linkElem) {
+                        const categoryName = titleElem.text.trim();
+                        const categoryLink = linkElem.getAttribute('href');
+
+                        // Extract series directly from the category item
+                        // The category items contain series links
+                        const seriesLinks = item.querySelectorAll('a.card-link');
+
+                        allCategories.push({
+                            name: categoryName,
+                            link: categoryLink,
+                            seriesLinks: Array.from(seriesLinks).map(link => link.getAttribute('href')).filter(url => url)
+                        });
+                    }
+                });
+            });
+
+            logger.info(`crawlKanBox => Total categories found: ${allCategories.length}`);
+
+            // Filter out ignored categories
+            const categoriesToScrape = allCategories.filter(cat => !KAN_BOX_IGNORE_LIST.includes(cat.name));
+            const ignoredCount = allCategories.length - categoriesToScrape.length;
+
+            logger.info(`crawlKanBox => Ignored: ${ignoredCount} categories`);
+            logger.info(`crawlKanBox => To scrape: ${categoriesToScrape.length} categories`);
+
+            // Scrape series directly from Kan-Box page (no additional requests!)
+            let totalSeriesFound = 0;
+            let duplicateCount = 0;
+
+            for (const category of categoriesToScrape) {
+                logger.info(`crawlKanBox => Processing category: ${category.name} (${category.seriesLinks.length} series)`);
+
+                // Process each series link found in this category
+                for (const seriesUrl of category.seriesLinks) {
+                    if (!seriesUrl) continue;
+
+                    // Build full URL - check if it's already a full URL or relative
+                    let fullSeriesUrl = seriesUrl;
+                    if (seriesUrl.startsWith('/')) {
+                        // Relative path - prepend base URL
+                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + seriesUrl;
+                    } else if (!seriesUrl.startsWith('http')) {
+                        // Not a full URL and not starting with / - treat as relative
+                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + '/' + seriesUrl;
+                    }
+                    // If it already starts with http, use as-is
+
+                    // Generate series ID to check for duplicates
+                    const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
+
+                    // Check if this series already exists in our catalog (from Kan-Digital)
+                    if (this._kanDigitalJSONObj.hasOwnProperty(seriesId)) {
+                        logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
+                        this.deltaTracker.skipSeries(); // Track skipped duplicate
+                        duplicateCount++;
+                        continue;
+                    }
+
+                    // Create a minimal item object for processOneDigitalSeries
+                    const item = {
+                        Url: fullSeriesUrl,
+                        Image: '',
+                        ImageAlt: '',
+                        Description: `From Kan-Box category: ${category.name}`
+                    };
+
+                    // Process the series using existing method
+                    try {
+                        const result = await this.processOneDigitalSeries(item);
+                        if (result) {
+                            totalSeriesFound++;
+                            logger.info(`crawlKanBox => Added series from ${category.name}: ${result.title}`);
+                        }
+                    } catch (error) {
+                        logger.error(`crawlKanBox => Error processing series ${fullSeriesUrl}: ${error.message}`);
+                    }
+                }
+            }
+
+            logger.info(`crawlKanBox => Completed scraping`);
+            logger.info(`crawlKanBox => Total new series added: ${totalSeriesFound}`);
+            logger.info(`crawlKanBox => Total duplicates skipped: ${duplicateCount}`);
+
+        } catch (error) {
+            logger.error(`crawlKanBox => Fatal error: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("crawlKanBox => Exiting");
     }
 
     /**
@@ -803,6 +971,10 @@ getStream (scripts, id, url){
     }
 
     addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, type, tmdbSeriesId = null){
+        // Check if this is a new series or update
+        const isNewSeries = !this._kanDigitalJSONObj.hasOwnProperty(id);
+        const existingSeries = this._kanDigitalJSONObj[id];
+
         const seriesObj = {
             id: id,
             name: seriesTitle,
@@ -836,6 +1008,31 @@ getStream (scripts, id, url){
         }
 
         this._kanDigitalJSONObj[id] = seriesObj;
+
+        // Track changes with DeltaTracker
+        if (isNewSeries) {
+            this.deltaTracker.addNewSeries(id, { name: seriesTitle, link: seriesPage });
+            // Track new videos
+            if (videosList && videosList.length > 0) {
+                videosList.forEach(video => {
+                    this.deltaTracker.addNewVideo(video.id, { name: video.name, seriesId: id });
+                });
+            }
+        } else {
+            this.deltaTracker.addUpdatedSeries(id, { name: seriesTitle, link: seriesPage });
+            // Track video changes (simple comparison by count)
+            const oldVideoCount = existingSeries.meta.videos ? existingSeries.meta.videos.length : 0;
+            const newVideoCount = videosList ? videosList.length : 0;
+            if (newVideoCount > oldVideoCount) {
+                // Assume new videos were added
+                for (let i = oldVideoCount; i < newVideoCount; i++) {
+                    if (videosList[i]) {
+                        this.deltaTracker.addNewVideo(videosList[i].id, { name: videosList[i].name, seriesId: id });
+                    }
+                }
+            }
+        }
+
         logger.info(`addToJsonObject => Added  series, ID: ${id} Name: ${seriesTitle} Link: ${seriesPage}`);
     }
 
@@ -927,6 +1124,24 @@ getStream (scripts, id, url){
         }
     }
 
+    async updateDatabase() {
+        logger.trace("updateDatabase => Entered");
+        logger.debug("updateDatabase => Starting bulk database update");
+
+        const DatabaseUpdater = require('./DatabaseUpdater');
+        const dbUpdater = new DatabaseUpdater();
+
+        try {
+            const result = await dbUpdater.updateFromJSON('kandigital', this._kanDigitalJSONObj);
+            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+        } catch (error) {
+            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("updateDatabase => Leaving");
+    }
+
     writeJSON(){
         logger.trace("writeJSON => Entered");
         logger.debug("writeJSON => All tasks completed - writing file");
@@ -943,3 +1158,14 @@ module.exports = KanDigitalScraper;
 exports.crawl = this.crawl;
 exports.isRunning = this.isRunning;
 exports.writeJSON = this.writeJSON;
+
+// Run scraper if executed directly
+if (require.main === module) {
+    require('dotenv').config({ path: './classes/.env' });
+    const scraper = new KanDigitalScraper();
+
+    scraper.crawl().catch(error => {
+        logger.error('Fatal error:', error);
+        process.exit(1);
+    });
+}

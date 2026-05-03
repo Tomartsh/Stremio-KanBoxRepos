@@ -7,7 +7,7 @@ const {
     PREFIX,
     TMDB
 } = require("./constants");
-const {fetchData, sleeperTimer, DeltaTracker} = require("./utilities.js");
+const {fetchData, sleeperTimer, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const { v1: uuidv1 } = require('uuid');
 const log4js = require("log4js");
 
@@ -45,7 +45,22 @@ class MakoScraper {
         try {
             await this.getSeries();
 
-            if (isDoWriteFile) {
+            const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants");
+
+            if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
+                logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
+
+                if (WRITE_TO_GITHUB) {
+                    logger.info("crawl => writing JSON file to GitHub");
+                    this.writeJSON(this._makoJSONObj);
+                }
+
+                if (UPDATE_DATABASE) {
+                    logger.info("crawl => updating database in bulk");
+                    await this.updateDatabase(this._makoJSONObj);
+                }
+            } else if (isDoWriteFile) {
+                // Backward compatibility
                 logger.info("crawl => writing JSON file");
                 logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
                 this.writeJSON(this._makoJSONObj);
@@ -170,21 +185,32 @@ class MakoScraper {
 
     async processSeason(season, seriesId, seriesTitle, tmdbSeriesId = null) {
         const seasonUrl = MAKO.URL_BASE + season.pageUrl;
-        const seasonId = this.setSeasonId(season.seasonTitle, seasonUrl);
+        const makoSeasonId = this.setSeasonId(season.seasonTitle, seasonUrl);
 
-        logger.debug(`processSeason => Season ID: ${seasonId}, URL: ${seasonUrl}`);
+        logger.debug(`processSeason => Mako Season ID: ${makoSeasonId}, URL: ${seasonUrl}`);
 
         const seasonEpisodesPage = await fetchData(seasonUrl + MAKO.URL_SUFFIX, true);
 
         if (!this.isValidJsonResponse(seasonEpisodesPage)) {
-            logger.error(`processSeason => Invalid response for season ${seasonId} at ${seasonUrl}`);
+            logger.error(`processSeason => Invalid response for season ${makoSeasonId} at ${seasonUrl}`);
             return [];
         }
 
-        const videos = await this.getEpisodes(seasonEpisodesPage, seriesId, seasonId, tmdbSeriesId);
+        const videos = await this.getEpisodes(seasonEpisodesPage, seriesId, makoSeasonId, tmdbSeriesId);
 
         if (videos && videos.length > 0) {
-            logger.debug(`processSeason => Found ${videos.length} episodes in season ${seasonId} of ${seriesTitle}`);
+            // Derive correct season year from actual release dates
+            const correctedSeasonId = this.deriveSeasonFromDates(videos, makoSeasonId);
+
+            if (correctedSeasonId !== makoSeasonId) {
+                logger.info(`processSeason => Corrected season ID from ${makoSeasonId} to ${correctedSeasonId} for ${seriesTitle}`);
+                // Update all videos with corrected season
+                videos.forEach(video => {
+                    video.season = parseInt(correctedSeasonId) || 1;
+                });
+            }
+
+            logger.debug(`processSeason => Found ${videos.length} episodes in season ${correctedSeasonId} of ${seriesTitle}`);
         }
 
         return videos || [];
@@ -271,6 +297,146 @@ class MakoScraper {
         return videos;
     }
 
+    /**
+     * Try multiple methods to get episode release date
+     * Fallback chain: TMDB (by ID) -> TMDB (by S/E) -> extraInfo -> HTML page scraping
+     * TMDB is prioritized as it's more reliable than Mako's extraInfo
+     */
+    async getEpisodeReleaseDate(episode, episodeId, episodePage, tmdbSeriesId, tmdbEpisodeId, seasonNum, episodeNum) {
+
+        // Method 1: Try TMDB API with episode ID (most efficient if we have it)
+        if (tmdbEpisodeId) {
+            try {
+                logger.debug(`🔍 ${episodeId}: Trying TMDB API with episode ID ${tmdbEpisodeId}...`);
+
+                const tmdbUrl = `https://api.themoviedb.org/3/tv/episode/${tmdbEpisodeId}?api_key=${this._tmdbApiKey}&language=he`;
+                const response = await fetch(tmdbUrl);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.air_date) {
+                        const airDate = new Date(data.air_date);
+                        if (!isNaN(airDate.getTime())) {
+                            logger.info(`✅ ${episodeId}: Date from TMDB (by ID): ${airDate.toISOString().substring(0, 10)}`);
+                            return airDate.toISOString();
+                        }
+                    }
+                }
+                logger.debug(`⚠️  ${episodeId}: TMDB (by ID): No air_date found`);
+            } catch (error) {
+                logger.debug(`⚠️  ${episodeId}: TMDB (by ID) error: ${error.message}`);
+            }
+        }
+
+        // Method 2: Try TMDB API with series/season/episode numbers
+        if (this._tmdbEnabled && tmdbSeriesId) {
+            try {
+                logger.debug(`🔍 ${episodeId}: Trying TMDB API for S${seasonNum}E${episodeNum}...`);
+
+                const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbSeriesId}/season/${seasonNum}/episode/${episodeNum}?api_key=${this._tmdbApiKey}&language=he`;
+                const response = await fetch(tmdbUrl);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.air_date) {
+                        const airDate = new Date(data.air_date);
+                        if (!isNaN(airDate.getTime())) {
+                            logger.info(`✅ ${episodeId}: Date from TMDB (by S/E): ${airDate.toISOString().substring(0, 10)}`);
+                            return airDate.toISOString();
+                        }
+                    }
+                }
+                logger.debug(`⚠️  ${episodeId}: TMDB (by S/E): No air_date found`);
+            } catch (error) {
+                logger.debug(`⚠️  ${episodeId}: TMDB (by S/E) error: ${error.message}`);
+            }
+        } else {
+            logger.debug(`⏭️  ${episodeId}: TMDB not enabled or no series ID`);
+        }
+
+        // Method 3: Try extraInfo from Mako API (less reliable than TMDB)
+        if (episode.extraInfo) {
+            const dateStr = episode.extraInfo.includes("@")
+                ? episode.extraInfo.split("@")[1]
+                : episode.extraInfo;
+
+            // Parse date - handle both DD.MM.YYYY and DD.MM.YY formats
+            let parsedDate;
+            const parts = dateStr.split('.');
+
+            if (parts.length === 3) {
+                const [day, month, year] = parts;
+                // Handle 2-digit year (YY) vs 4-digit year (YYYY)
+                const fullYear = year.length === 2
+                    ? (parseInt(year) > 50 ? '19' + year : '20' + year)  // Assume 1950-2049 range
+                    : year;
+
+                parsedDate = new Date(`${fullYear}-${month}-${day}`);
+            } else {
+                // Try standard Date parsing as fallback
+                parsedDate = new Date(dateStr);
+            }
+
+            if (!isNaN(parsedDate.getTime())) {
+                logger.info(`📅 ${episodeId}: Date from extraInfo: ${parsedDate.toISOString().substring(0, 10)}`);
+                return parsedDate.toISOString();
+            } else {
+                logger.warn(`⚠️  ${episodeId}: Invalid date in extraInfo: "${dateStr}"`);
+            }
+        } else {
+            logger.debug(`🔍 ${episodeId}: No extraInfo field, trying next fallback...`);
+        }
+
+        // Method 4: Try fetching episode page and extracting date from HTML
+        try {
+            logger.debug(`🔍 ${episodeId}: Trying HTML page scraping...`);
+
+            const response = await fetch(episodePage);
+            if (response.ok) {
+                const html = await response.text();
+
+                // Look for date patterns in Hebrew format (DD.MM.YYYY) or ISO format
+                const datePatterns = [
+                    /(\d{2})\.(\d{2})\.(\d{4})/,  // DD.MM.YYYY
+                    /(\d{4})-(\d{2})-(\d{2})/,   // YYYY-MM-DD
+                    /(\d{1,2})\s+(בינו׳|פבר׳|מרץ|אפר׳|מאי|יוני|יולי|אוג׳|ספט׳|אוק׳|נוב׳|דצמ׳)\s+(\d{4})/  // Hebrew dates
+                ];
+
+                for (const pattern of datePatterns) {
+                    const match = html.match(pattern);
+                    if (match) {
+                        let dateStr;
+                        if (pattern === datePatterns[0]) {
+                            // DD.MM.YYYY -> YYYY-MM-DD
+                            dateStr = `${match[3]}-${match[2]}-${match[1]}`;
+                        } else if (pattern === datePatterns[1]) {
+                            // Already in YYYY-MM-DD format
+                            dateStr = match[0];
+                        } else {
+                            // Hebrew date - skip for now (would need month mapping)
+                            continue;
+                        }
+
+                        const date = new Date(dateStr);
+                        if (!isNaN(date.getTime()) && date.getFullYear() > 2000 && date.getFullYear() < 2100) {
+                            logger.info(`✅ ${episodeId}: Date from HTML: ${date.toISOString().substring(0, 10)}`);
+                            return date.toISOString();
+                        }
+                    }
+                }
+                logger.debug(`⚠️  ${episodeId}: HTML: No date patterns found`);
+            } else {
+                logger.debug(`⚠️  ${episodeId}: HTML: Failed to fetch page (${response.status})`);
+            }
+        } catch (error) {
+            logger.debug(`⚠️  ${episodeId}: HTML error: ${error.message}`);
+        }
+
+        // All methods failed
+        logger.warn(`❌ ${episodeId}: Could not find release date (will be sorted by episode number)`);
+        return "";
+    }
+
     async getEpisode(episode, id, seasonId, episodeNo, channelId, tmdbSeriesId = null) {
         try {
             // Validate required fields
@@ -285,23 +451,32 @@ class MakoScraper {
             }
 
             const episodePic = episode.pics[0].picUrl;
-            let episodeReleased = "";
             let episodeTitle = episode.title || `Episode ${episodeNo}`;
-
-            // Parse release date
-            if (episode.extraInfo) {
-                const dateStr = episode.extraInfo.includes("@")
-                    ? episode.extraInfo.split("@")[1]
-                    : episode.extraInfo;
-
-                const date = new Date(dateStr);
-                episodeReleased = isNaN(date.getTime()) ? "" : date.toISOString();
-            }
 
             const tempEpisodeId = this.getEpisodeIdFromTitle(episodeTitle, episodeNo);
             const episodeId = `${id}:${seasonId}:${tempEpisodeId}`;
             const vcmid = episode.itemVcmId;
             const episodePage = MAKO.URL_BASE + episode.pageUrl;
+
+            // Search TMDB for this episode FIRST (needed for date lookup)
+            let tmdbEpisodeId = null;
+            if (this._tmdbEnabled && tmdbSeriesId) {
+                tmdbEpisodeId = await this.searchTMDBEpisode(tmdbSeriesId, parseInt(seasonId), episodeNo);
+                if (tmdbEpisodeId) {
+                    logger.debug(`getEpisode => Found TMDB episode ID ${tmdbEpisodeId} for ${episodeId}`);
+                }
+            }
+
+            // Try multiple methods to get release date
+            const episodeReleased = await this.getEpisodeReleaseDate(
+                episode,
+                episodeId,
+                episodePage,
+                tmdbSeriesId,
+                tmdbEpisodeId,
+                parseInt(seasonId),
+                episodeNo
+            );
 
             // Fetch episode data (this has the media/CDN info)
             const episodeAjax = await fetchData(MAKO.URL_EPISODE(vcmid, channelId), true);
@@ -309,15 +484,6 @@ class MakoScraper {
             if (!this.isValidJsonResponse(episodeAjax)) {
                 logger.warn(`getEpisode => Invalid response for episode ${episodeId}`);
                 return { status: "0" };
-            }
-
-            // Search TMDB for this episode if we have a series ID
-            let tmdbEpisodeId = null;
-            if (this._tmdbEnabled && tmdbSeriesId) {
-                tmdbEpisodeId = await this.searchTMDBEpisode(tmdbSeriesId, parseInt(seasonId), episodeNo);
-                if (tmdbEpisodeId) {
-                    logger.debug(`getEpisode => Found TMDB episode ID ${tmdbEpisodeId} for ${episodeId}`);
-                }
             }
 
             return {
@@ -389,6 +555,13 @@ class MakoScraper {
     }
 
     addToJsonObject(id, seriesUrl, title, background, poster, description, genres, videos, tmdbSeriesId = null) {
+        // Sort videos by released date (newest first) for news/current affairs shows
+        const sortedVideos = videos.sort((a, b) => {
+            if (!a.released) return 1;
+            if (!b.released) return -1;
+            return new Date(b.released) - new Date(a.released);
+        });
+
         const seriesObj = {
             id: id,
             link: seriesUrl,
@@ -406,7 +579,7 @@ class MakoScraper {
                 logo: background,
                 description: description,
                 genres: genres,
-                videos: videos
+                videos: sortedVideos
             }
         };
 
@@ -431,13 +604,56 @@ class MakoScraper {
         if (!seasonName) {
             return seasonUrl;
         }
-        
+
         let cleanName = seasonName.trim();
         if (cleanName.startsWith("עונה ")) {
             cleanName = cleanName.replace("עונה ", "");
         }
-        
+
         return cleanName.trim();
+    }
+
+    /**
+     * Derive correct season year from actual episode release dates
+     * Mako sometimes labels seasons incorrectly (e.g., "2026" for episodes airing in 2025)
+     * This method uses the actual release dates to determine the correct season year
+     * @param {Array} videos - Array of video objects with release dates
+     * @param {string} fallbackSeason - Season ID to use if no dates available
+     * @returns {string} Corrected season ID (year)
+     */
+    deriveSeasonFromDates(videos, fallbackSeason) {
+        const years = [];
+
+        for (const video of videos) {
+            if (video.released) {
+                const date = new Date(video.released);
+                if (!isNaN(date.getTime())) {
+                    const year = date.getFullYear();
+                    years.push(year);
+                }
+            }
+        }
+
+        if (years.length === 0) {
+            logger.warn(`deriveSeasonFromDates => No valid release dates found, using fallback: ${fallbackSeason}`);
+            return fallbackSeason;
+        }
+
+        // Use the most common year (mode) to handle cases where episodes span Dec/Jan
+        const yearCounts = {};
+        let maxCount = 0;
+        let mostCommonYear = parseInt(fallbackSeason) || new Date().getFullYear();
+
+        for (const year of years) {
+            yearCounts[year] = (yearCounts[year] || 0) + 1;
+            if (yearCounts[year] > maxCount) {
+                maxCount = yearCounts[year];
+                mostCommonYear = year;
+            }
+        }
+
+        logger.debug(`deriveSeasonFromDates => Derived year ${mostCommonYear} from ${years.length} episodes (years: ${[...new Set(years)].join(', ')})`);
+        return mostCommonYear.toString();
     }
 
     getEpisodeIdFromTitle(str, tempEpisodeId) {
@@ -541,11 +757,70 @@ class MakoScraper {
         }
     }
 
+    async updateDatabase(makoJSONObj) {
+        logger.trace("updateDatabase => Entered");
+        logger.debug("updateDatabase => Starting bulk database update");
+
+        try {
+            const result = await updateDatabaseFromJSON('mako', makoJSONObj, logger);
+            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+        } catch (error) {
+            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("updateDatabase => Leaving");
+    }
+
     writeJSON(makoJSONObj) {
         logger.trace("writeJSON => Entered");
         logger.debug(`writeJSON => Writing ${Object.keys(makoJSONObj).length} series to file`);
         utils.writeJSONToFile(makoJSONObj, "stremio-mako");
         logger.trace("writeJSON => Leaving");
+    }
+
+    /**
+     * Parse Israeli date format (DD.MM.YYYY or D.M.YYYY) to ISO format
+     * @param {string} dateStr - Date string in Israeli format
+     * @returns {string} - ISO date string or empty string if parsing fails
+     */
+    parseIsraeliDate(dateStr) {
+        if (!dateStr || typeof dateStr !== 'string') return "";
+
+        try {
+            // Try ISO format first
+            const isoMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+            if (isoMatch) {
+                const date = new Date(dateStr);
+                if (!isNaN(date.getTime())) {
+                    return date.toISOString();
+                }
+            }
+
+            // Parse D.M.YYYY, DD.MM.YYYY, D/M/YYYY, DD/MM/YYYY format
+            const ilMatch = dateStr.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+            if (ilMatch) {
+                const [, day, month, year] = ilMatch;
+                const paddedDay = day.padStart(2, '0');
+                const paddedMonth = month.padStart(2, '0');
+                const date = new Date(`${year}-${paddedMonth}-${paddedDay}T00:00:00`);
+                if (!isNaN(date.getTime())) {
+                    return date.toISOString();
+                }
+            }
+
+            // Try direct parsing as last resort
+            const date = new Date(dateStr);
+            if (!isNaN(date.getTime())) {
+                return date.toISOString();
+            }
+
+            logger.warn(`parseIsraeliDate => Could not parse date: ${dateStr}`);
+            return "";
+        } catch (error) {
+            logger.error(`parseIsraeliDate => Error: ${error.message}`);
+            return "";
+        }
     }
 }
 
@@ -761,8 +1036,9 @@ class MakoScraper{
             } else {
                 episodeReleased = episode["extraInfo"]
             }
-            const date = new Date(episodeReleased);
-            episodeReleased = isNaN(date.getTime()) ? "" : date.toISOString();
+
+            // Parse Israeli date format (DD.MM.YYYY or D.M.YYYY)
+            episodeReleased = this.parseIsraeliDate(episodeReleased);
         } 
 
         //var tempEpisodeId = this.getEpisodeIdFromTitle(episodeTitle,noOfEpisodes)

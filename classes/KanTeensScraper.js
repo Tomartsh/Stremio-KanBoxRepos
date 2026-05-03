@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, extractReleaseDate, DeltaTracker} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     HINUKHIT,
@@ -49,14 +49,43 @@ class KanTeensScraper {
     async crawl(isDoWriteFile = false){
         logger.info("Started Crawling");
         this.isRunning = true;
-        await this.crawlTeens();
+        this.deltaTracker.clear();
+
+        try {
+            await this.crawlTeens();
+        } catch (error) {
+            logger.error(`crawl => KanTeens scraping failed: ${error.message}`);
+            logger.error(error.stack);
+        }
+
+        try {
+            await this.crawlKanBox();
+        } catch (error) {
+            logger.error(`crawl => Kan-Box scraping failed: ${error.message}`);
+            logger.error(error.stack);
+        }
+
         logger.info("Done Crawling");
         logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        if (isDoWriteFile){
+        const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
+
+        if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
+            if (WRITE_TO_GITHUB) {
+                logger.info("crawl => writing JSON file to GitHub");
+                this.writeJSON();
+            }
+
+            if (UPDATE_DATABASE) {
+                logger.info("crawl => updating database in bulk");
+                await this.updateDatabase();
+            }
+        } else if (isDoWriteFile) {
+            // Backward compatibility
             logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
+
         this.isRunning = false;
 
         logger.info("crawl => Done crawling. Exiting");
@@ -223,9 +252,125 @@ class KanTeensScraper {
         return { id, seriesTitle };
     }
 
+    /***********************************************************
+     *
+     * Kan-Box handling (Kids and Teens category only)
+     *
+     ***********************************************************/
+    async crawlKanBox(){
+        logger.trace("crawlKanBox => Entering");
+        logger.info("crawlKanBox => Starting Kan-Box scraping for category: ילדים ונוער");
+
+        const { parse } = require('node-html-parser');
+        const { KAN_BOX_URL, KAN_DIGITAL_IMAGE_PREFIX } = require("./constants");
+
+        try {
+            // Fetch Kan-Box lobby page
+            logger.info(`crawlKanBox => Fetching: ${KAN_BOX_URL}`);
+            const response = await fetchData(KAN_BOX_URL, false);
+            const html = response;
+            const root = parse(html);
+
+            // Find all block-list items (categories)
+            const blockLists = root.querySelectorAll('.block-list');
+            logger.info(`crawlKanBox => Found ${blockLists.length} block-list sections`);
+
+            let targetCategory = null;
+
+            // Find the "ילדים ונוער" category
+            blockLists.forEach((blockList, index) => {
+                const items = blockList.querySelectorAll('.block-list-item');
+                logger.debug(`crawlKanBox => Section ${index + 1}: ${items.length} categories`);
+
+                items.forEach((item) => {
+                    const titleElem = item.querySelector('.h3.title-elem');
+                    const linkElem = item.querySelector('a.unstyled-link');
+
+                    if (titleElem && linkElem) {
+                        const categoryName = titleElem.text.trim();
+
+                        // Check if this is our target category
+                        if (categoryName === HINUKHIT.KAN_BOX_CATEGORY) {
+                            const categoryLink = linkElem.getAttribute('href');
+                            const seriesLinks = item.querySelectorAll('a.card-link');
+
+                            targetCategory = {
+                                name: categoryName,
+                                link: categoryLink,
+                                seriesLinks: Array.from(seriesLinks).map(link => link.getAttribute('href')).filter(url => url)
+                            };
+                        }
+                    }
+                });
+            });
+
+            if (!targetCategory) {
+                logger.warn(`crawlKanBox => Category "${HINUKHIT.KAN_BOX_CATEGORY}" not found on Kan-Box page`);
+                return;
+            }
+
+            logger.info(`crawlKanBox => Found category: ${targetCategory.name} (${targetCategory.seriesLinks.length} series)`);
+
+            // Scrape series directly from Kan-Box page
+            let totalSeriesFound = 0;
+            let duplicateCount = 0;
+
+            // Process each series link found in this category
+            for (const seriesUrl of targetCategory.seriesLinks) {
+                if (!seriesUrl) continue;
+
+                // Build full URL if relative
+                let fullSeriesUrl = seriesUrl;
+                if (seriesUrl.startsWith('/')) {
+                    fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + seriesUrl;
+                }
+
+                // Generate series ID to check for duplicates
+                const seriesId = utils.generateSeriesId(fullSeriesUrl, HINUKHIT.SUBPREFIX_TEENS);
+
+                // Check if this series already exists in our catalog
+                if (this._kanTeenJSONObj.hasOwnProperty(seriesId)) {
+                    logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
+                    this.deltaTracker.skipSeries();
+                    duplicateCount++;
+                    continue;
+                }
+
+                // Create a minimal item object for processing
+                const item = {
+                    Url: fullSeriesUrl,
+                    Image: '',
+                    ImageAlt: '',
+                    Description: `From Kan-Box category: ${targetCategory.name}`
+                };
+
+                // Process the series using existing method
+                try {
+                    const result = await this.processOneTeensSeries(item, "n");
+                    if (result) {
+                        totalSeriesFound++;
+                        logger.info(`crawlKanBox => Added series from ${targetCategory.name}: ${result.seriesTitle}`);
+                    }
+                } catch (error) {
+                    logger.error(`crawlKanBox => Error processing series ${fullSeriesUrl}: ${error.message}`);
+                }
+            }
+
+            logger.info(`crawlKanBox => Completed scraping`);
+            logger.info(`crawlKanBox => Total new series added: ${totalSeriesFound}`);
+            logger.info(`crawlKanBox => Total duplicates skipped: ${duplicateCount}`);
+
+        } catch (error) {
+            logger.error(`crawlKanBox => Fatal error: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("crawlKanBox => Exiting");
+    }
+
     /**
      * Function to retrieve the serise title
-     * @param {*} doc = html element of page of series 
+     * @param {*} doc = html element of page of series
      * @returns String of the series title
      */
     getEducationalTitle(doc){
@@ -370,6 +515,10 @@ class KanTeensScraper {
     }
 
     addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
+        // Check if this is a new series or update
+        const isNewSeries = !this._kanTeenJSONObj.hasOwnProperty(id);
+        const existingSeries = this._kanTeenJSONObj[id];
+
         const seriesObj = {
             id: id,
             name: seriesTitle,
@@ -399,6 +548,31 @@ class KanTeensScraper {
         }
 
         this._kanTeenJSONObj[id] = seriesObj;
+
+        // Track changes with DeltaTracker
+        if (isNewSeries) {
+            this.deltaTracker.addNewSeries(id, { name: seriesTitle, link: seriesPage });
+            // Track new videos
+            if (videosList && videosList.length > 0) {
+                videosList.forEach(video => {
+                    this.deltaTracker.addNewVideo(video.id, { name: video.name, seriesId: id });
+                });
+            }
+        } else {
+            this.deltaTracker.addUpdatedSeries(id, { name: seriesTitle, link: seriesPage });
+            // Track video changes (simple comparison by count)
+            const oldVideoCount = existingSeries.meta.videos ? existingSeries.meta.videos.length : 0;
+            const newVideoCount = videosList ? videosList.length : 0;
+            if (newVideoCount > oldVideoCount) {
+                // Assume new videos were added
+                for (let i = oldVideoCount; i < newVideoCount; i++) {
+                    if (videosList[i]) {
+                        this.deltaTracker.addNewVideo(videosList[i].id, { name: videosList[i].name, seriesId: id });
+                    }
+                }
+            }
+        }
+
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
     }
 
@@ -488,6 +662,21 @@ class KanTeensScraper {
             logger.error(`searchTMDBEpisode => Error searching TMDB for episode:`, error.message);
             return null;
         }
+    }
+
+    async updateDatabase() {
+        logger.trace("updateDatabase => Entered");
+        logger.debug("updateDatabase => Starting bulk database update");
+
+        try {
+            const result = await updateDatabaseFromJSON('kanteens', this._kanTeenJSONObj, logger);
+            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+        } catch (error) {
+            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("updateDatabase => Leaving");
     }
 
     writeJSON(){

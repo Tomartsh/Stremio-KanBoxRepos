@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, extractReleaseDate, DeltaTracker} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     PODCASTS,
@@ -142,10 +142,24 @@ class KanPodcastsScraper {
     logger.info("Done Crawling");
     logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-    if (isDoWriteFile){
+    const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
+
+    if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
+        if (WRITE_TO_GITHUB) {
+            logger.info("crawl => writing JSON file to GitHub");
+            this.writeJSON();
+        }
+
+        if (UPDATE_DATABASE) {
+            logger.info("crawl => updating database in bulk");
+            await this.updateDatabase();
+        }
+    } else if (isDoWriteFile) {
+        // Backward compatibility
         logger.info("crawl => writing JSON file");
         this.writeJSON();
     }
+
     this.isRunning = false;
 }
 
@@ -236,9 +250,17 @@ class KanPodcastsScraper {
                     const episodeNo = episodes.length - index;
                     const episodeId = `${stremioId}:${episodeNo}`;
 
+                    // Create unique title: include episode number to avoid duplicates
+                    // If original title already includes "Episode X", prepend the number
+                    // Otherwise, add "Episode X" prefix
+                    let uniqueTitle = ep.title;
+                    if (!uniqueTitle.match(/^פרק \d+/)) {
+                        uniqueTitle = `פרק ${episodeNo}: ${uniqueTitle}`;
+                    }
+
                     return {
                         id: episodeId,
-                        title: ep.title,
+                        title: uniqueTitle,
                         overview: ep.description,
                         thumbnail: ep.thumbnail,
                         released: ep.released,
@@ -394,6 +416,15 @@ class KanPodcastsScraper {
             }
 
             logger.info(`getEpisodes => Successfully parsed ${allEpisodes.length} total episodes`);
+
+            // Sort episodes by release date (newest first)
+            allEpisodes.sort((a, b) => {
+                const dateA = a.released ? new Date(a.released).getTime() : 0;
+                const dateB = b.released ? new Date(b.released).getTime() : 0;
+                return dateB - dateA; // Descending (newest first)
+            });
+
+            logger.debug(`getEpisodes => Episodes sorted by release date (newest first)`);
             return allEpisodes;
 
         } catch (error) {
@@ -563,6 +594,21 @@ class KanPodcastsScraper {
             this._tmdbCache.set(cacheKey, null);
             return null;
         }
+    }
+
+    async updateDatabase() {
+        logger.trace("updateDatabase => Entered");
+        logger.debug("updateDatabase => Starting bulk database update");
+
+        try {
+            const result = await updateDatabaseFromJSON('kanpodcasts', this._kanPodcastsJSONObj, logger);
+            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+        } catch (error) {
+            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("updateDatabase => Leaving");
     }
 
     writeJSON(){

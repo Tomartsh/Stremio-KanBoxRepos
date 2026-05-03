@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, extractReleaseDate, DeltaTracker} = require("./utilities.js");
+const {fetchData, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     KAN88_POCASTS_URL,
@@ -55,10 +55,24 @@ class Kan88Scraper {
         logger.info("Done Crawling");
         logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        if (isDoWriteFile){
+        const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
+
+        if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
+            if (WRITE_TO_GITHUB) {
+                logger.info("crawl => writing JSON file to GitHub");
+                this.writeJSON();
+            }
+
+            if (UPDATE_DATABASE) {
+                logger.info("crawl => updating database in bulk");
+                await this.updateDatabase();
+            }
+        } else if (isDoWriteFile) {
+            // Backward compatibility
             logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
+
         this.isRunning = false;
     }
 
@@ -549,6 +563,21 @@ class Kan88Scraper {
             this._tmdbCache.set(cacheKey, null);
             return null;
         }
+    }
+
+    async updateDatabase() {
+        logger.trace("updateDatabase => Entered");
+        logger.debug("updateDatabase => Starting bulk database update");
+
+        try {
+            const result = await updateDatabaseFromJSON('kan88', this._kanPodcastsJSONObj, logger);
+            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+        } catch (error) {
+            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
+            throw error;
+        }
+
+        logger.trace("updateDatabase => Leaving");
     }
 
     writeJSON(){
