@@ -243,13 +243,11 @@ const TmdbHelper = require("./TmdbHelper.js");
 
         // Search TMDB for this series
         let tmdbSeriesId = null;
-        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
-            tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(seriesTitle);
-            if (tmdbSeriesId) {
-                logger.info(`processOneKidsSeries => Found TMDB ID ${tmdbSeriesId} for "${seriesTitle}"`);
-            } else {
-                logger.debug(`processOneKidsSeries => No TMDB ID found for "${seriesTitle}"`);
-            }
+        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(seriesTitle);
+        if (tmdbSeriesId) {
+            logger.info(`processOneKidsSeries => Found TMDB ID ${tmdbSeriesId} for "${seriesTitle}"`);
+        } else {
+            logger.debug(`processOneKidsSeries => No TMDB ID found for "${seriesTitle}"`);
         }
 
         var seasons = doc2.querySelectorAll("div.seasons-item.kids");
@@ -366,10 +364,8 @@ const TmdbHelper = require("./TmdbHelper.js");
         // Search TMDB for this episode if we have a series ID
         let tmdbEpisodeId = null;
         tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
-            tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
-            if (tmdbEpisodeId) {
-                logger.debug(`processOneKidsEpisode => Found TMDB episode ID ${tmdbEpisodeId} for series ${id}, S${seasonNo}E${episodeNo}`);
-            }
+        if (tmdbEpisodeId) {
+            logger.debug(`processOneKidsEpisode => Found TMDB episode ID ${tmdbEpisodeId} for series ${id}, S${seasonNo}E${episodeNo}`);
         }
 
         var videoId = id + ":" + seasonNo + ":" + episodeNo;
@@ -509,70 +505,6 @@ const TmdbHelper = require("./TmdbHelper.js");
 
         this._kanKidsJSONObj[id] = seriesObj;
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
-    }
-
-            // Check cache first
-        const cacheKey = `${title}${year ? `_${year}` : ''}`;
-        if (this._tmdbCache.has(cacheKey)) {
-            logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
-            return this._tmdbCache.get(cacheKey);
-        }
-
-        try {
-            // Build search URL with Hebrew language
-            let searchUrl = `${TMDB.BASE_URL}${TMDB.SEARCH_ENDPOINT}?api_key=${TMDB.API_KEY}&language=${TMDB.LANGUAGE}&query=${encodeURIComponent(title)}`;
-
-            if (year) {
-                searchUrl += `&first_air_date_year=${year}`;
-            }
-
-            logger.debug(`searchTMDBSeries => Searching TMDB for "${title}"${year ? ` (${year})` : ''}`);
-
-            const response = await fetchData(searchUrl, false);
-
-            if (!response || !response.results || response.results.length === 0) {
-                logger.debug(`searchTMDBSeries => No results found for "${title}"`);
-                this._tmdbCache.set(cacheKey, null);
-                return null;
-            }
-
-            // Get first result's TMDB ID
-            const tmdbId = response.results[0].id;
-            logger.info(`searchTMDBSeries => Found TMDB ID ${tmdbId} for "${title}" (original_title: ${response.results[0].original_name || 'N/A'})`);
-
-            // Cache the result
-            this._tmdbCache.set(cacheKey, tmdbId);
-
-            return tmdbId;
-
-        } catch (error) {
-            logger.error(`searchTMDBSeries => Error searching TMDB for "${title}":`, error.message);
-            this._tmdbCache.set(cacheKey, null);
-            return null;
-        }
-    }
-
-            try {
-            const episodeUrl = `${TMDB.BASE_URL}/tv/${tmdbSeriesId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB.API_KEY}`;
-
-            logger.debug(`searchTMDBEpisode => Fetching TMDB episode data for series ${tmdbSeriesId}, S${seasonNumber}E${episodeNumber}`);
-
-            const response = await fetchData(episodeUrl, false);
-
-            if (!response || !response.id) {
-                logger.debug(`searchTMDBEpisode => Episode not found for S${seasonNumber}E${episodeNumber}`);
-                return null;
-            }
-
-            const tmdbEpisodeId = response.id;
-            logger.debug(`searchTMDBEpisode => Found TMDB episode ID ${tmdbEpisodeId} for S${seasonNumber}E${episodeNumber}`);
-
-            return tmdbEpisodeId;
-
-        } catch (error) {
-            logger.error(`searchTMDBEpisode => Error searching TMDB for episode:`, error.message);
-            return null;
-        }
     }
 
     async updateDatabase() {

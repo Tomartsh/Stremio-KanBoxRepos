@@ -788,36 +788,42 @@ getStream (scripts, id, url){
         var  videoId = id + ":" + seasonNo + ":" + episodeNo;
 
         var episodeLogoUrl = "";
-        if (seasonEpisodesElem.querySelector("div.card-img")){
-            var elemImage = seasonEpisodesElem.querySelector("div.card-img");
-            try {
-                if ((elemImage != null) && (elemImage.querySelector("img.img-full") != null)) {
-                    var elemEpisodeLogo = elemImage.querySelector("img.img-full");
-
-                    if (elemEpisodeLogo != null) {
-                        episodeLogoUrl = utils.getImageFromUrl(elemEpisodeLogo.attrs["src"],SUBTYPE);
-                    }
-                    logger.trace("processOneDigitalEpisode => episodeLogoUrl location: " + episodeLogoUrl);
-                }
-            } catch(ex) {
-                logger.error("processOneDigitalEpisode => episodeLogoUrl:" + ex);
-            }
-        }
-        logger.trace ("processOneDigitalEpisode => episodeLogoUrl: " + episodeLogoUrl + " Name: " + title);
-
-        // Extract release date from episode page
         let released = "";
+
+        // Extract thumbnail and release date from individual episode page
+        // The series page card may not have the correct episode-specific thumbnail
         try {
             const episodeDoc = await fetchData(episodePageLink);
             if (episodeDoc) {
+                // Try to get thumbnail from Open Graph or Twitter Card meta tags
+                const ogImage = episodeDoc.querySelector('meta[property="og:image"]');
+                const twitterImage = episodeDoc.querySelector('meta[name="twitter:image"]');
+                const thumbnailMeta = episodeDoc.querySelector('meta[itemprop="thumbnailUrl"]');
+
+                if (thumbnailMeta) {
+                    episodeLogoUrl = thumbnailMeta.getAttribute('content');
+                } else if (ogImage) {
+                    episodeLogoUrl = ogImage.getAttribute('content');
+                } else if (twitterImage) {
+                    episodeLogoUrl = twitterImage.getAttribute('content');
+                }
+
+                // Clean up URL if needed
+                if (episodeLogoUrl) {
+                    episodeLogoUrl = utils.getImageFromUrl(episodeLogoUrl, SUBTYPE);
+                }
+
+                // Extract release date
                 const dateElement = episodeDoc.querySelector("li.date-local");
                 released = extractReleaseDate(dateElement);
                 if (released) {
                     logger.debug(`processOneDigitalEpisode => Extracted release date: ${released} for ${title}`);
                 }
+
+                logger.trace(`processOneDigitalEpisode => Extracted thumbnail: ${episodeLogoUrl} for ${title}`);
             }
         } catch (error) {
-            logger.warn(`processOneDigitalEpisode => Could not extract release date for ${title}: ${error.message}`);
+            logger.warn(`processOneDigitalEpisode => Could not extract thumbnail/release date for ${title}: ${error.message}`);
         }
 
         // Search TMDB for this episode if we have a series ID

@@ -133,12 +133,10 @@ class MakoScraper {
         // Search TMDB for this series
         let tmdbSeriesId = null;
         tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
-            tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
-            if (tmdbSeriesId) {
-                logger.info(`processSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
-            } else {
-                logger.debug(`processSeries => No TMDB ID found for "${title}"`);
-            }
+        if (tmdbSeriesId) {
+            logger.info(`processSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
+        } else {
+            logger.debug(`processSeries => No TMDB ID found for "${title}"`);
         }
 
         // Handle series without seasons structure
@@ -330,26 +328,29 @@ class MakoScraper {
         }
 
         // Method 2: Try TMDB API with series/season/episode numbers
-        tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
-            try {
-                logger.debug(`🔍 ${episodeId}: Trying TMDB API for S${seasonNum}E${episodeNum}...`);
+        if (tmdbSeriesId) {
+            tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNum, episodeNum);
+            if (tmdbEpisodeId) {
+                try {
+                    logger.debug(`🔍 ${episodeId}: Trying TMDB API for S${seasonNum}E${episodeNum}...`);
 
-                const tmdbUrl = `https://api.themoviedb.org/3/tv/${tmdbSeriesId}/season/${seasonNum}/episode/${episodeNum}?api_key=${this._tmdbApiKey}&language=he`;
-                const response = await fetch(tmdbUrl);
+                    const tmdbUrl = `https://api.themoviedb.org/3/tv/episode/${tmdbEpisodeId}?api_key=${this._tmdbApiKey}&language=he`;
+                    const response = await fetch(tmdbUrl);
 
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.air_date) {
-                        const airDate = new Date(data.air_date);
-                        if (!isNaN(airDate.getTime())) {
-                            logger.info(`✅ ${episodeId}: Date from TMDB (by S/E): ${airDate.toISOString().substring(0, 10)}`);
-                            return airDate.toISOString();
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.air_date) {
+                            const airDate = new Date(data.air_date);
+                            if (!isNaN(airDate.getTime())) {
+                                logger.info(`✅ ${episodeId}: Date from TMDB (by S/E): ${airDate.toISOString().substring(0, 10)}`);
+                                return airDate.toISOString();
+                            }
                         }
                     }
+                    logger.debug(`⚠️  ${episodeId}: TMDB (by S/E): No air_date found`);
+                } catch (error) {
+                    logger.debug(`⚠️  ${episodeId}: TMDB (by S/E) error: ${error.message}`);
                 }
-                logger.debug(`⚠️  ${episodeId}: TMDB (by S/E): No air_date found`);
-            } catch (error) {
-                logger.debug(`⚠️  ${episodeId}: TMDB (by S/E) error: ${error.message}`);
             }
         } else {
             logger.debug(`⏭️  ${episodeId}: TMDB not enabled or no series ID`);
@@ -461,11 +462,9 @@ class MakoScraper {
 
             // Search TMDB for this episode FIRST (needed for date lookup)
             let tmdbEpisodeId = null;
-            tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
-                tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, parseInt(seasonId), episodeNo);
-                if (tmdbEpisodeId) {
-                    logger.debug(`getEpisode => Found TMDB episode ID ${tmdbEpisodeId} for ${episodeId}`);
-                }
+            tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, parseInt(seasonId), episodeNo);
+            if (tmdbEpisodeId) {
+                logger.debug(`getEpisode => Found TMDB episode ID ${tmdbEpisodeId} for ${episodeId}`);
             }
 
             // Try multiple methods to get release date
@@ -668,70 +667,6 @@ class MakoScraper {
         }
         
         return episodeId.trim() || tempEpisodeId;
-    }
-
-            // Check cache first
-        const cacheKey = `${title}${year ? `_${year}` : ''}`;
-        if (this._tmdbCache.has(cacheKey)) {
-            logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
-            return this._tmdbCache.get(cacheKey);
-        }
-
-        try {
-            // Build search URL with Hebrew language
-            let searchUrl = `${TMDB.BASE_URL}${TMDB.SEARCH_ENDPOINT}?api_key=${TMDB.API_KEY}&language=${TMDB.LANGUAGE}&query=${encodeURIComponent(title)}`;
-
-            if (year) {
-                searchUrl += `&first_air_date_year=${year}`;
-            }
-
-            logger.debug(`searchTMDBSeries => Searching TMDB for "${title}"${year ? ` (${year})` : ''}`);
-
-            const response = await fetchData(searchUrl, false);
-
-            if (!response || !response.results || response.results.length === 0) {
-                logger.debug(`searchTMDBSeries => No results found for "${title}"`);
-                this._tmdbCache.set(cacheKey, null);
-                return null;
-            }
-
-            // Get first result's TMDB ID
-            const tmdbId = response.results[0].id;
-            logger.info(`searchTMDBSeries => Found TMDB ID ${tmdbId} for "${title}" (original_title: ${response.results[0].original_name || 'N/A'})`);
-
-            // Cache the result
-            this._tmdbCache.set(cacheKey, tmdbId);
-
-            return tmdbId;
-
-        } catch (error) {
-            logger.error(`searchTMDBSeries => Error searching TMDB for "${title}":`, error.message);
-            this._tmdbCache.set(cacheKey, null);
-            return null;
-        }
-    }
-
-            try {
-            const episodeUrl = `${TMDB.BASE_URL}/tv/${tmdbSeriesId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB.API_KEY}`;
-
-            logger.debug(`searchTMDBEpisode => Fetching TMDB episode data for series ${tmdbSeriesId}, S${seasonNumber}E${episodeNumber}`);
-
-            const response = await fetchData(episodeUrl, false);
-
-            if (!response || !response.id) {
-                logger.debug(`searchTMDBEpisode => Episode not found for S${seasonNumber}E${episodeNumber}`);
-                return null;
-            }
-
-            const tmdbEpisodeId = response.id;
-            logger.debug(`searchTMDBEpisode => Found TMDB episode ID ${tmdbEpisodeId} for S${seasonNumber}E${episodeNumber}`);
-
-            return tmdbEpisodeId;
-
-        } catch (error) {
-            logger.error(`searchTMDBEpisode => Error searching TMDB for episode:`, error.message);
-            return null;
-        }
     }
 
     async updateDatabase(makoJSONObj) {

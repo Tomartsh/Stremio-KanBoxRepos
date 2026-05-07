@@ -231,11 +231,9 @@ class Kan88Scraper {
 
         // Search TMDB for this series
         let tmdbSeriesId = null;
-        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
-            tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(seriesTitle);
-            if (tmdbSeriesId) {
-                logger.info(`processOnePodcast => Found TMDB ID ${tmdbSeriesId} for "${seriesTitle}"`);
-            }
+        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(seriesTitle);
+        if (tmdbSeriesId) {
+            logger.info(`processOnePodcast => Found TMDB ID ${tmdbSeriesId} for "${seriesTitle}"`);
         }
 
         this.addToJsonObject(id,seriesTitle,podcastLink,podcastImageUrl,seriesDescription,genres,[],"8","Podcasts", tmdbSeriesId);
@@ -510,47 +508,6 @@ class Kan88Scraper {
         this._kanPodcastsJSONObj[id] = seriesObj;
 
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
-    }
-
-            // Check cache first
-        const cacheKey = `${title}${year ? `_${year}` : ''}`;
-        if (this._tmdbCache.has(cacheKey)) {
-            logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
-            return this._tmdbCache.get(cacheKey);
-        }
-
-        try {
-            // Build search URL with Hebrew language
-            let searchUrl = `${TMDB.BASE_URL}${TMDB.SEARCH_ENDPOINT}?api_key=${TMDB.API_KEY}&language=${TMDB.LANGUAGE}&query=${encodeURIComponent(title)}`;
-
-            if (year) {
-                searchUrl += `&first_air_date_year=${year}`;
-            }
-
-            logger.debug(`searchTMDBSeries => Searching TMDB for "${title}"${year ? ` (${year})` : ''}`);
-
-            const response = await fetchData(searchUrl, false);
-
-            if (!response || !response.results || response.results.length === 0) {
-                logger.debug(`searchTMDBSeries => No results found for "${title}"`);
-                this._tmdbCache.set(cacheKey, null);
-                return null;
-            }
-
-            // Get first result's TMDB ID
-            const tmdbId = response.results[0].id;
-            logger.info(`searchTMDBSeries => Found TMDB ID ${tmdbId} for "${title}" (original_title: ${response.results[0].original_name || 'N/A'})`);
-
-            // Cache the result
-            this._tmdbCache.set(cacheKey, tmdbId);
-
-            return tmdbId;
-
-        } catch (error) {
-            logger.error(`searchTMDBSeries => Error searching TMDB for "${title}":`, error.message);
-            this._tmdbCache.set(cacheKey, null);
-            return null;
-        }
     }
 
     async updateDatabase() {
