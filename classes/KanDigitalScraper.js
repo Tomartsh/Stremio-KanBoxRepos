@@ -988,7 +988,7 @@ getStream (scripts, id, url){
                 link: seriesPage,
                 background: imgUrl,
                 poster: imgUrl,
-                posterShape: "poster",
+                posterShape: "landscape",
                 logo: imgUrl,
                 description: seriesDescription,
                 genres: genres,
