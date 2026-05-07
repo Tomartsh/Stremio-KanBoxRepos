@@ -388,7 +388,7 @@ class KanArchiveScraper {
         if (seasonEpisodesElem.querySelector("div.card-title")) {
             title = seasonEpisodesElem.querySelector("div.card-title").text.trim();
         } else {
-            title = seasonEpisodesElem.attrs("title");
+            title = seasonEpisodesElem.getAttribute("title");
         }
 
         let description = "";

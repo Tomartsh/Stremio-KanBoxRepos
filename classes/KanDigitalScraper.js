@@ -83,8 +83,9 @@ class KanDigitalScraper {
             }
 
             if (UPDATE_DATABASE) {
-                logger.info("crawl => updating database in bulk");
+                logger.info("crawl => 🚀 Starting bulk database update...");
                 await this.updateDatabase();
+                logger.info("crawl => ✅ Bulk database update completed!");
             }
         } else if (isDoWriteFile) {
             // Backward compatibility with old parameter
@@ -92,6 +93,7 @@ class KanDigitalScraper {
             this.writeJSON();
         }
 
+        logger.info("crawl =========== ✅ ALL OPERATIONS COMPLETE ===========");
         this.isRunning = false;
     }
 
@@ -779,7 +781,7 @@ getStream (scripts, id, url){
         if (seasonEpisodesElem.querySelector("div.card-title")) {
             title = seasonEpisodesElem.querySelector("div.card-title").text.trim();
         } else {
-            title = seasonEpisodesElem.attrs("title");
+            title = seasonEpisodesElem.getAttribute("title");
         }
         var description = "";
         if (seasonEpisodesElem.querySelector("div.card-text") != undefined) {
@@ -1058,8 +1060,9 @@ getStream (scripts, id, url){
 
     writeJSON(){
         logger.trace("writeJSON => Entered");
-        logger.debug("writeJSON => All tasks completed - writing file");
+        logger.info("writeJSON => 📝 Writing JSON file and uploading to GitHub...");
         utils.writeJSONToFile(this._kanDigitalJSONObj, EXPORT_FILENAME);
+        logger.info("writeJSON => ✅ File written and uploaded successfully!");
 
         logger.trace("writeJSON => Leaving");
     }
