@@ -1,5 +1,6 @@
 
 const constants = require("./constants.js");
+const TmdbHelper = require("./TmdbHelper.js");
 const utils = require("./utilities.js");
 const {
     LOG4JS,
@@ -31,8 +32,8 @@ class MakoScraper {
         this._makoJSONObj = {};
         this._deviceId = "";
         this.seriesId = 100;
-        this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map();
+        this.tmdbHelper = new TmdbHelper();
+        
         this.deltaTracker = new DeltaTracker();
     }
 
@@ -131,8 +132,8 @@ class MakoScraper {
 
         // Search TMDB for this series
         let tmdbSeriesId = null;
-        if (this._tmdbEnabled) {
-            tmdbSeriesId = await this.searchTMDBSeries(title);
+        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
+            tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
             if (tmdbSeriesId) {
                 logger.info(`processSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
             } else {
@@ -329,7 +330,7 @@ class MakoScraper {
         }
 
         // Method 2: Try TMDB API with series/season/episode numbers
-        if (this._tmdbEnabled && tmdbSeriesId) {
+        tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
             try {
                 logger.debug(`🔍 ${episodeId}: Trying TMDB API for S${seasonNum}E${episodeNum}...`);
 
@@ -460,8 +461,8 @@ class MakoScraper {
 
             // Search TMDB for this episode FIRST (needed for date lookup)
             let tmdbEpisodeId = null;
-            if (this._tmdbEnabled && tmdbSeriesId) {
-                tmdbEpisodeId = await this.searchTMDBEpisode(tmdbSeriesId, parseInt(seasonId), episodeNo);
+            tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
+                tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, parseInt(seasonId), episodeNo);
                 if (tmdbEpisodeId) {
                     logger.debug(`getEpisode => Found TMDB episode ID ${tmdbEpisodeId} for ${episodeId}`);
                 }
@@ -669,19 +670,7 @@ class MakoScraper {
         return episodeId.trim() || tempEpisodeId;
     }
 
-    /**
-     * Search TMDB for a series by title (Hebrew)
-     * @param {string} title - The series title
-     * @param {string} year - Optional year for better matching
-     * @returns {Promise<number|null>} - TMDB ID or null if not found
-     */
-    async searchTMDBSeries(title, year = null) {
-        if (!this._tmdbEnabled) {
-            logger.debug(`searchTMDBSeries => TMDB not enabled, skipping search for "${title}"`);
-            return null;
-        }
-
-        // Check cache first
+            // Check cache first
         const cacheKey = `${title}${year ? `_${year}` : ''}`;
         if (this._tmdbCache.has(cacheKey)) {
             logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
@@ -722,19 +711,7 @@ class MakoScraper {
         }
     }
 
-    /**
-     * Search TMDB for an episode by series ID, season, and episode number
-     * @param {number} tmdbSeriesId - The TMDB series ID
-     * @param {number} seasonNumber - Season number
-     * @param {number} episodeNumber - Episode number
-     * @returns {Promise<number|null>} - TMDB episode ID or null if not found
-     */
-    async searchTMDBEpisode(tmdbSeriesId, seasonNumber, episodeNumber) {
-        if (!this._tmdbEnabled || !tmdbSeriesId) {
-            return null;
-        }
-
-        try {
+            try {
             const episodeUrl = `${TMDB.BASE_URL}/tv/${tmdbSeriesId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB.API_KEY}`;
 
             logger.debug(`searchTMDBEpisode => Fetching TMDB episode data for series ${tmdbSeriesId}, S${seasonNumber}E${episodeNumber}`);
@@ -827,6 +804,7 @@ class MakoScraper {
 module.exports = MakoScraper;
 
 /*const constants = require("./constants.js");
+const TmdbHelper = require("./TmdbHelper.js");
 const utils = require("./utilities.js");
 const {
     URL_MAKE_EPISODE,

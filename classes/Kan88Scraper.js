@@ -6,6 +6,7 @@ const {
     SCRAPER_CONFIG,
     TMDB
 } = require("./constants.js");
+const TmdbHelper = require("./TmdbHelper.js");
 const SUB_PREFIX = "kan88";
 
 const log4js = require("log4js");
@@ -33,8 +34,7 @@ class Kan88Scraper {
         this._kanPodcastsJSONObj = {};
         this.seriesIdIterator = 11000;
         this.isRunning = false;
-        this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map();
+        this.tmdbHelper = new TmdbHelper();
         this.deltaTracker = new DeltaTracker();
 
         const scraperName = 'Kan88Scraper';
@@ -45,7 +45,7 @@ class Kan88Scraper {
             delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
         };
 
-        logger.info(`Kan88Scraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this._tmdbEnabled}`);
+        logger.info(`Kan88Scraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this.tmdbHelper._enabled}`);
     }
 
     async crawl(isDoWriteFile = false){
@@ -231,8 +231,8 @@ class Kan88Scraper {
 
         // Search TMDB for this series
         let tmdbSeriesId = null;
-        if (this._tmdbEnabled) {
-            tmdbSeriesId = await this.searchTMDBSeries(seriesTitle);
+        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
+            tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(seriesTitle);
             if (tmdbSeriesId) {
                 logger.info(`processOnePodcast => Found TMDB ID ${tmdbSeriesId} for "${seriesTitle}"`);
             }
@@ -512,19 +512,7 @@ class Kan88Scraper {
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
     }
 
-    /**
-     * Search TMDB for a series by title (Hebrew)
-     * @param {string} title - The series title
-     * @param {string} year - Optional year for better matching
-     * @returns {Promise<number|null>} - TMDB ID or null if not found
-     */
-    async searchTMDBSeries(title, year = null) {
-        if (!this._tmdbEnabled) {
-            logger.debug(`searchTMDBSeries => TMDB not enabled, skipping search for "${title}"`);
-            return null;
-        }
-
-        // Check cache first
+            // Check cache first
         const cacheKey = `${title}${year ? `_${year}` : ''}`;
         if (this._tmdbCache.has(cacheKey)) {
             logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);

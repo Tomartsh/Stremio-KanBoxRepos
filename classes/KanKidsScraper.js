@@ -6,6 +6,7 @@ const {
     SCRAPER_CONFIG,
     TMDB
 } = require("./constants.js");
+const TmdbHelper = require("./TmdbHelper.js");
 
 
 const log4js = require("log4js");
@@ -32,8 +33,8 @@ class KanKidsScraper {
     constructor() {
         this._kanKidsJSONObj = {};
         this.isRunning = false;
-        this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map();
+        this.tmdbHelper = new TmdbHelper();
+        
         this.deltaTracker = new DeltaTracker();
 
         const scraperName = 'KanKidsScraper';
@@ -44,7 +45,7 @@ class KanKidsScraper {
             delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
         };
 
-        logger.info(`KanKidsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this._tmdbEnabled}`);
+        logger.info(`KanKidsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: `);
     }
 
     async crawl(isDoWriteFile = false){
@@ -55,6 +56,7 @@ class KanKidsScraper {
         logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
         const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
+const TmdbHelper = require("./TmdbHelper.js");
 
         if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
             if (WRITE_TO_GITHUB) {
@@ -241,8 +243,8 @@ class KanKidsScraper {
 
         // Search TMDB for this series
         let tmdbSeriesId = null;
-        if (this._tmdbEnabled) {
-            tmdbSeriesId = await this.searchTMDBSeries(seriesTitle);
+        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
+            tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(seriesTitle);
             if (tmdbSeriesId) {
                 logger.info(`processOneKidsSeries => Found TMDB ID ${tmdbSeriesId} for "${seriesTitle}"`);
             } else {
@@ -363,8 +365,8 @@ class KanKidsScraper {
 
         // Search TMDB for this episode if we have a series ID
         let tmdbEpisodeId = null;
-        if (this._tmdbEnabled && tmdbSeriesId) {
-            tmdbEpisodeId = await this.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
+        tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
+            tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
             if (tmdbEpisodeId) {
                 logger.debug(`processOneKidsEpisode => Found TMDB episode ID ${tmdbEpisodeId} for series ${id}, S${seasonNo}E${episodeNo}`);
             }
@@ -509,19 +511,7 @@ class KanKidsScraper {
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
     }
 
-    /**
-     * Search TMDB for a series by title (Hebrew)
-     * @param {string} title - The series title
-     * @param {string} year - Optional year for better matching
-     * @returns {Promise<number|null>} - TMDB ID or null if not found
-     */
-    async searchTMDBSeries(title, year = null) {
-        if (!this._tmdbEnabled) {
-            logger.debug(`searchTMDBSeries => TMDB not enabled, skipping search for "${title}"`);
-            return null;
-        }
-
-        // Check cache first
+            // Check cache first
         const cacheKey = `${title}${year ? `_${year}` : ''}`;
         if (this._tmdbCache.has(cacheKey)) {
             logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
@@ -562,19 +552,7 @@ class KanKidsScraper {
         }
     }
 
-    /**
-     * Search TMDB for an episode by series ID, season, and episode number
-     * @param {number} tmdbSeriesId - The TMDB series ID
-     * @param {number} seasonNumber - Season number
-     * @param {number} episodeNumber - Episode number
-     * @returns {Promise<number|null>} - TMDB episode ID or null if not found
-     */
-    async searchTMDBEpisode(tmdbSeriesId, seasonNumber, episodeNumber) {
-        if (!this._tmdbEnabled || !tmdbSeriesId) {
-            return null;
-        }
-
-        try {
+            try {
             const episodeUrl = `${TMDB.BASE_URL}/tv/${tmdbSeriesId}/season/${seasonNumber}/episode/${episodeNumber}?api_key=${TMDB.API_KEY}`;
 
             logger.debug(`searchTMDBEpisode => Fetching TMDB episode data for series ${tmdbSeriesId}, S${seasonNumber}E${episodeNumber}`);

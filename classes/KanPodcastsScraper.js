@@ -7,6 +7,7 @@ const {
     SCRAPER_CONFIG,
     TMDB
 } = require("./constants.js");
+const TmdbHelper = require("./TmdbHelper.js");
 
 const log4js = require("log4js");
 
@@ -32,8 +33,8 @@ class KanPodcastsScraper {
     constructor() {
         this._kanPodcastsJSONObj = {};
         this.isRunning = false;
-        this._tmdbEnabled = TMDB.ENABLED;
-        this._tmdbCache = new Map();
+        this.tmdbHelper = new TmdbHelper();
+        
         this.deltaTracker = new DeltaTracker();
 
         const scraperName = 'KanPodcastsScraper';
@@ -44,7 +45,7 @@ class KanPodcastsScraper {
             delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
         };
 
-        logger.info(`KanPodcastsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this._tmdbEnabled}`);
+        logger.info(`KanPodcastsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: `);
     }
 
     /**
@@ -143,6 +144,7 @@ class KanPodcastsScraper {
     logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
     const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
+const TmdbHelper = require("./TmdbHelper.js");
 
     if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
         if (WRITE_TO_GITHUB) {
@@ -230,8 +232,8 @@ class KanPodcastsScraper {
 
         // Search TMDB for this series
         let tmdbSeriesId = null;
-        if (this._tmdbEnabled) {
-            tmdbSeriesId = await this.searchTMDBSeries(title);
+        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
+            tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
             if (tmdbSeriesId) {
                 logger.info(`processOneSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
             }
@@ -543,19 +545,7 @@ class KanPodcastsScraper {
         logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
     }
 
-    /**
-     * Search TMDB for a series by title (Hebrew)
-     * @param {string} title - The series title
-     * @param {string} year - Optional year for better matching
-     * @returns {Promise<number|null>} - TMDB ID or null if not found
-     */
-    async searchTMDBSeries(title, year = null) {
-        if (!this._tmdbEnabled) {
-            logger.debug(`searchTMDBSeries => TMDB not enabled, skipping search for "${title}"`);
-            return null;
-        }
-
-        // Check cache first
+            // Check cache first
         const cacheKey = `${title}${year ? `_${year}` : ''}`;
         if (this._tmdbCache.has(cacheKey)) {
             logger.debug(`searchTMDBSeries => Cache hit for "${title}"`);
