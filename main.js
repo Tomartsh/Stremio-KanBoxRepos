@@ -1,13 +1,20 @@
 const express = require("express");
+const path = require('path');
+
+// Load .env FIRST - before any modules that read process.env
+require("dotenv").config({
+    debug: true,
+    path: path.resolve(__dirname, './classes/.env')
+});
+
 const AdmZip = require("adm-zip");
 const https = require("https");
 const axios = require('axios');
 const cron = require('node-cron');
-const log4js = require("log4js"); 
-const path = require('path');
+const log4js = require("log4js");
 
 //Express setup (setup is done before calling classes in order to make env variables available to them)
-const app = express();  
+const app = express();
 const PORT = process.env.PORT || 49999; //set the port if does not exist
 
 const utils = require("./classes/utilities.js");
@@ -26,34 +33,29 @@ const KanPodcastsscraper = require("./classes/KanPodcastsScraper.js");
 const Kan88scraper = require("./classes/Kan88Scraper.js");
 const Makoscraper = require("./classes/MakoScraper.js");
 const Reshetscraper = require("./classes/ReshetScraper.js");
-const LiveTV = require("./classes/LiveTV.js"); 
-
-require("dotenv").config({
-	debug: true,
-	path: path.resolve(__dirname, './classes/.env')
-}); // Load .env from config folder
+const LiveTV = require("./classes/LiveTV.js");
 
 log4js.configure({
-	appenders: { 
-		out: { type: "stdout" },
-		ScraperLogs: 
-		{ 
-			type: LOG4JS.TYPE, 
-			filename: LOG4JS.FILENAME, 
-			maxLogSize: LOG4JS.MAX_SIZE,
-			backups: LOG4JS.BACKUP_FILES, // keep five backup files
-		}
-	},
-	categories: { default: { appenders: ['ScraperLogs','out'], level: LOG4JS.LEVEL } },
+    appenders: {
+        out: { type: "stdout" },
+        ScraperLogs:
+        {
+            type: LOG4JS.TYPE,
+            filename: LOG4JS.FILENAME,
+            maxLogSize: LOG4JS.MAX_SIZE,
+            backups: LOG4JS.BACKUP_FILES, // keep five backup files
+        }
+    },
+    categories: { default: { appenders: ['ScraperLogs','out'], level: LOG4JS.LEVEL } },
 });
 
 var logger = log4js.getLogger("main");
 
 app.get('/run', async (req, res) => {
-	
- 	const { scraper } = req.query;
-	// Validation FIRST
-    if (!scraper) { 
+
+    const { scraper } = req.query;
+    // Validation FIRST
+    if (!scraper) {
         return res.status(400).send("Missing ?scraper= parameter");
     }
 
@@ -67,7 +69,7 @@ app.get('/run', async (req, res) => {
     // Send the "Started" response and END the request cycle here
     res.send(`✅ ${scraper} started in the background.`);
 
-	// 3. Run the logic in a "Fire and Forget" block with its own error handling
+    // 3. Run the logic in a "Fire and Forget" block with its own error handling
     // We don't 'await' this inside the route if we already sent a response
     (async () => {
         try {
@@ -90,7 +92,7 @@ app.get('/run', async (req, res) => {
             logger.error(`❌ Background Error in ${scraper}:`, err);
         }
     })();
-	
+
 });
 
 // Health check
@@ -105,5 +107,5 @@ app.get("/", (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  logger.info(`🚀 Scraper server listening at http://localhost:${PORT}`);
+    logger.info(`🚀 Scraper server listening at http://localhost:${PORT}`);
 });
