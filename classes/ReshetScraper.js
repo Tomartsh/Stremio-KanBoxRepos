@@ -8,6 +8,7 @@ const {
 } = require ("./constants");
 const {fetchData, writeLog, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const log4js = require("log4js");
+const TmdbHelper = require("./TmdbHelper.js");
 
 log4js.configure({
     appenders: { 
@@ -53,7 +54,6 @@ class ReshetScraper {
         logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
         const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
-const TmdbHelper = require("./TmdbHelper.js");
 
         if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
             if (WRITE_TO_GITHUB) {
@@ -252,19 +252,21 @@ const TmdbHelper = require("./TmdbHelper.js");
 
                     logger.debug("getEpisodes() => Retrieving season " + seasonName + " with ID " + seasonId );
                     var episodes = episodesList["episodes"]
+                    var numEpisodes = episodes.length;
 
-                    // Prepare episode data for batch processing
+                    // Prepare episode data for batch processing (descending order)
                     const episodeData = [];
-                    for (let i = 0; i < episodes.length; i++) {
+                    for (let i = 0; i < numEpisodes; i++) {
+                        // Process from last to first (highest episode number first)
                         episodeData.push({
-                            episode: episodes[i],
-                            index: i,
+                            episode: episodes[numEpisodes - 1 - i],
+                            index: numEpisodes - 1 - i,
                             seasonId: seasonId
                         });
                     }
 
                     // Process episodes in batches
-                    logger.info(`getEpisodes() => Processing ${episodeData.length} episodes for season ${seasonId}`);
+                    logger.info(`getEpisodes() => Processing ${episodeData.length} episodes for season ${seasonId} - descending order`);
                     const episodeResults = await this.processBatch(
                         episodeData,
                         async (epData, index) => {
@@ -273,7 +275,7 @@ const TmdbHelper = require("./TmdbHelper.js");
                         `reshet-episodes (Season ${seasonId})`
                     );
 
-                    // Collect successful videos
+                    // Collect successful videos - they're already in descending order
                     var seasonVideos = [];
                     for (const result of episodeResults) {
                         if (result && result.video) {
@@ -281,11 +283,12 @@ const TmdbHelper = require("./TmdbHelper.js");
                         }
                     }
 
-                    //sort the video items so we can set the correct episode numbers
-                    logger.debug("getEpisodes() => Sorting the episodes of the season");
-                    seasonVideos.sort((a, b) => a.reshetEpisodeId - b.reshetEpisodeId);
+                    // Sort by reshetEpisodeId to ensure correct episode numbers
+                    // Then reverse to get descending order for display
+                    logger.debug("getEpisodes() => Sorting episodes by ID, then reversing for descending order");
+                    seasonVideos.sort((a, b) => b.reshetEpisodeId - a.reshetEpisodeId);
 
-                    //push the video items to the over all meta videos array
+                    // Set episode numbers based on sorted order (highest reshetEpisodeId = episode 1 in our list)
                     var iter = 1;
                     for (var videoItem of seasonVideos){
                         videoItem.id = videoItem.id + iter;
@@ -448,6 +451,9 @@ const TmdbHelper = require("./TmdbHelper.js");
         var retJson = JSON.parse(jsonElem);
         logger.trace("getJson() => JSON: " + retJson);
         return retJson;
+    }
+
+    async updateDatabase() {
         logger.trace("updateDatabase => Entered");
         logger.debug("updateDatabase => Starting bulk database update");
 

@@ -422,6 +422,18 @@ class KanDigitalScraper {
             return null;
         }
 
+        // Extract image from series page if not provided or if the image URL is incomplete
+        if (!item.Image || item.Image === '') {
+            const seriesImg = seriesPageDoc.querySelector("img.img-fluid");
+            if (seriesImg) {
+                const extractedImgSrc = seriesImg.getAttribute('src');
+                if (extractedImgSrc) {
+                    imgUrl = utils.getImageFromUrl(extractedImgSrc, SUBTYPE);
+                    logger.debug(`processOneDigitalSeries => Extracted image from series page: ${imgUrl}`);
+                }
+            }
+        }
+
         //verify there is a name to the series
         if (title.trim() == ""){
             logger.info("processOneDigitalSeries => Title is empty. Attempting to retrieve it");
@@ -672,11 +684,16 @@ getStream (scripts, id, url){
             // Verify we got the essential fields
             var videosList = [];
 
-            if (!episodeLink){  
+            if (!episodeLink){
                 logger.warn(`getStream => Missing contentUrl in VideoObject at URL ${url}`);
                 return videosList;
             }
 
+            // Process thumbnail URL if present (convert relative to absolute)
+            let processedThumb = thumb;
+            if (thumb) {
+                processedThumb = utils.getImageFromUrl(thumb, SUBTYPE);
+            }
 
             const episodeId = `${id}:1:1`;
             let stream = {
@@ -691,12 +708,12 @@ getStream (scripts, id, url){
                 season: 1,
                 episode: 1,
                 description: desc,
-                thumbnail: thumb,
+                thumbnail: processedThumb,
                 episodeLink: url,
                 released: released,
                 streams: [stream]
             });
-            logger.info(`getStream => Successfully extracted VideoObject: ${name}`);
+            logger.info(`getStream => Successfully extracted VideoObject: ${name} with thumbnail: ${processedThumb ? 'YES' : 'NO'}`);
             return videosList;
 
                 
@@ -720,19 +737,23 @@ getStream (scripts, id, url){
         var noOfSeasons = videosElems.length;
         logger.info(`getVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
 
-        for (var i = 0 ; i < noOfSeasons; i++){//iterate over seasons
+        for (var i = 0 ; i < noOfSeasons; i++){//iterate over seasons (descending - season N is first)
             var seasonNo = noOfSeasons - i;
             var seasonEpisodesElems = videosElems[i].querySelectorAll("a.card-link");
+            var numEpisodes = seasonEpisodesElems.length;
 
-            logger.info(`getVideos => Season ${seasonNo} has ${seasonEpisodesElems.length} episode(s)`);
+            logger.info(`getVideos => Season ${seasonNo} has ${numEpisodes} episode(s) - processing in descending order`);
 
-            // Prepare episode data for batch processing
+            // Prepare episode data for batch processing (descending order)
+            // Episode numbers stay correct (episode 36 is still episode 36) but processed in reverse
             const episodeData = [];
-            for (let iter = 0; iter < seasonEpisodesElems.length; iter++) {
+            for (let iter = 0; iter < numEpisodes; iter++) {
+                // Process from last to first (highest episode number first)
+                const actualEpisodeNo = numEpisodes - iter;  // This keeps the correct episode number
                 episodeData.push({
-                    elem: seasonEpisodesElems[iter],
+                    elem: seasonEpisodesElems[numEpisodes - 1 - iter],  // Access in reverse
                     seasonNo: seasonNo,
-                    episodeNo: iter + 1
+                    episodeNo: actualEpisodeNo  // Keep correct episode number
                 });
             }
 
@@ -760,7 +781,7 @@ getStream (scripts, id, url){
 
     /**
      * Process a single digital episode (extracted from getVideos for batch processing)
-     * NOTE: Stream URLs are NOT fetched during scraping to avoid rate limiting.
+     * NOTE: Stream URLs are NOT fetched during scraping to avoid rate limiting/403 errors.
      * The episodeLink is stored and streams are resolved on-demand when user plays.
      */
     async processOneDigitalEpisode(epData, id, tmdbSeriesId = null) {

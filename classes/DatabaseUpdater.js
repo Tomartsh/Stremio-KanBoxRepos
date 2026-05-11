@@ -49,6 +49,7 @@ class DatabaseUpdater {
                     scraper: scraper,
                     name: series.meta?.name || series.name,
                     poster: series.meta?.poster || series.poster,
+                    // poster_shape: series.meta?.posterShape, // Column doesn't exist in database
                     background: series.meta?.background || series.poster,
                     description: series.meta?.description,
                     link: series.link,

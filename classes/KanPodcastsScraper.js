@@ -144,7 +144,6 @@ class KanPodcastsScraper {
     logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
     const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
-const TmdbHelper = require("./TmdbHelper.js");
 
     if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
         if (WRITE_TO_GITHUB) {
@@ -248,7 +247,7 @@ const TmdbHelper = require("./TmdbHelper.js");
                 // Streams are empty - resolved on-demand by the addon
                 const videosList = episodes.map((ep, index) => {
                     const episodeNo = episodes.length - index;
-                    const episodeId = `${stremioId}:${episodeNo}`;
+                    const episodeId = `${stremioId}:1:${episodeNo}`;
 
                     // Create unique title: include episode number to avoid duplicates
                     // If original title already includes "Episode X", prepend the number
@@ -261,7 +260,10 @@ const TmdbHelper = require("./TmdbHelper.js");
                     return {
                         id: episodeId,
                         title: uniqueTitle,
-                        overview: ep.description,
+                        name: uniqueTitle,
+                        season: 1,
+                        episode: episodeNo,
+                        description: ep.description,
                         thumbnail: ep.thumbnail,
                         released: ep.released,
                         episodeLink: ep.episodeLink,

@@ -70,7 +70,6 @@ class KanTeensScraper {
         logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
         const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
-const TmdbHelper = require("./TmdbHelper.js");
 
         if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
             if (WRITE_TO_GITHUB) {
@@ -245,10 +244,19 @@ const TmdbHelper = require("./TmdbHelper.js");
         }
 
         var seasons = doc2.querySelectorAll("div.seasons-item.kids");
-        this.addToJsonObject(id, seriesTitle,seriesPage,imgUrl,seriesDescription,genres,[],subType,"series", tmdbSeriesId);
-        await this.getKidsVideos(seasons, id, subType, tmdbSeriesId);
+        // Create a temporary videos array to collect episodes
+        const videosCollected = [];
+        await this.getKidsVideos(seasons, id, subType, tmdbSeriesId, videosCollected);
 
-        logger.debug(`processOneTeensSeries => Added teens series ${seriesTitle}`);
+        // Only add series to JSON if it has videos
+        if (videosCollected.length === 0) {
+            logger.warn(`processOneTeensSeries => Skipping "${seriesTitle}" - no episodes found (likely a single-page article)`);
+            return null;
+        }
+
+        // Add series with collected videos
+        this.addToJsonObject(id, seriesTitle,seriesPage,imgUrl,seriesDescription,genres,videosCollected,subType,"series", tmdbSeriesId);
+        logger.debug(`processOneTeensSeries => Added teens series ${seriesTitle} with ${videosCollected.length} episodes`);
         return { id, seriesTitle };
     }
 
@@ -396,37 +404,41 @@ const TmdbHelper = require("./TmdbHelper.js");
     
     /*****************************************************************************
      * Get the episodes of each season (video object and streams)
-     * @param {*} seasons 
-     * @param {*} id 
-     * @param {*} subType 
+     * @param {*} seasons
+     * @param {*} id
+     * @param {*} subType
+     * @param {*} videosCollected - Array to collect videos into
      * @returns JSON object
      *****************************************************************************/
-    async getKidsVideos(seasons, id, subType, tmdbSeriesId = null){
+    async getKidsVideos(seasons, id, subType, tmdbSeriesId = null, videosCollected = []){
         var noOfSeasons = seasons.length;
         logger.info(`getKidsVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
 
-        for (var iter = 0; iter< noOfSeasons; iter++){ //iterate over seasons
+        for (var iter = 0; iter< noOfSeasons; iter++){ //iterate over seasons (descending)
             var season = seasons[iter];
             var seasonNo = noOfSeasons - iter;
             var episodes = season.querySelectorAll("li.border-item");
+            var numEpisodes = episodes.length;
 
-            logger.info(`getKidsVideos => Season ${seasonNo} has ${episodes.length} episode(s)`);
+            logger.info(`getKidsVideos => Season ${seasonNo} has ${numEpisodes} episode(s) - processing in descending order`);
 
-            // Prepare episode data for batch processing
+            // Prepare episode data for batch processing (descending order)
             const episodeData = [];
-            for (let n = 0; n < episodes.length; n++) {
+            for (let n = 0; n < numEpisodes; n++) {
+                // Process from last to first (highest episode number first)
+                const actualEpisodeNo = numEpisodes - n;  // Keep correct episode number
                 episodeData.push({
-                    elem: episodes[n],
+                    elem: episodes[numEpisodes - 1 - n],  // Access in reverse
                     seasonNo: seasonNo,
-                    episodeNo: n + 1
+                    episodeNo: actualEpisodeNo  // Keep correct episode number
                 });
             }
 
             // Process episodes in batches
-            await this.processBatch(
+            const episodeResults = await this.processBatch(
                 episodeData,
                 async (epData, index) => {
-                    return await this.processOneTeensEpisode(epData, id, subType, tmdbSeriesId);
+                    return await this.processOneTeensEpisode(epData, id, subType, tmdbSeriesId, videosCollected);
                 },
                 `teens-episodes (Season ${seasonNo})`
             );
@@ -436,7 +448,7 @@ const TmdbHelper = require("./TmdbHelper.js");
     /**
      * Process a single teens episode (extracted from getKidsVideos for batch processing)
      */
-    async processOneTeensEpisode(epData, id, subType, tmdbSeriesId = null) {
+    async processOneTeensEpisode(epData, id, subType, tmdbSeriesId = null, videosCollected = []) {
         const { elem: episode, seasonNo, episodeNo } = epData;
 
         var episodeLink = episode.querySelector("a.card-link").getAttribute("href");
@@ -480,7 +492,22 @@ const TmdbHelper = require("./TmdbHelper.js");
 
         var videoId = id + ":" + seasonNo + ":" + episodeNo;
 
-        this.addVideoToMeta(id, videoId, episodeTitle,seasonNo, episodeNo, episodeDescription, episodeImgUrl, episodeLink, released, streamsArr, tmdbEpisodeId);
+        // Create video object and add to collected array
+        const video = {
+            id: videoId,
+            name: episodeTitle,
+            season: seasonNo,
+            episode: episodeNo,
+            description: episodeDescription,
+            thumbnail: episodeImgUrl,
+            episodeLink: episodeLink,
+            streams: streamsArr
+        };
+        if (released != "") {video["released"] = released;}
+        if (tmdbEpisodeId) {video["tmdbEpisodeId"] = tmdbEpisodeId;}
+
+        videosCollected.push(video);
+        logger.info(`Added: S${seasonNo} E${episodeNo} - ${episodeTitle}`);
         logger.debug("processOneTeensEpisode => ✓ Added episode : " + episodeTitle + " " + videoId);
         return { videoId, episodeTitle };
     }

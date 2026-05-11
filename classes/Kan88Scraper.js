@@ -283,6 +283,7 @@ class Kan88Scraper {
         }
         logger.debug("getpodcastEpisodeVideos => podcast ID: " + id + " last page number: " + lastPageNo);
         var podcastEpisodes = []; //list of podcast episodes
+        var podcastEpisodesVideos = []; //list of processed video objects
         if ((lastPageNo) && (parseInt(lastPageNo) >= 0) ){
             var intLastPageNo = parseInt(lastPageNo);
             for (var i = 0 ; i < intLastPageNo ; i++){
@@ -292,30 +293,38 @@ class Kan88Scraper {
                         var hrefObj = episodeChecked.querySelector("a.card-body")
                         var episodeLink = hrefObj.getAttribute("href");
 
-                        var docToCheck = await fetchData(episodeLink);//check if there is an episode on the oher side or more episodes
-                        var card = docToCheck.querySelector("h2.title");
-                        if (card != undefined){ //this is an episode so let's get the  stream while we have the data
-                            var streams = this.getPodcastStream(docToCheck);
-                            podcastEpisodes.push({
-                                episode: episodeChecked,
-                                stream: streams
-                            });
-                        } else {
-                            //var subPageHref = podcastEpisodesToCheck.querySelector("a.card-body").etAttribute("href");
-                            var docSubPage = await fetchData(episodeLink);
-                            var episodesToCheck = docSubPage.querySelectorAll("div.card.card-row");
-                            for (var episodeToCheck of episodesToCheck){
-                                var streams = this.getPodcastStream(episodeToCheck);
-                                podcastEpisodes.push({
-                                    episode: episodeToCheck,
-                                    stream: streams
-                            });
+                        // ON-DEMAND RESOLUTION: Don't fetch episode page to avoid 403s
+                        // Store episodeLink for addon to resolve stream on-demand
+                        var episodeTitle = episodeChecked.querySelector("h2.card-title")?.textContent?.trim() || "Unknown Episode";
+                        var episodeImgElem = episodeChecked.querySelector("img.img-full");
+                        var episodeImgUrl = episodeImgElem ? utils.getImageFromUrl(episodeImgElem.getAttribute("src"), "p") : "";
+                        var episodeDescElem = episodeChecked.querySelector("div.description");
+                        var episodeDescription = episodeDescElem ? episodeDescElem.text.trim() : "";
+
+                        // Extract release date from card
+                        var released = "";
+                        var dateElem = episodeChecked.querySelector("li.date-local, time");
+                        if (dateElem) {
+                            var dateUtc = dateElem.getAttribute("data-date-utc") || dateElem.getAttribute("datetime");
+                            if (dateUtc) {
+                                var date = new Date(dateUtc);
+                                released = isNaN(date.getTime()) ? "" : date.toISOString();
                             }
-                        }                 
+                        }
+
+                        logger.debug("getpodcastEpisodeVideos => Found episode (on-demand): " + episodeTitle);
+                        podcastEpisodes.push({
+                            episode: episodeChecked,
+                            stream: [], // Empty - resolved on-demand by addon
+                            _preProcessed: true,
+                            _title: episodeTitle,
+                            _description: episodeDescription,
+                            _imageUrl: episodeImgUrl,
+                            _released: released,
+                            _episodeLink: episodeLink // Store for on-demand resolution
+                        });
                     }
-                    i = 1;
-                    continue
-                }
+                    continue;
                 logger.trace("getpodcastEpisodeVideos => calling fetchPage with URL: " + podcastSeriesLink + "?page=" + i);
                 var podcastsAdditionalPages = await fetchData(podcastSeriesLink + "?page=" + i);
                 var podcastElems = podcastsAdditionalPages.querySelectorAll("div.card.card-row");
@@ -324,31 +333,39 @@ class Kan88Scraper {
                     var hrefObj = additionalPodcast.querySelector("a.card-body")
                     var episodeLink = hrefObj.getAttribute("href");
 
-                    var docToCheck = await fetchData(episodeLink);//check if there is an episode on the oher side or more episodes
-                    if (docToCheck == undefined){ continue; }
-                    var card = docToCheck.querySelector("h2.title");
-                    if (card != undefined){ //this is an episode so let's get the  stream while we have the data
-                        var streams =  this.getPodcastStream(docToCheck);
-                        podcastEpisodes.push({
-                            episode: additionalPodcast,
-                            stream: streams
-                        });
-                    } else {
-                        var docSubPage = await fetchData(episodeLink);
-                        var episodesToCheck = docSubPage.querySelectorAll("div.card.card-row");
-                        for (var episodeToCheck of episodesToCheck){
-                            var streams = this.getPodcastStream(episodeToCheck);
-                            podcastEpisodes.push({
-                                episode: episodeToCheck,
-                                stream: streams
-                        });
+                    // ON-DEMAND RESOLUTION: Don't fetch episode page to avoid 403s
+                    var episodeTitle = additionalPodcast.querySelector("h2.card-title")?.textContent?.trim() || "Unknown Episode";
+                    var episodeImgElem = additionalPodcast.querySelector("img.img-full");
+                    var episodeImgUrl = episodeImgElem ? utils.getImageFromUrl(episodeImgElem.getAttribute("src"), "p") : "";
+                    var episodeDescElem = additionalPodcast.querySelector("div.description");
+                    var episodeDescription = episodeDescElem ? episodeDescElem.text.trim() : "";
+
+                    // Extract release date from card
+                    var released = "";
+                    var dateElem = additionalPodcast.querySelector("li.date-local, time");
+                    if (dateElem) {
+                        var dateUtc = dateElem.getAttribute("data-date-utc") || dateElem.getAttribute("datetime");
+                        if (dateUtc) {
+                            var date = new Date(dateUtc);
+                            released = isNaN(date.getTime()) ? "" : date.toISOString();
                         }
                     }
+
+                    logger.debug("getpodcastEpisodeVideos => Found episode (on-demand): " + episodeTitle);
+                    podcastEpisodes.push({
+                        episode: additionalPodcast,
+                        stream: [], // Empty - resolved on-demand by addon
+                        _preProcessed: true,
+                        _title: episodeTitle,
+                        _description: episodeDescription,
+                        _imageUrl: episodeImgUrl,
+                        _released: released,
+                        _episodeLink: episodeLink
+                    });
+                }
                 }
             }
         }
-
-        var podcastEpisodesVideos = [];
 
         // Prepare episode data with numbering (episodes are numbered in reverse order)
         const episodeDataArray = podcastEpisodes.map((podcastEpisode, index) => ({
@@ -374,8 +391,30 @@ class Kan88Scraper {
      * Process a single Kan 88 podcast episode (extracted from getpodcastEpisodeVideos for batch processing)
      */
     async processOneKan88Episode(episodeData, id) {
-        const { episode: episodeElement, stream: streams, episodeNo } = episodeData;
+        const { episode: episodeElement, stream: streams, episodeNo, _preProcessed, _title, _description, _imageUrl, _released, _episodeLink } = episodeData;
 
+        // Handle pre-processed episodes (new Kan88 structure with button.btn-play)
+        if (_preProcessed) {
+            var episodeLink = _episodeLink || ""; // Use pre-extracted link
+            if (!episodeLink) {
+                var episodes_body = episodeElement.querySelector("a.card-body");
+                if (episodes_body != undefined){
+                    episodeLink = episodes_body.getAttribute("href");
+                }
+            }
+            if (!episodeLink) {
+                logger.debug("processOneKan88Episode => No episode link found, skipping. Link");
+                return null;
+            }
+
+            var episodeId = id + ":1:" + episodeNo;
+            this.addVideoToMeta(id, episodeId, _title, "1", episodeNo, _description, _imageUrl, episodeLink, _released, streams);
+            logger.debug("processOneKan88Episode => Added pre-processed episode: " + episodeId);
+
+            return { episodeId, episodeTitle: _title };
+        }
+
+        // Original processing for old structure
         var episodeLink = "";
         var episodes_media = episodeElement.querySelector("a.card-img.card-media")
         if (episodes_media != undefined){

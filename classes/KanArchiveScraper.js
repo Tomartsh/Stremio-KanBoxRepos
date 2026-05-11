@@ -345,16 +345,19 @@ class KanArchiveScraper {
         for (let i = 0; i < noOfSeasons; i++) {
             const seasonNo = noOfSeasons - i;
             const seasonEpisodesElems = videosElems[i].querySelectorAll("a.card-link");
+            const numEpisodes = seasonEpisodesElems.length;
 
-            logger.info(`getVideos => Season ${seasonNo} has ${seasonEpisodesElems.length} episode(s)`);
+            logger.info(`getVideos => Season ${seasonNo} has ${numEpisodes} episode(s) - processing in descending order`);
 
-            // Prepare episode data for batch processing
+            // Prepare episode data for batch processing (descending order)
             const episodeData = [];
-            for (let iter = 0; iter < seasonEpisodesElems.length; iter++) {
+            for (let iter = 0; iter < numEpisodes; iter++) {
+                // Process from last to first (highest episode number first)
+                const actualEpisodeNo = numEpisodes - iter;  // Keep correct episode number
                 episodeData.push({
-                    elem: seasonEpisodesElems[iter],
+                    elem: seasonEpisodesElems[numEpisodes - 1 - iter],  // Access in reverse
                     seasonNo: seasonNo,
-                    episodeNo: iter + 1
+                    episodeNo: actualEpisodeNo  // Keep correct episode number
                 });
             }
 

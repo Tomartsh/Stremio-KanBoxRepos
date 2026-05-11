@@ -145,8 +145,17 @@ class MakoScraper {
             return;
         }
 
-        // Process each season
-        for (const season of seasons.seasons) {
+        // Sort seasons in descending order (highest season number first)
+        const sortedSeasons = [...seasons.seasons].sort((a, b) => {
+            const seasonIdA = parseInt(this.setSeasonId(a.seasonTitle, MAKO.URL_BASE + a.pageUrl)) || 0;
+            const seasonIdB = parseInt(this.setSeasonId(b.seasonTitle, MAKO.URL_BASE + b.pageUrl)) || 0;
+            return seasonIdB - seasonIdA; // Descending order
+        });
+
+        logger.debug(`processSeries => Processing ${sortedSeasons.length} seasons in descending order`);
+
+        // Process each season in descending order
+        for (const season of sortedSeasons) {
             const seasonVideos = await this.processSeason(season, id, title, tmdbSeriesId);
             if (seasonVideos && seasonVideos.length > 0) {
                 videos.push(...seasonVideos);
@@ -739,7 +748,6 @@ class MakoScraper {
 module.exports = MakoScraper;
 
 /*const constants = require("./constants.js");
-const TmdbHelper = require("./TmdbHelper.js");
 const utils = require("./utilities.js");
 const {
     URL_MAKE_EPISODE,
