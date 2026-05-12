@@ -4,166 +4,36 @@ const {
     LOG4JS,
     PODCASTS,
     KAN_BASE_URL,
-    SCRAPER_CONFIG,
-    TMDB
+    SCRAPER_CONFIG
 } = require("./constants.js");
-const TmdbHelper = require("./TmdbHelper.js");
+const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
-
-log4js.configure({
-    appenders: { 
-        out: { type: "stdout" },
-        Stremio: 
-        { 
-            type: LOG4JS.TYPE, 
-            filename: LOG4JS.FILENAME, 
-            maxLogSize: LOG4JS.MAX_SIZE, 
-            backups: LOG4JS.BACKUP_FILES, 
-        }
-    },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
-});
-
-const EXPORT_FILENAME = "stremio-kanpodcasts";
 var logger = log4js.getLogger("KanPodcastsScraper");
 
-class KanPodcastsScraper {
+class KanPodcastsScraper extends BaseScraper {
 
     constructor() {
+        // Initialize BaseScraper with the scraper name
+        super('KanPodcasts', { exportFilename: "stremio-kanpodcasts", databaseKey: 'kanpodcasts' });
+
+        // Override the logger to use the specific name
+        this.logger = logger;
+
+        // Initialize KanPodcasts-specific properties
         this._kanPodcastsJSONObj = {};
-        this.isRunning = false;
-        this.tmdbHelper = new TmdbHelper();
-        
-        this.deltaTracker = new DeltaTracker();
-
-        const scraperName = 'KanPodcastsScraper';
-        const config = SCRAPER_CONFIG[scraperName] || {};
-        this.config = {
-            parallelFetching: config.parallelFetching ?? SCRAPER_CONFIG.DEFAULT_PARALLEL_FETCHING,
-            batchSize: config.batchSize ?? SCRAPER_CONFIG.DEFAULT_BATCH_SIZE,
-            delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
-        };
-
-        logger.info(`KanPodcastsScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: `);
     }
 
     /**
-     * Helper method to process items in batches with detailed logging
-     * @param {Array} items - Array of items to process
-     * @param {Function} processor - Async function to process each item
-     * @param {String} itemType - Description of item type for logging (e.g., "series", "episodes")
-     * @returns {Promise<Array>} - Results from all processed items
+     * Main scraping logic - required by BaseScraper
      */
-    async processBatch(items, processor, itemType = "items") {
-        if (!this.config.parallelFetching) {
-            // Sequential processing (original behavior)
-            logger.info(`[${itemType}] Processing ${items.length} ${itemType} sequentially`);
-            const results = [];
-            for (let i = 0; i < items.length; i++) {
-                const startTime = Date.now();
-                logger.debug(`[${itemType}] Processing ${i + 1}/${items.length}`);
-                try {
-                    const result = await processor(items[i], i);
-                    const duration = Date.now() - startTime;
-                    logger.debug(`[${itemType}] Completed ${i + 1}/${items.length} in ${duration}ms`);
-                    results.push(result);
-                } catch (error) {
-                    logger.error(`[${itemType}] Failed ${i + 1}/${items.length}: ${error.message}`);
-                    results.push(null);
-                }
-            }
-            return results;
-        }
+    async crawlContent() {
+        // Crawl regular podcasts
+        await this.crawlPodcasts(PODCASTS.KAN_CATEGORIES, "p", "Podcasts");
 
-        // Parallel batch processing
-        const { batchSize, delayBetweenBatches } = this.config;
-        const totalBatches = Math.ceil(items.length / batchSize);
-        logger.info(`[${itemType}] Processing ${items.length} ${itemType} in ${totalBatches} batches (${batchSize} per batch)`);
-
-        const allResults = [];
-
-        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-            const batchStart = batchIndex * batchSize;
-            const batchEnd = Math.min(batchStart + batchSize, items.length);
-            const batch = items.slice(batchStart, batchEnd);
-
-            const batchNum = batchIndex + 1;
-            const batchStartTime = Date.now();
-            logger.info(`[${itemType}] Starting batch ${batchNum}/${totalBatches} (${itemType} ${batchStart + 1}-${batchEnd} of ${items.length})`);
-
-            // Process batch in parallel
-            const batchPromises = batch.map(async (item, indexInBatch) => {
-                const globalIndex = batchStart + indexInBatch;
-                const itemStartTime = Date.now();
-                try {
-                    const result = await processor(item, globalIndex);
-                    const itemDuration = Date.now() - itemStartTime;
-                    logger.debug(`[${itemType}] ✓ Item ${globalIndex + 1}/${items.length} completed in ${itemDuration}ms`);
-                    return { success: true, result, index: globalIndex };
-                } catch (error) {
-                    const itemDuration = Date.now() - itemStartTime;
-                    logger.error(`[${itemType}] ✗ Item ${globalIndex + 1}/${items.length} failed after ${itemDuration}ms: ${error.message}`);
-                    return { success: false, error, index: globalIndex };
-                }
-            });
-
-            const batchResults = await Promise.all(batchPromises);
-            const batchDuration = Date.now() - batchStartTime;
-            const successCount = batchResults.filter(r => r.success).length;
-            const failCount = batchResults.length - successCount;
-
-            logger.info(`[${itemType}] Batch ${batchNum}/${totalBatches} completed: ${successCount}/${batch.length} successful, ${failCount} failed in ${batchDuration}ms`);
-
-            allResults.push(...batchResults.map(r => r.result));
-
-            // Delay between batches to avoid rate limiting (except after last batch)
-            if (batchIndex < totalBatches - 1 && delayBetweenBatches > 0) {
-                logger.debug(`[${itemType}] Waiting ${delayBetweenBatches}ms before next batch...`);
-                await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-            }
-        }
-
-        const successfulResults = allResults.filter(r => r !== null && r !== undefined);
-        logger.info(`[${itemType}] All batches completed: ${successfulResults.length}/${items.length} total successful`);
-
-        return allResults;
+        // Crawl kids podcasts (commented out in original)
+        //await this.crawlPodcasts(PODCASTS.KAN_CHILDREN_CATEGORIES, "h", "Podcasts");
     }
-
-    async crawl(isDoWriteFile = false){
-    logger.info("Started Crawling");
-    this.isRunning = true;
-
-    // Crawl regular podcasts
-    await this.crawlPodcasts(PODCASTS.KAN_CATEGORIES, "p", "Podcasts");
-
-    // Crawl kids podcasts
-    //await this.crawlPodcasts(PODCASTS.KAN_CHILDREN_CATEGORIES, "h", "Podcasts");
-
-    logger.info("Done Crawling");
-    logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
-
-    const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
-
-    if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
-        if (WRITE_TO_GITHUB) {
-            logger.info("crawl => writing JSON file to GitHub");
-            this.writeJSON();
-        }
-
-        if (UPDATE_DATABASE) {
-            logger.info("crawl => updating database in bulk");
-            await this.updateDatabase();
-        }
-    } else if (isDoWriteFile) {
-        // Backward compatibility
-        logger.info("crawl => writing JSON file");
-        this.writeJSON();
-    }
-
-    this.isRunning = false;
-}
-
 
     /**
      * Main method:
@@ -229,13 +99,6 @@ class KanPodcastsScraper {
 
         logger.debug(`processOneSeries => Processing: ${title} (OriginalID: ${programId}, StremioID: ${stremioId})`);
 
-        // Search TMDB for this series
-        let tmdbSeriesId = null;
-        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
-        if (tmdbSeriesId) {
-            logger.info(`processOneSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
-        }
-
         try {
             const episodes = await this.getEpisodes(programId, pageUrl);
 
@@ -280,8 +143,7 @@ class KanPodcastsScraper {
                     [],
                     videosList,
                     subType,
-                    type,
-                    tmdbSeriesId
+                    type
                 );
 
                 return { stremioId, title, episodeCount: episodes.length };
@@ -309,8 +171,8 @@ class KanPodcastsScraper {
 
         while (hasMore) {
             logger.debug(`getAllSeries => Fetching from=${from}`);
-            
-            const response = await fetchData(PODCASTS.BASE_MOB_API, true, 
+
+            const response = await fetchData(PODCASTS.BASE_MOB_API, true,
                 { id: categoryId, from: from },
                 { 'User-Agent': PODCASTS.USER_AGENT }
             );
@@ -331,7 +193,7 @@ class KanPodcastsScraper {
             logger.debug(`getAllSeries => Got ${entries.length} entries in this batch`);
 
             // Filter out duplicates based on ID before adding
-            const newEntries = entries.filter(entry => 
+            const newEntries = entries.filter(entry =>
                 !allEntries.some(existing => existing.id === entry.id)
             );
 
@@ -352,7 +214,6 @@ class KanPodcastsScraper {
         return allEntries;
     }
 
-    
     /**
      * getEpisodes: Scrape HTML page with pagination support
      */
@@ -506,74 +367,9 @@ class KanPodcastsScraper {
             return null;
         }
     }
-    
-    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
-        const seriesObj = {
-            id: id,
-            name: seriesTitle,
-            poster: imgUrl,
-            description: seriesDescription,
-            link: seriesPage,
-            background: imgUrl,
-            genres: genres,
-            type: type,
-            subtype: subType,
-            meta: {
-                id: id,
-                type: type,
-                name: seriesTitle,
-                link: seriesPage,
-                background: imgUrl,
-                poster: imgUrl,
-                posterShape: "poster",
-                logo: imgUrl,
-                description: seriesDescription,
-                genres: genres,
-                videos: videosList
-            }
-        };
-
-        // Add TMDB series ID if found
-        if (tmdbSeriesId) {
-            seriesObj.meta.tmdbId = tmdbSeriesId;
-            seriesObj.tmdbId = tmdbSeriesId;
-            logger.debug(`addToJsonObject => Added TMDB ID ${tmdbSeriesId} to series "${seriesTitle}"`);
-        }
-
-        this._kanPodcastsJSONObj[id] = seriesObj;
-
-        logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
-    }
-
-    async updateDatabase() {
-        logger.trace("updateDatabase => Entered");
-        logger.debug("updateDatabase => Starting bulk database update");
-
-        try {
-            const result = await updateDatabaseFromJSON('kanpodcasts', this._kanPodcastsJSONObj, logger);
-            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
-        } catch (error) {
-            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
-            throw error;
-        }
-
-        logger.trace("updateDatabase => Leaving");
-    }
-
-    writeJSON(){
-        logger.trace("writeJSON => Entered");
-        logger.debug("writeJSON => All tasks completed - writing file");
-        utils.writeJSONToFile(this._kanPodcastsJSONObj, EXPORT_FILENAME);
-
-        logger.trace("writeJSON => Leaving");
-
-    }
 }
 
 /**********************************************************
  * Module Exports
  **********************************************************/
 module.exports = KanPodcastsScraper;
-exports.crawl = this.crawl;
-exports.isRunning = this.isRunning;
-exports.writeJSON = this.writeJSON;

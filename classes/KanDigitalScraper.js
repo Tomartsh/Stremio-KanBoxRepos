@@ -1,182 +1,50 @@
 const utils = require("./utilities.js");
-const {fetchData, getNameFromSeriesPage, extractReleaseDate, DeltaTracker, extractLatestDateFromList, hasNewEpisode, hasSeriesChanged} = require("./utilities.js");
+const {fetchData, getNameFromSeriesPage, extractReleaseDate, DeltaTracker, extractLatestDateFromList, hasNewEpisode, hasSeriesChanged, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     KAN_URL_ADDRESS,
     KAN_DIGITAL_IMAGE_PREFIX,
     KAN_BOX_URL,
     KAN_BOX_IGNORE_LIST,
-    SCRAPER_CONFIG,
-    TMDB
+    SCRAPER_CONFIG
 } = require("./constants.js");
-const TmdbHelper = require("./TmdbHelper.js");
+const { extractKanStream, cleanVideoName, safeExecute } = require("./ScraperHelpers.js");
+const BaseScraper = require("./BaseScraper.js");
 const SUB_PREFIX = "dogital";
 const SUBTYPE = "d";
 
 const log4js = require("log4js");
-
-log4js.configure({
-    appenders: { 
-        out: { type: "stdout" },
-        Stremio: 
-        { 
-            type: LOG4JS.TYPE, 
-            filename: LOG4JS.FILENAME, 
-            maxLogSize: LOG4JS.MAX_SIZE, 
-            backups: LOG4JS.BACKUP_FILES, 
-        }
-    },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
-});
-
-const EXPORT_FILENAME = "stremio-kandigital";
 var logger = log4js.getLogger("KanDigitalScraper");
 
-class KanDigitalScraper {
+class KanDigitalScraper extends BaseScraper {
 
     constructor() {
+        // Initialize BaseScraper with the scraper name
+        super('KanDigital', { exportFilename: "stremio-kandigital", databaseKey: 'kandigital' });
+
+        // Override the logger to use the specific name
+        this.logger = logger;
+
+        // Initialize KanDigital-specific properties
         this._kanDigitalJSONObj = {};
         this.seriesIdIterator = 1000;
-        this.isRunning = false;
-        this.tmdbHelper = new TmdbHelper();
-        this.deltaTracker = new DeltaTracker();
-
-        const scraperName = 'KanDigitalScraper';
-        const config = SCRAPER_CONFIG[scraperName] || {};
-        this.config = {
-            parallelFetching: config.parallelFetching ?? SCRAPER_CONFIG.DEFAULT_PARALLEL_FETCHING,
-            batchSize: config.batchSize ?? SCRAPER_CONFIG.DEFAULT_BATCH_SIZE,
-            delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
-        };
-
-        logger.info(`KanDigitalScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: ${this.tmdbHelper._enabled}`);
-    }
-
-    async crawl(isDoWriteFile = false){
-        logger.info("Started Crawling");
-        this.isRunning = true;
-        this.deltaTracker.clear();
-
-        try {
-            await this.crawlVod();
-        } catch (error) {
-            logger.error(`crawl => Kan-Digital scraping failed: ${error.message}`);
-            logger.error(error.stack);
-        }
-
-        try {
-            await this.crawlKanBox();
-        } catch (error) {
-            logger.error(`crawl => Kan-Box scraping failed: ${error.message}`);
-            logger.error(error.stack);
-        }
-
-        logger.info("Done Crawling");
-        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
-
-        const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require('./constants.js');
-
-        if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
-            if (WRITE_TO_GITHUB) {
-                logger.info("crawl => writing JSON file to GitHub");
-                this.writeJSON();
-            }
-
-            if (UPDATE_DATABASE) {
-                logger.info("crawl => 🚀 Starting bulk database update...");
-                await this.updateDatabase();
-                logger.info("crawl => ✅ Bulk database update completed!");
-            }
-        } else if (isDoWriteFile) {
-            // Backward compatibility with old parameter
-            logger.info("crawl => writing JSON file");
-            this.writeJSON();
-        }
-
-        logger.info("crawl =========== ✅ ALL OPERATIONS COMPLETE ===========");
-        this.isRunning = false;
     }
 
     /**
-     * Helper method to process items in batches with detailed logging
-     * @param {Array} items - Array of items to process
-     * @param {Function} processor - Async function to process each item
-     * @param {String} itemType - Description of item type for logging (e.g., "series", "episodes")
-     * @returns {Promise<Array>} - Results from all processed items
+     * Main scraping logic - required by BaseScraper
      */
-    async processBatch(items, processor, itemType = "items") {
-        if (!this.config.parallelFetching) {
-            // Sequential processing (original behavior)
-            logger.info(`[${itemType}] Processing ${items.length} ${itemType} sequentially`);
-            const results = [];
-            for (let i = 0; i < items.length; i++) {
-                const startTime = Date.now();
-                logger.debug(`[${itemType}] Processing ${i + 1}/${items.length}`);
-                try {
-                    const result = await processor(items[i], i);
-                    const duration = Date.now() - startTime;
-                    logger.debug(`[${itemType}] Completed ${i + 1}/${items.length} in ${duration}ms`);
-                    results.push(result);
-                } catch (error) {
-                    logger.error(`[${itemType}] Failed ${i + 1}/${items.length}: ${error.message}`);
-                    results.push(null);
-                }
-            }
-            return results;
-        }
+    async crawlContent() {
+        await safeExecute(
+            () => this.crawlVod(),
+            "crawlContent.crawlVod",
+            this.logger
+        );
 
-        // Parallel batch processing
-        const { batchSize, delayBetweenBatches } = this.config;
-        const totalBatches = Math.ceil(items.length / batchSize);
-        logger.info(`[${itemType}] Processing ${items.length} ${itemType} in ${totalBatches} batches (${batchSize} per batch)`);
-
-        const allResults = [];
-
-        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-            const batchStart = batchIndex * batchSize;
-            const batchEnd = Math.min(batchStart + batchSize, items.length);
-            const batch = items.slice(batchStart, batchEnd);
-
-            const batchNum = batchIndex + 1;
-            const batchStartTime = Date.now();
-            logger.info(`[${itemType}] Starting batch ${batchNum}/${totalBatches} (${itemType} ${batchStart + 1}-${batchEnd} of ${items.length})`);
-
-            // Process batch in parallel
-            const batchPromises = batch.map(async (item, indexInBatch) => {
-                const globalIndex = batchStart + indexInBatch;
-                const itemStartTime = Date.now();
-                try {
-                    const result = await processor(item, globalIndex);
-                    const itemDuration = Date.now() - itemStartTime;
-                    logger.debug(`[${itemType}] ✓ Item ${globalIndex + 1}/${items.length} completed in ${itemDuration}ms`);
-                    return { success: true, result, index: globalIndex };
-                } catch (error) {
-                    const itemDuration = Date.now() - itemStartTime;
-                    logger.error(`[${itemType}] ✗ Item ${globalIndex + 1}/${items.length} failed after ${itemDuration}ms: ${error.message}`);
-                    return { success: false, error, index: globalIndex };
-                }
-            });
-
-            const batchResults = await Promise.all(batchPromises);
-            const batchDuration = Date.now() - batchStartTime;
-            const successCount = batchResults.filter(r => r.success).length;
-            const failCount = batchResults.length - successCount;
-
-            logger.info(`[${itemType}] Batch ${batchNum}/${totalBatches} completed: ${successCount}/${batch.length} successful, ${failCount} failed in ${batchDuration}ms`);
-
-            allResults.push(...batchResults.map(r => r.result));
-
-            // Delay between batches to avoid rate limiting (except after last batch)
-            if (batchIndex < totalBatches - 1 && delayBetweenBatches > 0) {
-                logger.debug(`[${itemType}] Waiting ${delayBetweenBatches}ms before next batch...`);
-                await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-            }
-        }
-
-        const successfulResults = allResults.filter(r => r !== null && r !== undefined);
-        logger.info(`[${itemType}] All batches completed: ${successfulResults.length}/${items.length} total successful`);
-
-        return allResults;
+        await safeExecute(
+            () => this.crawlKanBox(),
+            "crawlContent.crawlKanBox",
+            this.logger
+        );
     }
 
     /***********************************************************
@@ -186,7 +54,7 @@ class KanDigitalScraper {
      ***********************************************************/
     async crawlVod(){
         logger.trace("crawlVod => Entered");
-        
+
         // get the JSON from the site contaitning all the series.
         var seriesJson;
         var doc = await fetchData(KAN_URL_ADDRESS);
@@ -198,10 +66,10 @@ class KanDigitalScraper {
 
         // get all script elements
         var scriptElems = doc.querySelectorAll('script');
-        
+
         //Initialize items as an empty array at the function level scope
         let items = [];
-        
+
         // find the script element with the json of the series
         const targetScript = scriptElems.find(script => script.rawText.includes('digitalSeries:'));
         if (targetScript) {
@@ -339,7 +207,7 @@ class KanDigitalScraper {
                     const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
 
                     // Check if this series already exists in our catalog (from Kan-Digital)
-                    if (this._kanDigitalJSONObj.hasOwnProperty(seriesId)) {
+                    if (this._jsonObj.hasOwnProperty(seriesId)) {
                         logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
                         this.deltaTracker.skipSeries(); // Track skipped duplicate
                         duplicateCount++;
@@ -448,21 +316,12 @@ class KanDigitalScraper {
         //set series genres
         const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
 
-        // Search TMDB for this series
-        let tmdbSeriesId = null;
-        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
-        if (tmdbSeriesId) {
-            logger.info(`processOneDigitalSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
-        } else {
-            logger.debug(`processOneDigitalSeries => No TMDB ID found for "${title}"`);
-        }
-
         //Get the seasons number
         var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
         var videoObj = [];
         if ((seasons != undefined) && (seasons.length > 0)){ //generate videos object with media links(streams)
             logger.debug("processOneDigitalSeries => seasons " + title + " length: " + seasons.length);
-            videoObj = await this.getVideos(seasons, id, tmdbSeriesId);
+            videoObj = await this.getVideos(seasons, id);
 
         } else {
             // probably no episodes, only a single movie
@@ -480,7 +339,7 @@ class KanDigitalScraper {
             // last minute checks before add the series
             //check that we have a valid name for the series
 
-            this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series", tmdbSeriesId);
+            this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series");
             logger.debug(`processOneDigitalSeries => Added series ${title}`);
             return { id, title };
         }
@@ -515,10 +374,10 @@ class KanDigitalScraper {
 
             if (movieDoc.querySelectorAll("div.info-title h1.h2").length > 0) {
                 name = movieDoc.querySelectorAll("div.info-title h1.h2")[0].text.trim();
-                name = this.getVideoNameFromEpisodePage(name);
+                name = cleanVideoName(name);
             } else if (movieDoc.querySelector("title")) {
                 name = movieDoc.querySelector("title").text.trim();
-                name = this.getVideoNameFromEpisodePage(name);
+                name = cleanVideoName(name);
             }
 
             if (movieDoc.querySelector("div.info-description") != null) {
@@ -593,7 +452,7 @@ getStream (scripts, id, url){
 
             // Split into lines
             const lines = scriptContent.split('\n');
-            
+
             let name = '';
             let desc = '';
             let thumb = '';
@@ -604,10 +463,10 @@ getStream (scripts, id, url){
 
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
-                
+
                 // Skip empty lines
                 if (!line) continue;
-                
+
                 //skip {, }, @context, @type
                 if (line.startsWith('{') || line.endsWith('}') || line.startsWith('"@context') || line.startsWith('"@type')) { continue; }
 
@@ -624,7 +483,7 @@ getStream (scripts, id, url){
                     }
                     continue; // Skip other checks while in description mode
                 }
-                
+
                 // Extract name
                 if (line.includes('"name":')) {
                     const match = line.match(/"name":\s*"([^"]+)"/);
@@ -633,7 +492,7 @@ getStream (scripts, id, url){
                     }
                     continue;
                 }
-                
+
                 // Extract description (might span multiple lines)
                 if (line.includes('"description":')) {
                     const match = line.match(/"description":\s*"(.*)$/);
@@ -650,7 +509,7 @@ getStream (scripts, id, url){
                     }
                     continue;
                 }
-                
+
                 // Extract thumbnailUrl
                 if (line.includes('"thumbnailUrl":')) {
                     const match = line.match(/"thumbnailUrl":\s*"([^"]+)"/);
@@ -659,7 +518,7 @@ getStream (scripts, id, url){
                     }
                     continue;
                 }
-                
+
                 // Extract contentUrl
                 if (line.includes('"contentUrl":')) {
                     const match = line.match(/"contentUrl":\s*"([^"]+)"/);
@@ -668,7 +527,7 @@ getStream (scripts, id, url){
                     }
                     continue;
                 }
-                
+
                 // Extract release date
                 if (line.includes('"uploadDate":')) {
                     const match = line.match(/"uploadDate":\s*"([^"]+)"/);
@@ -716,7 +575,7 @@ getStream (scripts, id, url){
             logger.info(`getStream => Successfully extracted VideoObject: ${name} with thumbnail: ${processedThumb ? 'YES' : 'NO'}`);
             return videosList;
 
-                
+
         } catch (e) {
             logger.debug("getStream => Error processing VideoObject: " + e);
             return [];
@@ -728,10 +587,9 @@ getStream (scripts, id, url){
      * retrieve the list of videos and streams
      * @param {*} videosElems
      * @param {*} id
-     * @param {*} tmdbSeriesId
      * @returns Array of video json objects
      *********************************************************/
-    async getVideos(videosElems, id, tmdbSeriesId = null){
+    async getVideos(videosElems, id){
         var videosArr = [];
 
         var noOfSeasons = videosElems.length;
@@ -761,7 +619,7 @@ getStream (scripts, id, url){
             const episodeResults = await this.processBatch(
                 episodeData,
                 async (epData, index) => {
-                    return await this.processOneDigitalEpisode(epData, id, tmdbSeriesId);
+                    return await this.processOneDigitalEpisode(epData, id);
                 },
                 `episodes (Season ${seasonNo})`
             );
@@ -784,7 +642,7 @@ getStream (scripts, id, url){
      * NOTE: Stream URLs are NOT fetched during scraping to avoid rate limiting/403 errors.
      * The episodeLink is stored and streams are resolved on-demand when user plays.
      */
-    async processOneDigitalEpisode(epData, id, tmdbSeriesId = null) {
+    async processOneDigitalEpisode(epData, id) {
         const { elem: seasonEpisodesElem, seasonNo, episodeNo } = epData;
 
         logger.trace(`processOneDigitalEpisode => season: ${seasonNo} episode: ${episodeNo}`);
@@ -849,13 +707,6 @@ getStream (scripts, id, url){
             logger.warn(`processOneDigitalEpisode => Could not extract thumbnail/release date for ${title}: ${error.message}`);
         }
 
-        // Search TMDB for this episode if we have a series ID
-        let tmdbEpisodeId = null;
-        tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
-        if (tmdbEpisodeId) {
-            logger.debug(`processOneDigitalEpisode => Found TMDB episode ID ${tmdbEpisodeId} for ${videoId}`);
-        }
-
         // Create video object with episodeLink for on-demand stream resolution
         // Stream URL will be fetched when user actually plays the episode
         const video = {
@@ -869,9 +720,6 @@ getStream (scripts, id, url){
             released: released,
             streams: [] // Streams will be resolved on-demand by the addon
         };
-        if (tmdbEpisodeId) {
-            video.tmdbEpisodeId = tmdbEpisodeId;
-        }
         logger.debug(`processOneDigitalEpisode => ✓ processed episode : ${title} season:${seasonNo}, episode: ${episodeNo} (stream on-demand)`);
         return { video, videoId, title };
     }
@@ -880,95 +728,10 @@ getStream (scripts, id, url){
         logger.trace("getStreams => Entering");
         logger.trace("getStreams => Link: " + link);
 
-        var doc = await fetchData(link);
-
-        if (doc == undefined){
-            logger.debug("getStreams => Error retrieving do from " + link);
-            return null;
-        }
-        var released = "";
-        var videoUrl = "";
-        var nameVideo = "";
-
-        if (doc.querySelector("li.date-local") != undefined){
-            const dateStr = doc.querySelector("li.date-local").getAttribute("data-date-utc");
-            logger.debug("getStreams => Found date string: " + dateStr);
-            if (dateStr) {
-                // Parse DD.MM.YYYY HH:MM:SS format
-                const match = dateStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
-                if (match) {
-                    const [, day, month, year, hour = "00", min = "00", sec = "00"] = match;
-                    const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
-                    released = isNaN(date.getTime()) ? "" : date.toISOString();
-                    logger.debug("getStreams => Parsed release date: " + released);
-                }
-            }
-        }
-
-        // Try to get stream URL from redge-player element (new Kan player)
-        var playerElem = doc.querySelector("[id^='redge-player-']");
-        if (playerElem && playerElem.getAttribute("data-hls-url")) {
-            videoUrl = playerElem.getAttribute("data-hls-url");
-            // Ensure URL has protocol
-            if (videoUrl.startsWith("//")) {
-                videoUrl = "https:" + videoUrl;
-            }
-            logger.debug("getStreams => Found redge-player URL: " + videoUrl);
-        } else {
-            // Fallback to VideoObject method (legacy - Kaltura URLs, may not work)
-            logger.debug("getStreams => No redge-player found, falling back to VideoObject");
-            var scriptElems = doc.querySelectorAll("script");
-            for (var scriptElem of scriptElems){
-                if (scriptElem.toString().includes("VideoObject")) {
-                    videoUrl = this.getEpisodeUrl(scriptElem.toString());
-                    // Ensure URL has protocol
-                    if (videoUrl.startsWith("//")) {
-                        videoUrl = "https:" + videoUrl;
-                    }
-                    break;
-                }
-            }
-        }
-        
-        if (doc.querySelectorAll("div.info-title h1.h2").length > 0){
-            nameVideo = doc.querySelectorAll("div.info-title h1.h2")[0].text.trim();
-            nameVideo = this.getVideoNameFromEpisodePage(nameVideo);
-        } else if (doc.querySelector("title")) {
-            nameVideo = doc.querySelector("title").text.trim();
-            nameVideo = this.getVideoNameFromEpisodePage(nameVideo);
-        }
-
-        var streamsJSONObj = {
-            url: videoUrl,
-            title: nameVideo,
-            name: nameVideo,
-            released: released
-        };
+        const stream = await extractKanStream(link, "KanDigital");
 
         logger.trace("getStreams => Exiting");
-        return streamsJSONObj;
-    }
-
-    /*************************************************************
-     * Get the URL of the indivifual Episode
-     * @link
-     *************************************************************/
-    getEpisodeUrl(link){
-        var startPoint = link.indexOf("contentUrl");
-        link = link.substring(startPoint + 14);
-        var endPoint = link.indexOf('\"');
-        link = link.substring(0,endPoint);
-            
-        return link;
-    }
-
-    getVideoNameFromEpisodePage(str){
-        if (str.indexOf("|") > 0) {
-            str = str.substring(str.indexOf('|'));
-            str = str.replace("|", "");
-        }
-        str = str.trim();
-        return str;
+        return stream || null;
     }
 
     getSeriesNameFromSeriesPage(url){
@@ -977,125 +740,31 @@ getStream (scripts, id, url){
 
     /**
      * Get the genres from the html element and pass it to get the accurate genres
-     * @param {*} genreElems 
-     * @returns 
+     * @param {*} genreElems
+     * @returns
      */
     setGenre(genreElems){
         if ((genreElems == null) || (genreElems.length < 1)){ return "Kan";}
-    
+
         var genresElements = genreElems.querySelectorAll("ul li");
         if (genresElements.length < 1) {return "Kan";}
-        
+
         var genres = [];
         for (var check of genresElements){
             var strGenre = check.text.trim();
             genres.push(strGenre);
         }
-            
+
         return utils.setGenreFromString(genres);
     }
-
-    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, type, tmdbSeriesId = null){
-        // Check if this is a new series or update
-        const isNewSeries = !this._kanDigitalJSONObj.hasOwnProperty(id);
-        const existingSeries = this._kanDigitalJSONObj[id];
-
-        const seriesObj = {
-            id: id,
-            name: seriesTitle,
-            poster: imgUrl,
-            description: seriesDescription,
-            link: seriesPage,
-            background: imgUrl,
-            genres: genres,
-            type: type,
-            subtype: SUBTYPE,
-            meta: {
-                id: id,
-                type: type,
-                name: seriesTitle,
-                link: seriesPage,
-                background: imgUrl,
-                poster: imgUrl,
-                posterShape: "landscape",
-                logo: imgUrl,
-                description: seriesDescription,
-                genres: genres,
-                videos: videosList
-            }
-        };
-
-        // Add TMDB series ID if found
-        if (tmdbSeriesId) {
-            seriesObj.meta.tmdbId = tmdbSeriesId;
-            seriesObj.tmdbId = tmdbSeriesId; // Also at top level for easy access
-            logger.debug(`addToJsonObject => Added TMDB ID ${tmdbSeriesId} to series "${seriesTitle}"`);
-        }
-
-        this._kanDigitalJSONObj[id] = seriesObj;
-
-        // Track changes with DeltaTracker
-        if (isNewSeries) {
-            this.deltaTracker.addNewSeries(id, { name: seriesTitle, link: seriesPage });
-            // Track new videos
-            if (videosList && videosList.length > 0) {
-                videosList.forEach(video => {
-                    this.deltaTracker.addNewVideo(video.id, { name: video.name, seriesId: id });
-                });
-            }
-        } else {
-            this.deltaTracker.addUpdatedSeries(id, { name: seriesTitle, link: seriesPage });
-            // Track video changes (simple comparison by count)
-            const oldVideoCount = existingSeries.meta.videos ? existingSeries.meta.videos.length : 0;
-            const newVideoCount = videosList ? videosList.length : 0;
-            if (newVideoCount > oldVideoCount) {
-                // Assume new videos were added
-                for (let i = oldVideoCount; i < newVideoCount; i++) {
-                    if (videosList[i]) {
-                        this.deltaTracker.addNewVideo(videosList[i].id, { name: videosList[i].name, seriesId: id });
-                    }
-                }
-            }
-        }
-
-        logger.info(`addToJsonObject => Added  series, ID: ${id} Name: ${seriesTitle} Link: ${seriesPage}`);
-    }
-
-    async updateDatabase() {
-        logger.trace("updateDatabase => Entered");
-        logger.debug("updateDatabase => Starting bulk database update");
-
-        const DatabaseUpdater = require('./DatabaseUpdater');
-        const dbUpdater = new DatabaseUpdater();
-
-        try {
-            const result = await dbUpdater.updateFromJSON('kandigital', this._kanDigitalJSONObj);
-            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
-        } catch (error) {
-            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
-            throw error;
-        }
-
-        logger.trace("updateDatabase => Leaving");
-    }
-
-    writeJSON(){
-        logger.trace("writeJSON => Entered");
-        logger.info("writeJSON => 📝 Writing JSON file and uploading to GitHub...");
-        utils.writeJSONToFile(this._kanDigitalJSONObj, EXPORT_FILENAME);
-        logger.info("writeJSON => ✅ File written and uploaded successfully!");
-
-        logger.trace("writeJSON => Leaving");
-    }
 }
+
 
 /**********************************************************
  * Module Exports
  **********************************************************/
 module.exports = KanDigitalScraper;
-exports.crawl = this.crawl;
-exports.isRunning = this.isRunning;
-exports.writeJSON = this.writeJSON;
+
 
 // Run scraper if executed directly
 if (require.main === module) {

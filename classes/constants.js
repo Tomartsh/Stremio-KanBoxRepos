@@ -1,6 +1,4 @@
 module.exports = {
-    UPDATE_LIST: true, // update the series list as well as creating the JSON object
-    
     // Rate Limiting Configuration (per domain)
     RATE_LIMITING: {
         DEFAULT_MIN_INTERVAL: 0,
@@ -44,20 +42,22 @@ module.exports = {
             'kankids.org.il'   // Kids site also works with got-scraping
         ],
 
-        // Domains that require Playwright (Cloudflare-protected)
-        // Only needed for sites where got-scraping fails completely
-        REQUIRES_PLAYWRIGHT: [
-            // kan.org.il removed - no longer fetching episode pages during scraping
-            // Episode streams are resolved on-demand by the addon
-        ],
-
-        RETRY_DELAY: 15000,//default delay between requests
-        REQUEST_TIMEOUT: 30000,
-        MAX_RETRIES: 5,
+        RETRY_DELAY: 15000,        // Default delay between retry attempts
+        REQUEST_TIMEOUT: 30000,    // 30 second timeout for requests
+        MAX_RETRIES: 5,            // Maximum retry attempts
         MAX_CONCURRENT_REQUESTS: 10
     },
 
     // Scraper-Specific Configuration for Parallel Fetching
+    //
+    // IMPORTANT: These settings are tuned to avoid 403/rate limiting errors
+    // - parallelFetching: true=parallel batches, false=sequential processing
+    // - batchSize: Number of items to process in parallel (when parallelFetching=true)
+    // - delayBetweenBatches: Delay in ms between batches (exponential backoff on errors)
+    // - requestsPerSecond: Rate limiter setting (1-3 recommended for most sites)
+    // - circuitBreakerThreshold: Consecutive failures before pausing (default: 5)
+    // - circuitBreakerTimeout: Time in ms to pause after threshold (default: 60000 = 1min)
+    //
     SCRAPER_CONFIG: {
         // Default behavior for all scrapers (conservative to avoid 403s)
         DEFAULT_PARALLEL_FETCHING: true,
@@ -66,45 +66,60 @@ module.exports = {
 
         // Per-scraper overrides
         'KanArchiveScraper': {
-            parallelFetching: false,     // Sequential to avoid Cloudflare bans
-            batchSize: 5,                // One request at a time
-            delayBetweenBatches: 1000    // 3s delay between requests
+            parallelFetching: false,       // Sequential - Kan Archive is sensitive
+            batchSize: 5,                  // Conservative batch size
+            delayBetweenBatches: 1000,     // 1s delay between requests
+            requestsPerSecond: 1,          // Very conservative - old site infrastructure
+            circuitBreakerThreshold: 3,    // Quick pause on failures
+            circuitBreakerTimeout: 120000  // 2 minute pause after failures
         },
 
         'KanPodcastsScraper': {
-            parallelFetching: false,     // Sequential to avoid Cloudflare bans
-            batchSize: 10,                // 10 request at a time
-            delayBetweenBatches: 1000    // 1s delay between requests
+            parallelFetching: false,       // Sequential - Cloudflare protected
+            batchSize: 10,                 // Medium batch size
+            delayBetweenBatches: 1000,     // 1s delay between requests
+            requestsPerSecond: 2,          // Conservative rate limit
+            circuitBreakerThreshold: 5
         },
 
         'Kan88Scraper': {
-            parallelFetching: false,     // Sequential to avoid Cloudflare bans
-            batchSize: 5,                // 5 requests at a time
-            delayBetweenBatches: 1000    // 1s delay between requests
+            parallelFetching: false,       // Sequential - Cloudflare protected
+            batchSize: 5,                  // Small batch size
+            delayBetweenBatches: 1000,     // 1s delay between requests
+            requestsPerSecond: 1,          // Very conservative
+            circuitBreakerThreshold: 3
         },
 
         'KanDigitalScraper': {
-            parallelFetching: false,     // Sequential processing to avoid bans
-            batchSize: 5,                // 5 requests at a time
-            delayBetweenBatches: 1000    // 1s delay between requests
+            parallelFetching: false,       // Sequential - recent issues with bans
+            batchSize: 5,                  // Small batch size
+            delayBetweenBatches: 1000,     // 1s delay between requests
+            requestsPerSecond: 2,
+            circuitBreakerThreshold: 5
         },
 
         'KanKidsScraper': {
-            parallelFetching: false,     // Sequential to avoid Cloudflare bans
-            batchSize: 10,                // 10 requests at a time
-            delayBetweenBatches: 500    // 0.5 delay between requests
+            parallelFetching: false,       // Sequential - moderate protection
+            batchSize: 10,                 // Medium batch size
+            delayBetweenBatches: 500,      // 0.5s delay between requests
+            requestsPerSecond: 2,
+            circuitBreakerThreshold: 5
         },
 
         'KanTeensScraper': {
-            parallelFetching: false,      // Sequential to avoid Cloudflare bans
-            batchSize: 10,                // 10 requests at a time
-            delayBetweenBatches: 500      // 0.5s delay between requests
+            parallelFetching: false,       // Sequential - moderate protection
+            batchSize: 10,                 // Medium batch size
+            delayBetweenBatches: 500,      // 0.5s delay between requests
+            requestsPerSecond: 2,
+            circuitBreakerThreshold: 5
         },
 
         'ReshetScraper': {
-            parallelFetching: true,
-            batchSize: 15,
-            delayBetweenBatches: 1000
+            parallelFetching: true,        // Can handle parallel requests
+            batchSize: 15,                 // Larger batch size
+            delayBetweenBatches: 1000,     // 1s delay between requests
+            requestsPerSecond: 3,          // Higher rate limit tolerance
+            circuitBreakerThreshold: 5
         }
 
         // Other scrapers will use defaults (sequential) unless specified here
@@ -112,8 +127,8 @@ module.exports = {
     
     LOG4JS: {
         LEVEL: "debug",
-        MAX_SIZE: 10  * 1024 * 1024, // = 5Mb
-        BACKUP_FILES: 3, // keep 5 backup files'
+        MAX_SIZE: 10 * 1024 * 1024,  // 10MB max log file size
+        BACKUP_FILES: 3,              // Keep 3 backup files
         FILENAME: "logs/Stremio-Repos.log",
         TYPE: "file"
     },

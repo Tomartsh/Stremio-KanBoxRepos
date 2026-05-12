@@ -3,175 +3,42 @@ const {fetchData, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = re
 const {
     LOG4JS,
     HINUKHIT,
-    SCRAPER_CONFIG,
-    TMDB
+    SCRAPER_CONFIG
 } = require("./constants.js");
-const TmdbHelper = require("./TmdbHelper.js");
+const { safeExecute } = require("./ScraperHelpers.js");
+const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
-
-log4js.configure({
-    appenders: { 
-        out: { type: "stdout" },
-        Stremio: 
-        { 
-            type: LOG4JS.TYPE, 
-            filename: LOG4JS.FILENAME, 
-            maxLogSize: LOG4JS.MAX_SIZE, 
-            backups: LOG4JS.BACKUP_FILES, 
-        }
-    },
-    categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
-});
-
-const EXPORT_FILENAME = "stremio-kanteens";
 var logger = log4js.getLogger("KanTeensScraper");
 
-class KanTeensScraper {
+class KanTeensScraper extends BaseScraper {
 
     constructor() {
+        // Initialize BaseScraper with the scraper name
+        super('KanTeens', { exportFilename: "stremio-kanteens", databaseKey: 'kanteens' });
+
+        // Override the logger to use the specific name
+        this.logger = logger;
+
+        // Initialize KanTeens-specific properties
         this._kanTeenJSONObj = {};
-        this.isRunning = false;
-        this.tmdbHelper = new TmdbHelper();
-        
-        this.deltaTracker = new DeltaTracker();
-
-        const scraperName = 'KanTeensScraper';
-        const config = SCRAPER_CONFIG[scraperName] || {};
-        this.config = {
-            parallelFetching: config.parallelFetching ?? SCRAPER_CONFIG.DEFAULT_PARALLEL_FETCHING,
-            batchSize: config.batchSize ?? SCRAPER_CONFIG.DEFAULT_BATCH_SIZE,
-            delayBetweenBatches: config.delayBetweenBatches ?? SCRAPER_CONFIG.DEFAULT_DELAY_BETWEEN_BATCHES
-        };
-
-        logger.info(`KanTeensScraper initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}, TMDB: `);
-    }
-
-    async crawl(isDoWriteFile = false){
-        logger.info("Started Crawling");
-        this.isRunning = true;
-        this.deltaTracker.clear();
-
-        try {
-            await this.crawlTeens();
-        } catch (error) {
-            logger.error(`crawl => KanTeens scraping failed: ${error.message}`);
-            logger.error(error.stack);
-        }
-
-        try {
-            await this.crawlKanBox();
-        } catch (error) {
-            logger.error(`crawl => Kan-Box scraping failed: ${error.message}`);
-            logger.error(error.stack);
-        }
-
-        logger.info("Done Crawling");
-        logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
-
-        const { WRITE_TO_GITHUB, UPDATE_DATABASE } = require("./constants.js");
-
-        if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
-            if (WRITE_TO_GITHUB) {
-                logger.info("crawl => writing JSON file to GitHub");
-                this.writeJSON();
-            }
-
-            if (UPDATE_DATABASE) {
-                logger.info("crawl => updating database in bulk");
-                await this.updateDatabase();
-            }
-        } else if (isDoWriteFile) {
-            // Backward compatibility
-            logger.info("crawl => writing JSON file");
-            this.writeJSON();
-        }
-
-        this.isRunning = false;
-
-        logger.info("crawl => Done crawling. Exiting");
     }
 
     /**
-     * Helper method to process items in batches with detailed logging
-     * @param {Array} items - Array of items to process
-     * @param {Function} processor - Async function to process each item
-     * @param {String} itemType - Description of item type for logging (e.g., "series", "episodes")
-     * @returns {Promise<Array>} - Results from all processed items
+     * Main scraping logic - required by BaseScraper
      */
-    async processBatch(items, processor, itemType = "items") {
-        if (!this.config.parallelFetching) {
-            // Sequential processing (original behavior)
-            logger.info(`[${itemType}] Processing ${items.length} ${itemType} sequentially`);
-            const results = [];
-            for (let i = 0; i < items.length; i++) {
-                const startTime = Date.now();
-                logger.debug(`[${itemType}] Processing ${i + 1}/${items.length}`);
-                try {
-                    const result = await processor(items[i], i);
-                    const duration = Date.now() - startTime;
-                    logger.debug(`[${itemType}] Completed ${i + 1}/${items.length} in ${duration}ms`);
-                    results.push(result);
-                } catch (error) {
-                    logger.error(`[${itemType}] Failed ${i + 1}/${items.length}: ${error.message}`);
-                    results.push(null);
-                }
-            }
-            return results;
-        }
+    async crawlContent() {
+        await safeExecute(
+            () => this.crawlTeens(),
+            "crawlContent.crawlTeens",
+            this.logger
+        );
 
-        // Parallel batch processing
-        const { batchSize, delayBetweenBatches } = this.config;
-        const totalBatches = Math.ceil(items.length / batchSize);
-        logger.info(`[${itemType}] Processing ${items.length} ${itemType} in ${totalBatches} batches (${batchSize} per batch)`);
-
-        const allResults = [];
-
-        for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-            const batchStart = batchIndex * batchSize;
-            const batchEnd = Math.min(batchStart + batchSize, items.length);
-            const batch = items.slice(batchStart, batchEnd);
-
-            const batchNum = batchIndex + 1;
-            const batchStartTime = Date.now();
-            logger.info(`[${itemType}] Starting batch ${batchNum}/${totalBatches} (${itemType} ${batchStart + 1}-${batchEnd} of ${items.length})`);
-
-            // Process batch in parallel
-            const batchPromises = batch.map(async (item, indexInBatch) => {
-                const globalIndex = batchStart + indexInBatch;
-                const itemStartTime = Date.now();
-                try {
-                    const result = await processor(item, globalIndex);
-                    const itemDuration = Date.now() - itemStartTime;
-                    logger.debug(`[${itemType}] ✓ Item ${globalIndex + 1}/${items.length} completed in ${itemDuration}ms`);
-                    return { success: true, result, index: globalIndex };
-                } catch (error) {
-                    const itemDuration = Date.now() - itemStartTime;
-                    logger.error(`[${itemType}] ✗ Item ${globalIndex + 1}/${items.length} failed after ${itemDuration}ms: ${error.message}`);
-                    return { success: false, error, index: globalIndex };
-                }
-            });
-
-            const batchResults = await Promise.all(batchPromises);
-            const batchDuration = Date.now() - batchStartTime;
-            const successCount = batchResults.filter(r => r.success).length;
-            const failCount = batchResults.length - successCount;
-
-            logger.info(`[${itemType}] Batch ${batchNum}/${totalBatches} completed: ${successCount}/${batch.length} successful, ${failCount} failed in ${batchDuration}ms`);
-
-            allResults.push(...batchResults.map(r => r.result));
-
-            // Delay between batches to avoid rate limiting (except after last batch)
-            if (batchIndex < totalBatches - 1 && delayBetweenBatches > 0) {
-                logger.debug(`[${itemType}] Waiting ${delayBetweenBatches}ms before next batch...`);
-                await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
-            }
-        }
-
-        const successfulResults = allResults.filter(r => r !== null && r !== undefined);
-        logger.info(`[${itemType}] All batches completed: ${successfulResults.length}/${items.length} total successful`);
-
-        return allResults;
+        await safeExecute(
+            () => this.crawlKanBox(),
+            "crawlContent.crawlKanBox",
+            this.logger
+        );
     }
 
     /****************************************************************
@@ -180,23 +47,23 @@ class KanTeensScraper {
      *
      ****************************************************************/
     async crawlTeens(){
-        logger.trace("crawlKids => Entering");
-        logger.debug("crawlKids => Starting retrieval of Tiny series");
+        logger.trace("crawlTeens => Entering");
+        logger.debug("crawlTeens => Starting retrieval of Teens series");
 
         var subType = "n";
         var doc = await fetchData(HINUKHIT.URL_TEENS);
-        
-        var kidsSeries = doc.querySelectorAll("div.umb-block-list div script");
-        var kidsScriptStr = kidsSeries[4].toString();
-        var startIndex = kidsScriptStr.indexOf("[{");
-        var lastIndex = kidsScriptStr.lastIndexOf("}]") +2 ;
-        var kidsJsonStr = kidsScriptStr.substring(startIndex, lastIndex);
-        var kidsJsonArr = JSON.parse(kidsJsonStr);
+
+        var teensSeries = doc.querySelectorAll("div.umb-block-list div script");
+        var teensScriptStr = teensSeries[4].toString();
+        var startIndex = teensScriptStr.indexOf("[{");
+        var lastIndex = teensScriptStr.lastIndexOf("}]") +2 ;
+        var teensJsonStr = teensScriptStr.substring(startIndex, lastIndex);
+        var teensJsonArr = JSON.parse(teensJsonStr);
 
         // Process teens series using batch processor
-        logger.info(`crawlTeens => Found ${kidsJsonArr.length} teens series to process`);
+        logger.info(`crawlTeens => Found ${teensJsonArr.length} teens series to process`);
         await this.processBatch(
-            kidsJsonArr,
+            teensJsonArr,
             async (series, index) => {
                 return await this.processOneTeensSeries(series, subType);
             },
@@ -236,17 +103,10 @@ class KanTeensScraper {
         seriesDescription = seriesDescription.replace("\r\n","").trim();
         seriesDescription = seriesDescription.trim();
 
-        // Search TMDB for this series
-        let tmdbSeriesId = null;
-        tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(seriesTitle);
-        if (tmdbSeriesId) {
-            logger.info(`processOneTeensSeries => Found TMDB ID ${tmdbSeriesId} for "${seriesTitle}"`);
-        }
-
         var seasons = doc2.querySelectorAll("div.seasons-item.kids");
         // Create a temporary videos array to collect episodes
         const videosCollected = [];
-        await this.getKidsVideos(seasons, id, subType, tmdbSeriesId, videosCollected);
+        await this.getKidsVideos(seasons, id, subType, videosCollected);
 
         // Only add series to JSON if it has videos
         if (videosCollected.length === 0) {
@@ -255,7 +115,7 @@ class KanTeensScraper {
         }
 
         // Add series with collected videos
-        this.addToJsonObject(id, seriesTitle,seriesPage,imgUrl,seriesDescription,genres,videosCollected,subType,"series", tmdbSeriesId);
+        this.addToJsonObject(id, seriesTitle,seriesPage,imgUrl,seriesDescription,genres,videosCollected,subType,"series");
         logger.debug(`processOneTeensSeries => Added teens series ${seriesTitle} with ${videosCollected.length} episodes`);
         return { id, seriesTitle };
     }
@@ -337,7 +197,7 @@ class KanTeensScraper {
                 const seriesId = utils.generateSeriesId(fullSeriesUrl, HINUKHIT.SUBPREFIX_TEENS);
 
                 // Check if this series already exists in our catalog
-                if (this._kanTeenJSONObj.hasOwnProperty(seriesId)) {
+                if (this._jsonObj.hasOwnProperty(seriesId)) {
                     logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
                     this.deltaTracker.skipSeries();
                     duplicateCount++;
@@ -401,7 +261,7 @@ class KanTeensScraper {
         }
         return seriesTitle;
     }
-    
+
     /*****************************************************************************
      * Get the episodes of each season (video object and streams)
      * @param {*} seasons
@@ -410,7 +270,7 @@ class KanTeensScraper {
      * @param {*} videosCollected - Array to collect videos into
      * @returns JSON object
      *****************************************************************************/
-    async getKidsVideos(seasons, id, subType, tmdbSeriesId = null, videosCollected = []){
+    async getKidsVideos(seasons, id, subType, videosCollected = []){
         var noOfSeasons = seasons.length;
         logger.info(`getKidsVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
 
@@ -438,7 +298,7 @@ class KanTeensScraper {
             const episodeResults = await this.processBatch(
                 episodeData,
                 async (epData, index) => {
-                    return await this.processOneTeensEpisode(epData, id, subType, tmdbSeriesId, videosCollected);
+                    return await this.processOneTeensEpisode(epData, id, subType, videosCollected);
                 },
                 `teens-episodes (Season ${seasonNo})`
             );
@@ -448,7 +308,7 @@ class KanTeensScraper {
     /**
      * Process a single teens episode (extracted from getKidsVideos for batch processing)
      */
-    async processOneTeensEpisode(epData, id, subType, tmdbSeriesId = null, videosCollected = []) {
+    async processOneTeensEpisode(epData, id, subType, videosCollected = []) {
         const { elem: episode, seasonNo, episodeNo } = epData;
 
         var episodeLink = episode.querySelector("a.card-link").getAttribute("href");
@@ -468,7 +328,7 @@ class KanTeensScraper {
             (episode.querySelector("img.img-full").getAttribute("src").indexOf("?") > 0)){
             episodeImgUrl = utils.getImageFromUrl(episode.querySelector("img.img-full").getAttribute("src"), subType);
         }
-        logger.trace("processOneTeensEpisode => episodeImgUrl: " + episodeImgUrl + " Name: " + episodeTitle)
+        logger.trace("processOneTeensEpisode => episodeImgUrl: " + episodeImgUrl + " Name: " + episodeTitle);
 
         var episodeDescription = episode.querySelector("div.card-text").text;
         episodeDescription = episodeDescription.replace(/[\r\n]+/gm, "").trim();;
@@ -481,13 +341,6 @@ class KanTeensScraper {
         } else {
             streamsArr.push(streams);
             released = streams.released;
-        }
-
-        // Search TMDB for this episode if we have a series ID
-        let tmdbEpisodeId = null;
-        tmdbEpisodeId = await this.tmdbHelper.searchTMDBEpisode(tmdbSeriesId, seasonNo, episodeNo);
-        if (tmdbEpisodeId) {
-            logger.debug(`processOneTeensEpisode => Found TMDB episode ID ${tmdbEpisodeId} for series ${id}, S${seasonNo}E${episodeNo}`);
         }
 
         var videoId = id + ":" + seasonNo + ":" + episodeNo;
@@ -504,7 +357,6 @@ class KanTeensScraper {
             streams: streamsArr
         };
         if (released != "") {video["released"] = released;}
-        if (tmdbEpisodeId) {video["tmdbEpisodeId"] = tmdbEpisodeId;}
 
         videosCollected.push(video);
         logger.info(`Added: S${seasonNo} E${episodeNo} - ${episodeTitle}`);
@@ -520,117 +372,30 @@ class KanTeensScraper {
         return description;
     }
 
-    addVideoToMeta(key, episodeId, name, seasonNo, episodeNo, desc, thumb, episodeLink, released, streams, tmdbEpisodeId = null){
-        var video = {
-            id: episodeId,
-            name: name,
-            season: seasonNo,
-            episode: episodeNo ,
-            description: desc,
-            thumbnail: thumb,
-            episodeLink: episodeLink,
-            streams: streams
-        };
-        if (released != "") {video["released"] = released;}
-        if (tmdbEpisodeId) {video["tmdbEpisodeId"] = tmdbEpisodeId;}
+    /*************************************************************
+     * Get the URL of the indivifual Episode
+     * @link
+     *************************************************************/
+    getEpisodeUrl(link){
+        var startPoint = link.indexOf("contentUrl");
+        link = link.substring(startPoint + 14);
+        var endPoint = link.indexOf('\"');
+        link = link.substring(0,endPoint);
 
-        this._kanTeenJSONObj[key]["meta"]["videos"].push(video);
-        logger.info(`Added: S${seasonNo} E${episodeNo} - ${name}`);
-
+        return link;
     }
 
-    addToJsonObject(id, seriesTitle, seriesPage, imgUrl, seriesDescription, genres, videosList, subType, type, tmdbSeriesId = null){
-        // Check if this is a new series or update
-        const isNewSeries = !this._kanTeenJSONObj.hasOwnProperty(id);
-        const existingSeries = this._kanTeenJSONObj[id];
-
-        const seriesObj = {
-            id: id,
-            name: seriesTitle,
-            link: seriesPage,
-            type: type,
-            subtype: subType,
-            meta: {
-                id: id,
-                type: type,
-                name: seriesTitle,
-                link: seriesPage,
-                background: imgUrl,
-                poster: imgUrl,
-                posterShape: "poster",
-                logo: imgUrl,
-                description: seriesDescription,
-                genres: genres,
-                videos: videosList
-            }
-        };
-
-        // Add TMDB series ID if found
-        if (tmdbSeriesId) {
-            seriesObj.meta.tmdbId = tmdbSeriesId;
-            seriesObj.tmdbId = tmdbSeriesId;
-            logger.debug(`addToJsonObject => Added TMDB ID ${tmdbSeriesId} to series "${seriesTitle}"`);
+    getVideoNameFromEpisodePage(str){
+        if (str.indexOf("|") > 0) {
+            str = str.substring(str.indexOf('|'));
+            str = str.replace("|", "");
         }
-
-        this._kanTeenJSONObj[id] = seriesObj;
-
-        // Track changes with DeltaTracker
-        if (isNewSeries) {
-            this.deltaTracker.addNewSeries(id, { name: seriesTitle, link: seriesPage });
-            // Track new videos
-            if (videosList && videosList.length > 0) {
-                videosList.forEach(video => {
-                    this.deltaTracker.addNewVideo(video.id, { name: video.name, seriesId: id });
-                });
-            }
-        } else {
-            this.deltaTracker.addUpdatedSeries(id, { name: seriesTitle, link: seriesPage });
-            // Track video changes (simple comparison by count)
-            const oldVideoCount = existingSeries.meta.videos ? existingSeries.meta.videos.length : 0;
-            const newVideoCount = videosList ? videosList.length : 0;
-            if (newVideoCount > oldVideoCount) {
-                // Assume new videos were added
-                for (let i = oldVideoCount; i < newVideoCount; i++) {
-                    if (videosList[i]) {
-                        this.deltaTracker.addNewVideo(videosList[i].id, { name: videosList[i].name, seriesId: id });
-                    }
-                }
-            }
-        }
-
-        logger.info("addToJsonObject => Added  series, ID: " + id + " Name: " + seriesTitle + " Link: " + seriesPage + " subtype: " + subType);
-    }
-
-    async updateDatabase() {
-        logger.trace("updateDatabase => Entered");
-        logger.debug("updateDatabase => Starting bulk database update");
-
-        try {
-            const result = await updateDatabaseFromJSON('kanteens', this._kanTeenJSONObj, logger);
-            logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
-        } catch (error) {
-            logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
-            throw error;
-        }
-
-        logger.trace("updateDatabase => Leaving");
-    }
-
-    writeJSON(){
-        logger.trace("writeJSON => Entered");
-        logger.debug("writeJSON => All tasks completed - writing file");
-        utils.writeJSONToFile(this._kanTeenJSONObj, EXPORT_FILENAME);
-
-        logger.trace("writeJSON => Leaving");
-
+        str = str.trim();
+        return str;
     }
 }
-
 
 /**********************************************************
  * Module Exports
  **********************************************************/
 module.exports = KanTeensScraper;
-exports.crawl = this.crawl;
-exports.isRunning = this.isRunning;
-exports.writeJSON = this.writeJSON;

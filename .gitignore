@@ -29,6 +29,9 @@ logs/stremio*.*
 backups
 backups/*.*
 
+#ignore test scripts folder
+scripts/
+
 #ignore claude code settings
 .claude/
 
