@@ -1,3 +1,41 @@
+/**
+ * Stremio KanBox Scraper Server
+ *
+ * This Express server provides HTTP endpoints to trigger scrapers in the background.
+ *
+ * Server runs on PORT (default: 49999) - configurable via environment variable.
+ *
+ * ENDPOINTS:
+ *
+ * GET /run?scraper=<name>&mode=<mode>
+ *   Trigger a scraper to run in the background.
+ *
+ *   Parameters:
+ *     scraper (required): kanDigital, kanArchive, kanKids, kanTeens, kanPodcasts,
+ *                         kan88, mako, reshet, livetv
+ *     mode (optional):    auto (default), full, incremental, skip
+ *
+ *   Modes:
+ *     auto:        Use scraper configuration (KanDigital/KanPodcasts use incremental)
+ *     full:        Force full scrape (ignore state, fetch all content)
+ *     incremental: Force incremental mode (skip unchanged series)
+ *     skip:        Skip scraping, validation only
+ *
+ *   Examples:
+ *     /run?scraper=kanPodcasts
+ *     /run?scraper=kanPodcasts&mode=full
+ *     /run?scraper=kanDigital&mode=incremental
+ *
+ *   Response: Immediate confirmation, scraper runs in background.
+ *   Check logs for progress: logs/Stremio-Repos.log
+ *
+ * GET /healthcheck
+ *   Server health check.
+ *
+ * GET /
+ *   Root endpoint with usage information.
+ */
+
 const express = require("express");
 const path = require('path');
 
@@ -53,7 +91,7 @@ var logger = log4js.getLogger("main");
 
 app.get('/run', async (req, res) => {
 
-    const { scraper } = req.query;
+    const { scraper, mode } = req.query;
     // Validation FIRST
     if (!scraper) {
         return res.status(400).send("Missing ?scraper= parameter");
@@ -66,24 +104,28 @@ app.get('/run', async (req, res) => {
         return res.status(404).send(`Unknown scraper: ${scraper}`);
     }
 
+    // Determine scrape mode
+    // Modes: 'auto' (default, uses config), 'full' (force full), 'incremental' (force incremental), 'skip' (validation only)
+    const scrapeMode = mode || 'auto';
+
     // Send the "Started" response and END the request cycle here
-    res.send(`✅ ${scraper} started in the background.`);
+    res.send(`✅ ${scraper} started in the background (mode: ${scrapeMode}).`);
 
     // 3. Run the logic in a "Fire and Forget" block with its own error handling
     // We don't 'await' this inside the route if we already sent a response
     (async () => {
         try {
-            logger.info(`Starting execution for: ${scraper}`);
+            logger.info(`Starting execution for: ${scraper} (mode: ${scrapeMode})`);
             switch (scraper) {
-                case "kanDigital": await new KanDigitalscraper().crawl(true); break;
-                case "kanArchive": await new KanArchivescraper().crawl(true); break;
-                case "kanKids":    await new KanKidscraper().crawl(true);    break;
-                case "kanTeens":   await new KanTeensscraper().crawl(true);   break;
-                case "kanPodcasts": await new KanPodcastsscraper().crawl(true); break;
-                case "kan88":      await new Kan88scraper().crawl(true);      break;
-                case "mako":       await new Makoscraper().crawl(true);       break;
-                case "reshet":     await new Reshetscraper().crawl(true);     break;
-                case "livetv":     await new LiveTV().crawl(true);            break;
+                case "kanDigital": await new KanDigitalscraper().crawl(true, scrapeMode); break;
+                case "kanArchive": await new KanArchivescraper().crawl(true, scrapeMode); break;
+                case "kanKids":    await new KanKidscraper().crawl(true, scrapeMode);    break;
+                case "kanTeens":   await new KanTeensscraper().crawl(true, scrapeMode);   break;
+                case "kanPodcasts": await new KanPodcastsscraper().crawl(true, scrapeMode); break;
+                case "kan88":      await new Kan88scraper().crawl(true, scrapeMode);      break;
+                case "mako":       await new Makoscraper().crawl(true, scrapeMode);       break;
+                case "reshet":     await new Reshetscraper().crawl(true, scrapeMode);     break;
+                case "livetv":     await new LiveTV().crawl(true, scrapeMode);            break;
             }
             logger.info(`✅ ${scraper} completed successfully`);
         } catch (err) {
