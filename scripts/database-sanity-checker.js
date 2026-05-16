@@ -27,7 +27,8 @@
  * ============================================================================
  */
 
-require('dotenv').config({ path: '../classes/.env' });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', 'classes', '.env') });
 const { createClient } = require('@supabase/supabase-js');
 const log4js = require('log4js');
 
