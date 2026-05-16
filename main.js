@@ -137,6 +137,56 @@ app.get('/run', async (req, res) => {
 
 });
 
+/**
+ * GET /sanityCheck
+ *   Run database sanity checks.
+ *
+ *   Parameters:
+ *     mode (optional):    report (default), fix
+ *     scraper (optional): Check only specific scraper (e.g., kanDigital)
+ *     table (optional):   Check only specific table (series, videos, streams)
+ *     quick (optional):   true=skip URL validations, false=full check
+ *
+ *   Examples:
+ *     /sanityCheck
+ *     /sanityCheck?mode=fix
+ *     /sanityCheck?scraper=kanDigital
+ *     /sanityCheck?mode=report&scraper=kanDigital&quick=true
+ *
+ *   Response: Immediate confirmation, check runs in background.
+ */
+app.get('/sanityCheck', async (req, res) => {
+    const { mode, scraper, table, quick } = req.query;
+
+    // Determine check mode
+    const checkMode = mode === 'fix' ? 'fix' : 'report';
+    const quickMode = quick === 'true' || quick === '1';
+
+    // Send immediate response
+    res.send(`✅ Database sanity check started in the background (mode: ${checkMode}${quickMode ? ', quick mode' : ''}). Check logs for details.`);
+
+    // Run in background
+    (async () => {
+        try {
+            const DatabaseSanityChecker = require('./scripts/database-sanity-checker.js');
+            const checker = new DatabaseSanityChecker({
+                fix: checkMode === 'fix',
+                scraper: scraper || null,
+                table: table || null,
+                quick: quickMode,
+                verbose: true
+            });
+
+            logger.info(`Starting database sanity check (mode: ${checkMode})`);
+            await checker.run();
+            logger.info(`✅ Database sanity check completed`);
+
+        } catch (err) {
+            logger.error(`❌ Error in sanity check:`, err);
+        }
+    })();
+});
+
 // Health check
 app.get("/healthcheck", (req, res) => {
   res.send("Scraper server is running. Use /run?scraper=name");
@@ -144,7 +194,7 @@ app.get("/healthcheck", (req, res) => {
 
 // Optional root route to confirm server is live
 app.get("/", (req, res) => {
-  res.send("Scraper server is running. Use /run?scraper=name");
+  res.send("Scraper server is running. Use /run?scraper=name or /sanityCheck for database checks");
 });
 
 // Start server
