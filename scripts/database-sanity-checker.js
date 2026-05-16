@@ -31,19 +31,20 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', 'classes', '.env') });
 const { createClient } = require('@supabase/supabase-js');
 const log4js = require('log4js');
+const { LOG4JS } = require(path.join(__dirname, '..', 'classes', 'constants'));
 
-// Configure logger
+// Configure logger - use main log file
 log4js.configure({
     appenders: {
         out: { type: 'stdout' },
-        sanityCheck: {
-            type: 'file',
-            filename: 'logs/sanity-check.log',
-            maxLogSize: 10485760,
-            backups: 5,
+        SanityCheck: {
+            type: LOG4JS.TYPE,
+            filename: LOG4JS.FILENAME,
+            maxLogSize: LOG4JS.MAX_SIZE,
+            backups: LOG4JS.BACKUP_FILES,
         }
     },
-    categories: { default: { appenders: ['sanityCheck', 'out'], level: 'info' } },
+    categories: { default: { appenders: ['SanityCheck', 'out'], level: LOG4JS.LEVEL } },
 });
 
 const logger = log4js.getLogger('SanityCheck');
