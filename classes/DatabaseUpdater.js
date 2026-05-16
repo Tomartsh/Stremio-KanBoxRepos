@@ -44,6 +44,10 @@ class DatabaseUpdater {
             const streamsToInsert = [];
 
             for (const [seriesId, series] of Object.entries(jsonData)) {
+                // Extract videos first to count them
+                const videos = series.meta?.videos || [];
+                const videoCount = videos.length;
+
                 // Extract series data
                 const seriesData = {
                     id: seriesId,
@@ -57,7 +61,8 @@ class DatabaseUpdater {
                     type: series.type,
                     subtype: series.subtype,
                     genres: series.meta?.genres || [],
-                    tmdb_id: series.meta?.tmdbId
+                    tmdb_id: series.meta?.tmdbId,
+                    video_count: videoCount  // ✅ Added video_count
                 };
                 seriesToInsert.push(seriesData);
 

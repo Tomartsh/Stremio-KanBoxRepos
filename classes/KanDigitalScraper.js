@@ -10,7 +10,7 @@ const {
 } = require("./constants.js");
 const { extractKanStream, cleanVideoName, safeExecute } = require("./ScraperHelpers.js");
 const BaseScraper = require("./BaseScraper.js");
-const SUB_PREFIX = "dogital";
+const SUB_PREFIX = "digital";
 const SUBTYPE = "d";
 
 const log4js = require("log4js");
