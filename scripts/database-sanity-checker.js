@@ -33,13 +33,13 @@ const { createClient } = require('@supabase/supabase-js');
 const log4js = require('log4js');
 const { LOG4JS } = require(path.join(__dirname, '..', 'classes', 'constants'));
 
-// Configure logger - use main log file
+// Configure logger - separate log file for sanity checker
 log4js.configure({
     appenders: {
         out: { type: 'stdout' },
         SanityCheck: {
             type: LOG4JS.TYPE,
-            filename: LOG4JS.FILENAME,
+            filename: 'logs/sanity-check.log',
             maxLogSize: LOG4JS.MAX_SIZE,
             backups: LOG4JS.BACKUP_FILES,
         }
