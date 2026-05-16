@@ -125,6 +125,66 @@ class DatabaseSanityChecker {
     }
 
     /**
+     * Delete all records with scraper='kandigital' (il_kan_dogital typo bug)
+     * This will cascade delete all associated videos and streams
+     */
+    async deleteDogitalRecords() {
+        logger.info('Checking for il_kan_dogital typo records...');
+
+        // Check if any records exist with scraper='kandigital'
+        const { data: dogitalSeries, error } = await this.supabase
+            .from('series')
+            .select('id')
+            .eq('scraper', 'kandigital');
+
+        if (error) {
+            logger.error(`Error checking for dogital records: ${error.message}`);
+            return;
+        }
+
+        if (!dogitalSeries || dogitalSeries.length === 0) {
+            logger.info('✅ No il_kan_dogital typo records found\n');
+            return;
+        }
+
+        const count = dogitalSeries.length;
+        logger.warn(`⚠️  Found ${count} series with scraper='kandigital' (il_kan_dogital typo)`);
+
+        if (!this.options.fix) {
+            logger.info(`   Run with --fix to delete these ${count} series and all their videos/streams\n`);
+            this.results.issuesFound += count;
+            this.results.details.series.issues.push({
+                type: 'dogital_typo',
+                count: count,
+                message: `${count} series with scraper='kandigital' typo need deletion`
+            });
+            return;
+        }
+
+        // Delete all series with scraper='kandigital'
+        // Cascade delete will handle videos and streams
+        logger.info(`   Deleting ${count} series with scraper='kandigital'...`);
+
+        const { error: deleteError } = await this.supabase
+            .from('series')
+            .delete()
+            .eq('scraper', 'kandigital');
+
+        if (deleteError) {
+            logger.error(`   ❌ Failed to delete dogital records: ${deleteError.message}`);
+            return;
+        }
+
+        this.results.issuesFixed += count;
+        this.results.details.series.fixed.push({
+            action: 'deleted_dogital_typo_records',
+            count: count
+        });
+
+        logger.info(`   ✅ Deleted ${count} series (cascade deleted all videos/streams)\n`);
+    }
+
+    /**
      * Run all sanity checks
      */
     async run() {
@@ -140,6 +200,11 @@ class DatabaseSanityChecker {
         try {
             // Test database connection
             await this.testConnection();
+
+            // Delete dogital typo records (highest priority - affects other checks)
+            if (!this.options.table || this.options.table === 'series') {
+                await this.deleteDogitalRecords();
+            }
 
             // Run checks based on options
             if (!this.options.table || this.options.table === 'series') {
@@ -569,12 +634,13 @@ class DatabaseSanityChecker {
     }
 
     /**
-     * Check data consistency
+     * Check data consistency (OPTIMIZED - single query instead of per-series queries)
      */
     async checkDataConsistency() {
         logger.info('Checking data consistency...');
         this.results.checksRun++;
 
+        // Get all series with their video counts
         let query = this.supabase.from('series').select('id, video_count, scraper');
 
         if (this.options.scraper) {
@@ -586,19 +652,32 @@ class DatabaseSanityChecker {
 
         logger.info(`Checking video_count for ${series.length} series...`);
 
+        // OPTIMIZED: Get all video counts in a single query grouped by series_id
+        // This requires using a raw SQL query or doing it client-side
+        // For now, we'll fetch all videos and count client-side (much faster than 1714 queries)
+
+        let videoQuery = this.supabase.from('videos').select('series_id');
+        if (this.options.scraper) {
+            const seriesIds = series.map(s => s.id);
+            videoQuery = videoQuery.in('series_id', seriesIds);
+        }
+
+        const allVideos = await this.fetchAllRecords('videos', videoQuery);
+
+        // Count videos per series
+        const videoCounts = {};
+        for (const v of allVideos) {
+            videoCounts[v.series_id] = (videoCounts[v.series_id] || 0) + 1;
+        }
+
+        // Check each series
+        let mismatches = 0;
         for (const s of series) {
-            // Get actual video count
-            const { count, error } = await this.supabase
-                .from('videos')
-                .select('*', { count: 'exact', head: true })
-                .eq('series_id', s.id);
-
-            if (error) continue;
-
-            const actualCount = count || 0;
+            const actualCount = videoCounts[s.id] || 0;
             const storedCount = s.video_count || 0;
 
             if (actualCount !== storedCount) {
+                mismatches++;
                 this.results.issuesFound++;
                 this.results.details.consistency.issues.push({
                     id: s.id,
@@ -606,7 +685,9 @@ class DatabaseSanityChecker {
                     issue: `video_count mismatch: stored=${storedCount}, actual=${actualCount}`
                 });
 
-                logger.warn(`  [${s.scraper}] ${s.id}: video_count is ${storedCount} but should be ${actualCount}`);
+                if (this.options.verbose || mismatches <= 20) {
+                    logger.warn(`  [${s.scraper}] ${s.id}: video_count is ${storedCount} but should be ${actualCount}`);
+                }
 
                 // Fix: Update video_count
                 if (this.options.fix) {
@@ -623,6 +704,10 @@ class DatabaseSanityChecker {
                     });
                 }
             }
+        }
+
+        if (mismatches > 20) {
+            logger.warn(`  ... and ${mismatches - 20} more series with video_count mismatches`);
         }
 
         logger.info('✅ Data consistency check complete\n');
