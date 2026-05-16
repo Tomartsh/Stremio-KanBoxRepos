@@ -87,6 +87,44 @@ class DatabaseSanityChecker {
     }
 
     /**
+     * Fetch all records from Supabase with pagination (bypasses 1000 row limit)
+     * @param {string} table - Table name
+     * @param {object} query - Supabase query builder
+     * @returns {Promise<Array>} - All records
+     */
+    async fetchAllRecords(table, query) {
+        const pageSize = 1000;
+        let allRecords = [];
+        let page = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+            const { data, error } = await query.range(page * pageSize, (page + 1) * pageSize - 1);
+
+            if (error) {
+                throw new Error(`Error fetching ${table}: ${error.message}`);
+            }
+
+            if (data && data.length > 0) {
+                allRecords = allRecords.concat(data);
+
+                // Check if we got a full page (might be more records)
+                if (data.length < pageSize) {
+                    hasMore = false;
+                } else {
+                    page++;
+                    // Small delay to avoid rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            } else {
+                hasMore = false;
+            }
+        }
+
+        return allRecords;
+    }
+
+    /**
      * Run all sanity checks
      */
     async run() {
@@ -160,13 +198,7 @@ class DatabaseSanityChecker {
             query = query.eq('scraper', this.options.scraper);
         }
 
-        const { data: series, error } = await query;
-
-        if (error) {
-            logger.error(`Error fetching series: ${error.message}`);
-            return;
-        }
-
+        const series = await this.fetchAllRecords('series', query);
         logger.info(`Found ${series.length} series to check`);
 
         for (const s of series) {
@@ -248,25 +280,19 @@ class DatabaseSanityChecker {
 
         // Filter by scraper if specified
         if (this.options.scraper) {
-            // Get series IDs for the scraper first
-            const { data: seriesData } = await this.supabase
-                .from('series')
-                .select('id')
-                .eq('scraper', this.options.scraper);
+            // Get series IDs for the scraper first (with pagination)
+            const seriesData = await this.fetchAllRecords(
+                'series',
+                this.supabase.from('series').select('id').eq('scraper', this.options.scraper)
+            );
 
-            if (seriesData) {
+            if (seriesData && seriesData.length > 0) {
                 const seriesIds = seriesData.map(s => s.id);
                 query = query.in('series_id', seriesIds);
             }
         }
 
-        const { data: videos, error } = await query;
-
-        if (error) {
-            logger.error(`Error fetching videos: ${error.message}`);
-            return;
-        }
-
+        const videos = await this.fetchAllRecords('videos', query);
         logger.info(`Found ${videos.length} videos to check`);
 
         for (const v of videos) {
@@ -350,32 +376,30 @@ class DatabaseSanityChecker {
 
         // Filter by scraper if specified (need to join through videos)
         if (this.options.scraper) {
-            const { data: seriesData } = await this.supabase
-                .from('series')
-                .select('id')
-                .eq('scraper', this.options.scraper);
+            const seriesData = await this.fetchAllRecords(
+                'series',
+                this.supabase.from('series').select('id').eq('scraper', this.options.scraper)
+            );
 
-            if (seriesData) {
+            if (seriesData && seriesData.length > 0) {
                 const seriesIds = seriesData.map(s => s.id);
-                const { data: videosData } = await this.supabase
-                    .from('videos')
-                    .select('id')
-                    .in('series_id', seriesIds);
+                const videosData = await this.fetchAllRecords(
+                    'videos',
+                    this.supabase.from('videos').select('id').in('series_id', seriesIds)
+                );
 
-                if (videosData) {
+                if (videosData && videosData.length > 0) {
                     const videoIds = videosData.map(v => v.id);
                     query = this.supabase.from('streams').select('*').in('video_id', videoIds);
+                } else {
+                    // No videos found for this scraper, skip streams check
+                    logger.info('No videos found for this scraper, skipping streams check');
+                    return;
                 }
             }
         }
 
-        const { data: streams, error } = await query;
-
-        if (error) {
-            logger.error(`Error fetching streams: ${error.message}`);
-            return;
-        }
-
+        const streams = await this.fetchAllRecords('streams', query);
         logger.info(`Found ${streams.length} streams to check`);
 
         for (const s of streams) {
@@ -434,22 +458,43 @@ class DatabaseSanityChecker {
         logger.info('Checking for orphaned records...');
         this.results.checksRun++;
 
-        // Check 1: Videos without series
-        let videoQuery = this.supabase.from('videos').select('id, series_id');
-
+        // Get all valid series IDs (with pagination)
+        let seriesQuery = this.supabase.from('series').select('id');
         if (this.options.scraper) {
-            const { data: seriesData } = await this.supabase
-                .from('series')
-                .select('id')
-                .eq('scraper', this.options.scraper);
-
-            if (seriesData) {
-                const seriesIds = seriesData.map(s => s.id);
-                videoQuery = this.supabase.from('videos').select('id, series_id').not('series_id', 'in', `(${seriesIds.join(',')})`);
-            }
+            seriesQuery = seriesQuery.eq('scraper', this.options.scraper);
         }
+        const allSeries = await this.fetchAllRecords('series', seriesQuery);
+        const seriesIds = new Set(allSeries.map(s => s.id));
 
-        const { data: orphanedVideos } = await videoQuery;
+        // Get all valid video IDs (with pagination)
+        let videoQuery = this.supabase.from('videos').select('id');
+        if (this.options.scraper) {
+            videoQuery = videoQuery.in('series_id', Array.from(seriesIds));
+        }
+        const allVideos = await this.fetchAllRecords('videos', videoQuery);
+        const videoIds = new Set(allVideos.map(v => v.id));
+
+        // Check 1: Videos without series (fetch all videos and filter)
+        let allVideosQuery = this.supabase.from('videos').select('id, series_id');
+        if (this.options.scraper) {
+            // For scraper filter, we need to check against the specific series IDs
+            const scraperSeries = await this.fetchAllRecords(
+                'series',
+                this.supabase.from('series').select('id').eq('scraper', this.options.scraper)
+            );
+            const scraperSeriesIds = new Set(scraperSeries.map(s => s.id));
+            const allVideosForScraper = await this.fetchAllRecords(
+                'videos',
+                this.supabase.from('videos').select('id, series_id')
+            );
+            var orphanedVideos = allVideosForScraper.filter(v => !scraperSeriesIds.has(v.series_id));
+        } else {
+            const allVideosList = await this.fetchAllRecords(
+                'videos',
+                this.supabase.from('videos').select('id, series_id')
+            );
+            var orphanedVideos = allVideosList.filter(v => !seriesIds.has(v.series_id));
+        }
 
         if (orphanedVideos && orphanedVideos.length > 0) {
             this.results.issuesFound += orphanedVideos.length;
@@ -470,41 +515,28 @@ class DatabaseSanityChecker {
             // Fix: Delete orphaned videos
             if (this.options.fix) {
                 logger.info(`  Deleting ${orphanedVideos.length} orphaned videos...`);
-                const videoIds = orphanedVideos.map(v => v.id);
+                const idsToDelete = orphanedVideos.map(v => v.id);
 
-                // Delete streams first, then videos
-                await this.supabase.from('streams').delete().in('video_id', videoIds);
-                await this.supabase.from('videos').delete().in('id', videoIds);
+                // Delete in batches
+                const batchSize = 1000;
+                for (let i = 0; i < idsToDelete.length; i += batchSize) {
+                    const batch = idsToDelete.slice(i, i + batchSize);
+                    // Delete streams first, then videos
+                    await this.supabase.from('streams').delete().in('video_id', batch);
+                    await this.supabase.from('videos').delete().in('id', batch);
+                }
 
                 this.results.issuesFixed += orphanedVideos.length;
                 this.results.details.orphaned.fixed.push({ action: 'deleted_orphaned_videos', count: orphanedVideos.length });
             }
         }
 
-        // Check 2: Streams without videos
-        let streamQuery = this.supabase.from('streams').select('id, video_id');
-
-        if (this.options.scraper) {
-            const { data: seriesData } = await this.supabase
-                .from('series')
-                .select('id')
-                .eq('scraper', this.options.scraper);
-
-            if (seriesData) {
-                const seriesIds = seriesData.map(s => s.id);
-                const { data: videosData } = await this.supabase
-                    .from('videos')
-                    .select('id')
-                    .in('series_id', seriesIds);
-
-                if (videosData) {
-                    const videoIds = videosData.map(v => v.id);
-                    streamQuery = this.supabase.from('streams').select('id, video_id').not('video_id', 'in', `(${videoIds.join(',')})`);
-                }
-            }
-        }
-
-        const { data: orphanedStreams } = await streamQuery;
+        // Check 2: Streams without videos (fetch all streams and filter)
+        const allStreamsList = await this.fetchAllRecords(
+            'streams',
+            this.supabase.from('streams').select('id, video_id')
+        );
+        const orphanedStreams = allStreamsList.filter(s => !videoIds.has(s.video_id));
 
         if (orphanedStreams && orphanedStreams.length > 0) {
             this.results.issuesFound += orphanedStreams.length;
@@ -549,9 +581,8 @@ class DatabaseSanityChecker {
             query = query.eq('scraper', this.options.scraper);
         }
 
-        const { data: series } = await query;
-
-        if (!series) return;
+        const series = await this.fetchAllRecords('series', query);
+        if (!series || series.length === 0) return;
 
         logger.info(`Checking video_count for ${series.length} series...`);
 
