@@ -140,6 +140,30 @@ module.exports = {
     // Database Update Configuration
     WRITE_TO_GITHUB: true,     // Write JSON files to GitHub after scraping
     UPDATE_DATABASE: true,     // Update database after scraping
+
+    // Incremental Scraping Configuration
+    INCREMENTAL_SCRAPING: {
+        enabled: false,        // Master switch - framework ready but off by default
+        forceRefreshDays: 7,   // Re-scrape series older than X days
+
+        // Per-scraper configuration
+        // Only enabled scrapers will use incremental mode by default
+        // All scrapers support incremental mode via URL parameter: &mode=incremental
+        'KanDigitalScraper': {
+            enabled: true,           // ENABLED - needs it due to HTTP 403 blocking
+            forceRefreshDays: 3      // Refresh more frequently
+        },
+        'KanPodcastsScraper': {
+            enabled: true,           // ENABLED - needs it due to size (266 series, thousands of episodes)
+            forceRefreshDays: 3      // Refresh more frequently
+        },
+        'Kan88Scraper': {
+            enabled: true,           // ENABLED - Cloudflare protection, benefits from reduced requests
+            forceRefreshDays: 3      // Refresh more frequently
+        }
+        // All other scrapers default to enabled: false
+        // Can be overridden via URL parameter: &mode=incremental or &mode=full
+    },
     HEADERS: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

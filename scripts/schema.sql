@@ -111,6 +111,58 @@ CREATE INDEX IF NOT EXISTS idx_sync_logs_scraper ON sync_logs(scraper);
 CREATE INDEX IF NOT EXISTS idx_sync_logs_created ON sync_logs(created_at DESC);
 
 -- ============================================================================
+-- SCRAPE STATE TABLE (for incremental scraping)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS scrape_state (
+    id BIGSERIAL PRIMARY KEY,
+    scraper_name VARCHAR(50) NOT NULL,
+    series_id VARCHAR(255) NOT NULL,
+    series_title VARCHAR(500),
+    episode_count INTEGER DEFAULT 0,
+    last_episode_date TIMESTAMPTZ,
+    last_episode_id VARCHAR(255),
+    last_scraped_at TIMESTAMPTZ DEFAULT NOW(),
+    last_scrape_hash VARCHAR(64),
+    scrape_version INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    skip_reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(scraper_name, series_id)
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_scrape_state_lookup ON scrape_state(scraper_name, is_active);
+CREATE INDEX IF NOT EXISTS idx_scrape_state_last_scraped ON scrape_state(last_scraped_at);
+CREATE INDEX IF NOT EXISTS idx_scrape_state_series ON scrape_state(series_id);
+
+-- Trigger to auto-update updated_at
+CREATE TRIGGER update_scrape_state_updated_at
+    BEFORE UPDATE ON scrape_state
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
+-- GRANT PERMISSIONS FOR DATA API ACCESS
+-- ============================================================================
+-- Required for Supabase Data API access after May 30, 2024
+-- See: https://supabase.com/blog/guides migrating-to-secure-defaults
+
+-- Public read access (for addon queries)
+GRANT SELECT ON TABLE series TO anon, authenticated, service_role;
+GRANT SELECT ON TABLE videos TO anon, authenticated, service_role;
+GRANT SELECT ON TABLE streams TO anon, authenticated, service_role;
+GRANT SELECT ON TABLE sync_logs TO anon, authenticated, service_role;
+GRANT SELECT ON TABLE scrape_state TO anon, authenticated, service_role;
+
+-- Service role write access (for scraper updates)
+GRANT INSERT, UPDATE, DELETE ON TABLE series TO service_role;
+GRANT INSERT, UPDATE, DELETE ON TABLE videos TO service_role;
+GRANT INSERT, UPDATE, DELETE ON TABLE streams TO service_role;
+GRANT INSERT, UPDATE, DELETE ON TABLE sync_logs TO service_role;
+GRANT INSERT, UPDATE, DELETE ON TABLE scrape_state TO service_role;
+
+-- ============================================================================
 -- FUNCTIONS AND TRIGGERS
 -- ============================================================================
 
@@ -158,6 +210,23 @@ USING (true);
 
 -- No insert/update policies (service role only via API)
 -- This prevents unauthorized writes through API
+
+-- Enable RLS for sync_logs and scrape_state
+ALTER TABLE sync_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scrape_state ENABLE ROW LEVEL SECURITY;
+
+-- Policies: service role only (internal scraper use)
+CREATE POLICY "Service role can manage sync_logs"
+ON sync_logs FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "Service role can manage scrape_state"
+ON scrape_state FOR ALL
+TO service_role
+USING (true)
+WITH CHECK (true);
 
 -- ============================================================================
 -- SAMPLE QUERIES FOR TESTING

@@ -222,28 +222,34 @@ async function healthCheck(scraper) {
 
 /**
  * Run a single scraper with metrics collection
+ * @param {Function} scraperClass - Scraper class constructor
+ * @param {string} scraperName - Name of the scraper
+ * @param {string} mode - Scraping mode: 'auto', 'full', 'incremental', 'skip'
  */
-async function runScraperWithMetrics(scraperClass, scraperName) {
+async function runScraperWithMetrics(scraperClass, scraperName, mode = 'auto') {
     const metrics = new ScraperMetrics(scraperName);
     metrics.start();
 
-    const scraper = new scraperClass();
+	const scraper = new scraperClass();
 
-    // Override logger to capture errors
-    const originalError = scraper.logger.error;
-    scraper.logger.error = (...args) => {
-        metrics.recordError(new Error(args.join(' ')));
-        originalError.apply(scraper.logger, args);
-    };
+	// Override logger to capture errors (only for scrapers with instance logger)
+	// MakoScraper uses module-level logger, so we skip it
+	if (scraper.logger && typeof scraper.logger.error === 'function') {
+		const originalError = scraper.logger.error;
+		scraper.logger.error = (...args) => {
+			metrics.recordError(new Error(args.join(' ')));
+			originalError.apply(scraper.logger, args);
+		};
 
-    const originalWarn = scraper.logger.warn;
-    scraper.logger.warn = (...args) => {
-        metrics.recordWarning(args.join(' '));
-        originalWarn.apply(scraper.logger, args);
-    };
+		const originalWarn = scraper.logger.warn;
+		scraper.logger.warn = (...args) => {
+			metrics.recordWarning(args.join(' '));
+			originalWarn.apply(scraper.logger, args);
+		};
+	}
 
     try {
-        await scraper.crawl();
+        await scraper.crawl(true, mode);
 
         // Collect stats from scraper
         if (scraper.deltaTracker) {

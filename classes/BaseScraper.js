@@ -2,10 +2,12 @@ const {
     LOG4JS,
     SCRAPER_CONFIG,
     WRITE_TO_GITHUB,
-    UPDATE_DATABASE
+    UPDATE_DATABASE,
+    INCREMENTAL_SCRAPING
 } = require("./constants.js");
 const { DeltaTracker, updateDatabaseFromJSON } = require("./utilities.js");
 const { CircuitBreaker, RateLimiter } = require("./ScraperHelpers.js");
+const StateManager = require("./StateManager.js");
 const log4js = require("log4js");
 
 // Configure log4js once globally (instead of per scraper)
@@ -48,6 +50,11 @@ class BaseScraper {
         this.isRunning = false;
         this.deltaTracker = new DeltaTracker();
 
+        // Incremental scraping support
+        this.stateManager = null;
+        this.incrementalMode = false;
+        this.scrapeMode = 'auto'; // 'auto', 'full', 'incremental', 'skip'
+
         // Load scraper-specific config or use defaults
         const config = SCRAPER_CONFIG[scraperName + 'Scraper'] || {};
 
@@ -85,11 +92,21 @@ class BaseScraper {
     /**
      * Template method for the main crawl operation
      * Subclasses should override crawlContent() for specific logic
+     * @param {boolean} isDoWriteFile - Whether to write JSON file
+     * @param {string} mode - Scraping mode: 'auto', 'full', 'incremental', 'skip'
      */
-    async crawl(isDoWriteFile = false) {
-        this.logger.info("Started Crawling");
+    async crawl(isDoWriteFile = false, mode = 'auto') {
+        this.scrapeMode = mode;
+        this.incrementalMode = this.determineScrapeMode(mode);
+
+        this.logger.info(`Started Crawling (Mode: ${this.incrementalMode ? 'INCREMENTAL' : 'FULL'})`);
         this.isRunning = true;
         this.deltaTracker.clear();
+
+        // Initialize state manager if incremental mode
+        if (this.incrementalMode) {
+            await this.initializeStateManager();
+        }
 
         try {
             await this.crawlContent();
@@ -335,15 +352,27 @@ class BaseScraper {
 
     /**
      * Update the database with the scraped data
+     * Uses incremental or bulk update based on mode
      */
     async updateDatabase() {
         this.logger.trace("updateDatabase => Entered");
-        this.logger.debug("updateDatabase => Starting bulk database update");
 
         try {
             const dbKey = this.getDatabaseKey();
-            const result = await updateDatabaseFromJSON(dbKey, this._jsonObj, this.logger);
-            this.logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+
+            if (this.incrementalMode && this.deltaTracker) {
+                // Incremental update - only new/changed items
+                this.logger.debug("updateDatabase => Starting incremental database update");
+                const DatabaseUpdater = require('./DatabaseUpdater.js');
+                const dbUpdater = new DatabaseUpdater();
+                const result = await dbUpdater.updateIncrementally(dbKey, this._jsonObj, this.deltaTracker);
+                this.logger.info(`updateDatabase => ✅ Incremental update: ${result.series.inserted} new, ${result.series.updated} updated series in ${result.duration}s`);
+            } else {
+                // Full bulk update
+                this.logger.debug("updateDatabase => Starting bulk database update");
+                const result = await updateDatabaseFromJSON(dbKey, this._jsonObj, this.logger);
+                this.logger.info(`updateDatabase => ✅ Updated ${result.series} series, ${result.videos} videos, ${result.streams} streams in ${result.duration}s`);
+            }
         } catch (error) {
             this.logger.error(`updateDatabase => ❌ Failed to update database: ${error.message}`);
             throw error;
@@ -402,6 +431,109 @@ class BaseScraper {
             this.config.circuitBreakerTimeout || 60000
         );
         this.logger.info("Circuit breaker has been reset");
+    }
+
+    /**
+     * Determine scraping mode based on configuration and override
+     * @param {string} mode - Requested mode: 'auto', 'full', 'incremental', 'skip'
+     * @returns {boolean} - True if incremental mode should be used
+     */
+    determineScrapeMode(mode) {
+        // Explicit overrides take precedence
+        if (mode === 'full') return false;
+        if (mode === 'incremental') return true;
+        if (mode === 'skip') return true; // Skip is a form of incremental
+
+        // Auto mode: check configuration
+        const scraperConfig = INCREMENTAL_SCRAPING[this.scraperName + 'Scraper'];
+        if (scraperConfig && scraperConfig.enabled) {
+            return true;
+        }
+
+        // Master switch (default false)
+        return INCREMENTAL_SCRAPING.enabled === true;
+    }
+
+    /**
+     * Initialize the state manager for incremental scraping
+     */
+    async initializeStateManager() {
+        try {
+            this.stateManager = new StateManager(this.scraperName, this.logger);
+            await this.stateManager.loadState();
+            const stats = this.stateManager.getStats();
+            this.logger.info(`StateManager initialized: ${stats.total} series tracked, ${stats.active} active`);
+        } catch (error) {
+            this.logger.warn(`Failed to initialize StateManager: ${error.message}`);
+            this.logger.warn('Falling back to full scraping mode');
+            this.incrementalMode = false;
+            this.stateManager = null;
+        }
+    }
+
+    /**
+     * Check if a series should be scraped based on incremental mode
+     * Subclasses can call this to decide whether to fetch series data
+     * @param {Object} seriesData - Series data object
+     * @returns {boolean} - True if series should be scraped
+     */
+    shouldScrapeSeries(seriesData) {
+        // Skip mode: don't scrape anything
+        if (this.scrapeMode === 'skip') {
+            this.logger.debug(`Skip mode: skipping ${seriesData.name || seriesData.id}`);
+            return false;
+        }
+
+        // Full mode or no state manager: scrape everything
+        if (!this.incrementalMode || !this.stateManager) {
+            return true;
+        }
+
+        // Incremental mode: check state
+        const decision = this.stateManager.compareAndDecide(
+            seriesData,
+            INCREMENTAL_SCRAPING[this.scraperName + 'Scraper'] || {}
+        );
+
+        if (decision === 'SKIP') {
+            this.logger.debug(`Skipping unchanged series: ${seriesData.name || seriesData.id}`);
+            return false;
+        }
+
+        if (decision === 'NEW') {
+            this.logger.debug(`New series detected: ${seriesData.name || seriesData.id}`);
+        } else {
+            this.logger.debug(`Changed series detected: ${seriesData.name || seriesData.id}`);
+        }
+
+        return true;
+    }
+
+    /**
+     * Update state for a series after scraping
+     * @param {string} seriesId - Series ID
+     * @param {Object} seriesData - Series data
+     * @param {string} decision - Decision result
+     */
+    async updateSeriesState(seriesId, seriesData, decision = 'SCRAPE') {
+        if (this.stateManager && this.incrementalMode) {
+            const skipReason = decision === 'SKIP' ? 'No changes detected' : null;
+            await this.stateManager.updateSeriesState(seriesId, seriesData, decision, skipReason);
+        }
+    }
+
+    /**
+     * Get the state manager (for subclasses that need direct access)
+     */
+    getStateManager() {
+        return this.stateManager;
+    }
+
+    /**
+     * Check if currently running in incremental mode
+     */
+    isIncrementalMode() {
+        return this.incrementalMode;
     }
 }
 

@@ -25,6 +25,60 @@ class KanPodcastsScraper extends BaseScraper {
     }
 
     /**
+     * Quick check for incremental mode - fetches only first page to decide if scraping is needed
+     */
+    async shouldScrapeSeriesQuickCheck(seriesId, title, pageUrl) {
+        const state = this.getStateManager()?.getSeriesState(seriesId);
+        if (!state) {
+            logger.debug(`shouldScrapeSeriesQuickCheck => New series (no state): ${title}`);
+            return true; // New series, always scrape
+        }
+
+        // Check if past force refresh period
+        const config = { forceRefreshDays: 3 }; // KanPodcasts specific
+        const daysSinceScrape = (Date.now() - new Date(state.last_scraped_at).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceScrape > config.forceRefreshDays) {
+            logger.debug(`shouldScrapeSeriesQuickCheck => ${title} past refresh threshold (${daysSinceScrape.toFixed(1)} days), will scrape`);
+            return true;
+        }
+
+        try {
+            // Fetch first page to get latest episode info
+            const firstPageDoc = await fetchData(pageUrl, false);
+            if (!firstPageDoc) {
+                logger.warn(`shouldScrapeSeriesQuickCheck => Could not fetch page for ${title}, will scrape`);
+                return true;
+            }
+
+            // Get first episode (latest)
+            const firstEpisodeElem = firstPageDoc.querySelector("div.card.card-row");
+            if (!firstEpisodeElem) {
+                logger.debug(`shouldScrapeSeriesQuickCheck => No episodes found for ${title}, will scrape`);
+                return true;
+            }
+
+            // Extract episode link for comparison
+            const episodeLinkElem = firstEpisodeElem.querySelector("a.card-body");
+            const episodeLink = episodeLinkElem?.getAttribute("href") || "";
+            const fullEpisodeLink = episodeLink.startsWith("/") ? KAN_BASE_URL + episodeLink : episodeLink;
+
+            // Compare with stored last_episode_id
+            if (state.last_episode_id && state.last_episode_id === fullEpisodeLink) {
+                logger.debug(`shouldScrapeSeriesQuickCheck => Latest episode unchanged for ${title}, skipping`);
+                // Update the skip timestamp in state
+                await this.updateSeriesState(seriesId, { name: title }, 'SKIP', 'Latest episode unchanged');
+                return false;
+            }
+
+            logger.debug(`shouldScrapeSeriesQuickCheck => Latest episode changed for ${title} (was: ${state.last_episode_id}, now: ${fullEpisodeLink})`);
+            return true;
+        } catch (error) {
+            logger.warn(`shouldScrapeSeriesQuickCheck => Error checking ${title}: ${error.message}, will scrape`);
+            return true;
+        }
+    }
+
+    /**
      * Main scraping logic - required by BaseScraper
      */
     async crawlContent() {
@@ -99,6 +153,15 @@ class KanPodcastsScraper extends BaseScraper {
 
         logger.debug(`processOneSeries => Processing: ${title} (OriginalID: ${programId}, StremioID: ${stremioId})`);
 
+        // In incremental mode, do a quick check first
+        if (this.isIncrementalMode()) {
+            const shouldScrape = await this.shouldScrapeSeriesQuickCheck(stremioId, title, pageUrl);
+            if (!shouldScrape) {
+                logger.debug(`processOneSeries => Skipping unchanged series: ${title}`);
+                return null;
+            }
+        }
+
         try {
             const episodes = await this.getEpisodes(programId, pageUrl);
 
@@ -145,6 +208,18 @@ class KanPodcastsScraper extends BaseScraper {
                     subType,
                     type
                 );
+
+                // Update state after successful processing
+                const latestEpisode = episodes[0]; // Sorted newest first
+                const stateData = {
+                    name: title,
+                    description: description,
+                    poster: podcastImageUrl,
+                    videoCount: episodes.length,
+                    latestEpisodeDate: latestEpisode?.released || null,
+                    lastEpisodeId: latestEpisode?.episodeLink || null
+                };
+                await this.updateSeriesState(stremioId, stateData, 'SCRAPE');
 
                 return { stremioId, title, episodeCount: episodes.length };
             } else {
@@ -323,11 +398,26 @@ class KanPodcastsScraper extends BaseScraper {
                 episodeLink = KAN_BASE_URL + episodeLink;
             }
 
-            // Extract title
-            const titleElem = episodeElem.querySelector("h2.card-title");
-            const episodeTitle = titleElem
-                ? titleElem.text.trim().replace(/^פרק \d+:\s*/, '').trim()
-                : "Unknown";
+            // Extract title - titles are in h3 elements
+            const titleElem = episodeElem.querySelector("h3");
+            let episodeTitle = "Unknown";
+            if (titleElem) {
+                try {
+                    // h3 contains title followed by description, extract just the title
+                    const fullText = titleElem.text.trim();
+                    // The title is usually the first line or first few words
+                    // Look for common patterns to extract just the title
+                    const lines = fullText.split('\n').map(l => l.trim()).filter(l => l);
+                    if (lines.length > 0) {
+                        // Take the first line as the title
+                        episodeTitle = lines[0].replace(/^פרק \d+:\s*/, '').trim() || "Unknown";
+                    } else {
+                        episodeTitle = fullText.replace(/^פרק \d+:\s*/, '').trim() || "Unknown";
+                    }
+                } catch {
+                    episodeTitle = "Unknown";
+                }
+            }
 
             // Extract image
             const imgElem = episodeElem.querySelector("img.img-full");
@@ -337,7 +427,14 @@ class KanPodcastsScraper extends BaseScraper {
 
             // Extract description
             const descElem = episodeElem.querySelector("div.description");
-            const episodeDescription = descElem ? descElem.text.trim() : "";
+            let episodeDescription = "";
+            if (descElem) {
+                try {
+                    episodeDescription = descElem.text.trim();
+                } catch {
+                    episodeDescription = "";
+                }
+            }
 
             // Extract release date
             let released = "";

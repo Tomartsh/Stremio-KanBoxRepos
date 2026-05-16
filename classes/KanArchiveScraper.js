@@ -248,10 +248,32 @@ class KanArchiveScraper extends BaseScraper {
         }
 
         let title = "";
-        if (seasonEpisodesElem.querySelector("div.card-title")) {
-            title = seasonEpisodesElem.querySelector("div.card-title").text.trim();
-        } else {
-            title = seasonEpisodesElem.getAttribute("title");
+        // Try multiple selectors for title (HTML structure may vary)
+        const titleSelectors = [
+            "h2.card-title",           // h2 with card-title class
+            "h3.card-title",           // h3 with card-title class
+            "div.card-title",          // div with card-title class
+            "h2",                      // Any h2 element
+            "h3",                      // Any h3 element
+            ".card-title"              // Any element with card-title class
+        ];
+
+        for (const selector of titleSelectors) {
+            const titleElem = seasonEpisodesElem.querySelector(selector);
+            if (titleElem) {
+                title = titleElem.text.trim();
+                if (title) break; // Found a title, stop looking
+            }
+        }
+
+        // Final fallback: use title attribute
+        if (!title) {
+            title = seasonEpisodesElem.getAttribute("title") || "";
+        }
+
+        // If still no title, generate a default one
+        if (!title) {
+            title = `Episode ${episodeNo}`;
         }
 
         let description = "";

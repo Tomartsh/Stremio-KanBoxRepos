@@ -2,6 +2,7 @@ require('dotenv').config({ path: './classes/.env' });
 const { createClient } = require('@supabase/supabase-js');
 const log4js = require('log4js');
 const { LOG4JS } = require('./constants');
+const DeltaUpdater = require('./DeltaUpdater.js');
 
 log4js.configure({
     appenders: {
@@ -175,6 +176,32 @@ class DatabaseUpdater {
 
         } catch (error) {
             logger.error(`❌ DatabaseUpdater => Error: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Incremental update - only update changed/new items
+     * Use this for incremental scraping mode
+     * @param {string} scraper - Scraper name
+     * @param {object} jsonData - Scraped data
+     * @param {object} deltaTracker - DeltaTracker with changes
+     * @returns {Promise<object>} Update summary
+     */
+    async updateIncrementally(scraper, jsonData, deltaTracker) {
+        logger.info(`DatabaseUpdater => Starting incremental update for ${scraper}...`);
+
+        try {
+            const deltaUpdater = new DeltaUpdater(logger);
+            const result = await deltaUpdater.updateIncrementally(scraper, jsonData, deltaTracker);
+
+            return {
+                success: true,
+                ...result
+            };
+
+        } catch (error) {
+            logger.error(`❌ DatabaseUpdater => Incremental update error: ${error.message}`);
             throw error;
         }
     }

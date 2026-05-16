@@ -3,7 +3,8 @@ const {fetchData, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = re
 const {
     LOG4JS,
     KAN88_POCASTS_URL,
-    SCRAPER_CONFIG
+    SCRAPER_CONFIG,
+    KAN_BASE_URL
 } = require("./constants.js");
 const BaseScraper = require("./BaseScraper.js");
 const SUB_PREFIX = "kan88";
@@ -103,12 +104,86 @@ class Kan88Scraper extends BaseScraper {
             seriesDescription = podcastKan88SeriesElement.querySelector("div.description").text.trim(); //Kan 88 Podcast episodes
         }
 
+        // Incremental scraping: check if we should scrape this series
+        if (this.isIncrementalMode()) {
+            const shouldScrape = await this.shouldScrapeSeriesQuickCheck(id, seriesTitle, podcastLink);
+            if (!shouldScrape) {
+                logger.debug(`processOnePodcast => Skipping unchanged series: ${seriesTitle}`);
+                return null;
+            }
+        }
+
         // Use base class method to add to JSON
         this.addToJsonObject(id,seriesTitle,podcastLink,podcastImageUrl,seriesDescription,genres,[],SUB_PREFIX,"Podcasts");
-        await this.getpodcastEpisodeVideos(podcastLink, id);
+        const episodeCount = await this.getpodcastEpisodeVideos(podcastLink, id);
+
+        // Update state after successful processing
+        if (this.isIncrementalMode() && episodeCount > 0) {
+            const stateData = {
+                name: seriesTitle,
+                description: seriesDescription,
+                poster: podcastImageUrl,
+                videoCount: episodeCount
+            };
+            await this.updateSeriesState(id, stateData, 'SCRAPE');
+        }
 
         logger.debug("processOnePodcast => Added Kan 88 podcast " + seriesTitle);
-        return { id, seriesTitle };
+        return { id, seriesTitle, episodeCount };
+    }
+
+    /**
+     * Quick check for incremental mode - fetches only first page to decide if scraping is needed
+     */
+    async shouldScrapeSeriesQuickCheck(seriesId, title, pageUrl) {
+        const state = this.getStateManager()?.getSeriesState(seriesId);
+        if (!state) {
+            logger.debug(`shouldScrapeSeriesQuickCheck => New series (no state): ${title}`);
+            return true; // New series, always scrape
+        }
+
+        // Check if past force refresh period
+        const config = { forceRefreshDays: 3 }; // Kan88 specific
+        const daysSinceScrape = (Date.now() - new Date(state.last_scraped_at).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSinceScrape > config.forceRefreshDays) {
+            logger.debug(`shouldScrapeSeriesQuickCheck => ${title} past refresh threshold (${daysSinceScrape.toFixed(1)} days), will scrape`);
+            return true;
+        }
+
+        try {
+            // Fetch first page to get latest episode info
+            const firstPageDoc = await fetchData(pageUrl, false);
+            if (!firstPageDoc) {
+                logger.warn(`shouldScrapeSeriesQuickCheck => Could not fetch page for ${title}, will scrape`);
+                return true;
+            }
+
+            // Get first episode (latest)
+            const firstEpisodeElem = firstPageDoc.querySelector("div.card.card-row");
+            if (!firstEpisodeElem) {
+                logger.debug(`shouldScrapeSeriesQuickCheck => No episodes found for ${title}, will scrape`);
+                return true;
+            }
+
+            // Extract episode link for comparison
+            const episodeLinkElem = firstEpisodeElem.querySelector("a.card-body");
+            const episodeLink = episodeLinkElem?.getAttribute("href") || "";
+            const fullEpisodeLink = episodeLink.startsWith("/") ? KAN_BASE_URL + episodeLink : episodeLink;
+
+            // Compare with stored last_episode_id
+            if (state.last_episode_id && state.last_episode_id === fullEpisodeLink) {
+                logger.debug(`shouldScrapeSeriesQuickCheck => Latest episode unchanged for ${title}, skipping`);
+                // Update the skip timestamp in state
+                await this.updateSeriesState(seriesId, { name: title }, 'SKIP', 'Latest episode unchanged');
+                return false;
+            }
+
+            logger.debug(`shouldScrapeSeriesQuickCheck => Latest episode changed for ${title} (was: ${state.last_episode_id}, now: ${fullEpisodeLink})`);
+            return true;
+        } catch (error) {
+            logger.warn(`shouldScrapeSeriesQuickCheck => Error checking ${title}: ${error.message}, will scrape`);
+            return true;
+        }
     }
 
     getPodcastTitle(podcastElement, seriesTempTitle){
@@ -252,7 +327,7 @@ class Kan88Scraper extends BaseScraper {
         );
 
         logger.trace("getpodcastEpisodeVideos => Exiting");
-        return podcastEpisodesVideos;
+        return podcastEpisodes.length; // Return episode count for state tracking
     }
 
     /**
