@@ -657,25 +657,49 @@ getStream (scripts, id, url){
             episodePageLink = KAN_DIGITAL_IMAGE_PREFIX + episodePageLink;
         }
         var title = "";
-        if (seasonEpisodesElem.querySelector("div.card-title")) {
-            title = seasonEpisodesElem.querySelector("div.card-title").text.trim();
+        const cardTitle = seasonEpisodesElem.querySelector("div.card-title");
+        if (cardTitle) {
+            title = cardTitle.text.trim();
         } else {
-            title = seasonEpisodesElem.getAttribute("title");
+            title = seasonEpisodesElem.getAttribute("title") || "";
         }
         var description = "";
-        if (seasonEpisodesElem.querySelector("div.card-text") != undefined) {
-            description = seasonEpisodesElem.querySelector("div.card-text").text.trim();
+        const cardText = seasonEpisodesElem.querySelector("div.card-text");
+        if (cardText) {
+            description = cardText.text.trim();
         }
         var  videoId = id + ":" + seasonNo + ":" + episodeNo;
 
         var episodeLogoUrl = "";
         let released = "";
 
-        // Extract thumbnail and release date from individual episode page
-        // The series page card may not have the correct episode-specific thumbnail
+        // Extract thumbnail, release date, and title from individual episode page
+        // The series page card may not have the correct episode-specific thumbnail or title
         try {
             const episodeDoc = await fetchData(episodePageLink);
             if (episodeDoc) {
+                // Try to get title from page if not found on season page
+                if (!title) {
+                    // Try meta tags first
+                    const ogTitle = episodeDoc.querySelector('meta[property="og:title"]');
+                    const twitterTitle = episodeDoc.querySelector('meta[name="twitter:title"]');
+                    if (ogTitle) {
+                        title = ogTitle.getAttribute('content');
+                    } else if (twitterTitle) {
+                        title = twitterTitle.getAttribute('content');
+                    } else {
+                        // Try h1 or h2 elements
+                        const h1 = episodeDoc.querySelector('h1');
+                        const h2 = episodeDoc.querySelector('h2');
+                        if (h1) {
+                            title = h1.text.trim();
+                        } else if (h2) {
+                            title = h2.text.trim();
+                        }
+                    }
+                    logger.debug(`processOneDigitalEpisode => Extracted title from episode page: "${title}"`);
+                }
+
                 // Try to get thumbnail from Open Graph or Twitter Card meta tags
                 const ogImage = episodeDoc.querySelector('meta[property="og:image"]');
                 const twitterImage = episodeDoc.querySelector('meta[name="twitter:image"]');
@@ -698,7 +722,7 @@ getStream (scripts, id, url){
                 const dateElement = episodeDoc.querySelector("li.date-local");
                 released = extractReleaseDate(dateElement);
                 if (released) {
-                    logger.debug(`processOneDigitalEpisode => Extracted release date: ${released} for ${title}`);
+                    logger.debug(`processOneDigitalEpisode => Extracted release date: ${released} for "${title}"`);
                 }
 
                 logger.trace(`processOneDigitalEpisode => Extracted thumbnail: ${episodeLogoUrl} for ${title}`);

@@ -66,8 +66,7 @@ class DatabaseUpdater {
                 };
                 seriesToInsert.push(seriesData);
 
-                // Extract videos
-                const videos = series.meta?.videos || [];
+                // Extract videos (reusing variable from line 48)
                 for (const video of videos) {
                     videosToInsert.push({
                         id: video.id,
