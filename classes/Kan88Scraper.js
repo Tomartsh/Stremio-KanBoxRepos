@@ -238,7 +238,7 @@ class Kan88Scraper extends BaseScraper {
 
                         // ON-DEMAND RESOLUTION: Don't fetch episode page to avoid 403s
                         // Store episodeLink for addon to resolve stream on-demand
-                        var episodeTitle = episodeChecked.querySelector("h2.card-title")?.textContent?.trim() || "Unknown Episode";
+                        var episodeTitle = episodeChecked.querySelector("h2.card-title, h3.card-title, h2.title, h3.title, div.card-title")?.textContent?.trim() || "Unknown Episode";
                         var episodeImgElem = episodeChecked.querySelector("img.img-full");
                         var episodeImgUrl = episodeImgElem ? utils.getImageFromUrl(episodeImgElem.getAttribute("src"), "p") : "";
                         var episodeDescElem = episodeChecked.querySelector("div.description");
@@ -277,7 +277,7 @@ class Kan88Scraper extends BaseScraper {
                     var episodeLink = hrefObj.getAttribute("href");
 
                     // ON-DEMAND RESOLUTION: Don't fetch episode page to avoid 403s
-                    var episodeTitle = additionalPodcast.querySelector("h2.card-title")?.textContent?.trim() || "Unknown Episode";
+                    var episodeTitle = additionalPodcast.querySelector("h2.card-title, h3.card-title, h2.title, h3.title, div.card-title")?.textContent?.trim() || "Unknown Episode";
                     var episodeImgElem = additionalPodcast.querySelector("img.img-full");
                     var episodeImgUrl = episodeImgElem ? utils.getImageFromUrl(episodeImgElem.getAttribute("src"), "p") : "";
                     var episodeDescElem = additionalPodcast.querySelector("div.description");
@@ -374,7 +374,8 @@ class Kan88Scraper extends BaseScraper {
             }
         }
 
-        var episodeTitle = episodeElement.querySelector("h2.card-title").text.trim();
+        var titleElem = episodeElement.querySelector("h2.card-title, h3.card-title, h2.title, h3.title, div.card-title");
+        var episodeTitle = titleElem ? titleElem.text.trim() : "Unknown Episode";
         episodeTitle = episodeTitle.replace(/^פרק \d+:/, '').trim();
 
         var episodeImgUrl = "";

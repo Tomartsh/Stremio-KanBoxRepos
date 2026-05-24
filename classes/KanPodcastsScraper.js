@@ -291,6 +291,8 @@ class KanPodcastsScraper extends BaseScraper {
 
     /**
      * getEpisodes: Scrape HTML page with pagination support
+     * NOTE: Kan website uses JavaScript for pagination, so raw HTTP requests
+     * may return duplicate content. We detect and handle this by tracking unique episodes.
      */
     async getEpisodes(programId, pageUrl = null) {
         logger.trace(`getEpisodes => Entering (programId=${programId}, pageUrl=${pageUrl})`);
@@ -304,6 +306,7 @@ class KanPodcastsScraper extends BaseScraper {
 
         try {
             const allEpisodes = [];
+            const seenEpisodeLinks = new Set(); // Track unique episodes to detect duplicates
 
             // STEP 1: Fetch first page and detect total pages
             const firstPageDoc = await fetchData(pageUrl, false);
@@ -318,9 +321,13 @@ class KanPodcastsScraper extends BaseScraper {
 
             logger.debug(`getEpisodes => Detected ${totalPages} pages for podcast`);
 
+            // Safety limit: Kan podcasts rarely have more than 50 actual pages of unique content
+            // If pagination claims more, it's likely a JS-rendered pagination bug
+            const maxPages = Math.min(totalPages, 100);
+
             // STEP 2: Parse all pages
-            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-                logger.debug(`getEpisodes => Parsing page ${pageNum}/${totalPages}`);
+            for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+                logger.debug(`getEpisodes => Parsing page ${pageNum}/${maxPages}`);
 
                 let pageDoc = firstPageDoc;
 
@@ -340,20 +347,48 @@ class KanPodcastsScraper extends BaseScraper {
                 const episodeElements = pageDoc.querySelectorAll("div.card.card-row");
                 logger.debug(`getEpisodes => Found ${episodeElements.length} episodes on page ${pageNum}`);
 
+                let newEpisodesOnPage = 0;
+                let duplicateEpisodesOnPage = 0;
+
                 for (const episodeElem of episodeElements) {
                     try {
                         const episode = await this.parseEpisodeElement(episodeElem, programId);
                         if (episode) {
+                            // Check if this episode is already in our list (by episodeLink)
+                            if (seenEpisodeLinks.has(episode.episodeLink)) {
+                                duplicateEpisodesOnPage++;
+                                logger.trace(`getEpisodes => Skipping duplicate episode: ${episode.title}`);
+                                continue;
+                            }
+
+                            seenEpisodeLinks.add(episode.episodeLink);
                             allEpisodes.push(episode);
-                            logger.info(`Added: ${episode.title}`);
+                            newEpisodesOnPage++;
+                            logger.trace(`Added: ${episode.title}`);
                         }
                     } catch (error) {
                         logger.warn(`getEpisodes => Error parsing episode element:`, error.message);
                     }
                 }
+
+                logger.debug(`getEpisodes => Page ${pageNum}: ${newEpisodesOnPage} new, ${duplicateEpisodesOnPage} duplicates`);
+
+                // If this page has NO new episodes (all duplicates), pagination is broken
+                // or we've reached the end. Stop pagination.
+                if (pageNum > 1 && newEpisodesOnPage === 0 && duplicateEpisodesOnPage > 0) {
+                    logger.warn(`getEpisodes => Page ${pageNum} has no new episodes (all duplicates). Stopping pagination early.`);
+                    break;
+                }
+
+                // If we've seen more than 100 consecutive pages with NO new episodes, something is wrong
+                // This handles cases where the pagination element claims many pages but content repeats
+                if (pageNum > 10 && newEpisodesOnPage === 0) {
+                    logger.warn(`getEpisodes => No new episodes for multiple pages. Stopping pagination.`);
+                    break;
+                }
             }
 
-            logger.info(`getEpisodes => Successfully parsed ${allEpisodes.length} total episodes`);
+            logger.info(`getEpisodes => Successfully parsed ${allEpisodes.length} unique episodes`);
 
             // Sort episodes by release date (newest first)
             allEpisodes.sort((a, b) => {

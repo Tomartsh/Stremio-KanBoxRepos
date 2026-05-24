@@ -1,4 +1,4 @@
-require('dotenv').config({ path: './classes/.env' });
+require('dotenv').config({ path: __dirname + '/.env' });
 const { createClient } = require('@supabase/supabase-js');
 const log4js = require('log4js');
 const { LOG4JS } = require('./constants');
@@ -77,7 +77,7 @@ class DatabaseUpdater {
                         description: video.description,
                         thumbnail: video.thumbnail,
                         episode_link: video.episodeLink,
-                        released: video.released,
+                        released: video.released || null, // Convert empty string to null
                         tmdb_episode_id: video.tmdbEpisodeId
                     });
 
@@ -136,7 +136,11 @@ class DatabaseUpdater {
             const SERIES_BATCH_SIZE = 100;
             for (let i = 0; i < seriesToInsert.length; i += SERIES_BATCH_SIZE) {
                 const batch = seriesToInsert.slice(i, i + SERIES_BATCH_SIZE);
-                await this.supabase.from('series').insert(batch);
+                const { error } = await this.supabase.from('series').insert(batch);
+                if (error) {
+                    logger.error(`DatabaseUpdater => Error inserting series batch ${i}-${i + batch.length}: ${error.message}`);
+                    throw error;
+                }
                 if ((i / SERIES_BATCH_SIZE) % 10 === 0) {
                     logger.debug(`DatabaseUpdater => Series: ${i + batch.length}/${seriesToInsert.length}`);
                 }
@@ -145,9 +149,16 @@ class DatabaseUpdater {
             // Insert videos in batches
             logger.info(`DatabaseUpdater => Inserting ${videosToInsert.length} videos...`);
             const VIDEO_BATCH_SIZE = 100;
+            let videosInserted = 0;
             for (let i = 0; i < videosToInsert.length; i += VIDEO_BATCH_SIZE) {
                 const batch = videosToInsert.slice(i, i + VIDEO_BATCH_SIZE);
-                await this.supabase.from('videos').insert(batch);
+                const { error } = await this.supabase.from('videos').insert(batch);
+                if (error) {
+                    logger.error(`DatabaseUpdater => Error inserting videos batch ${i}-${i + batch.length}: ${error.message}`);
+                    logger.error(`DatabaseUpdater => First video in batch:`, JSON.stringify(batch[0]));
+                    throw error;
+                }
+                videosInserted += batch.length;
                 if ((i / VIDEO_BATCH_SIZE) % 100 === 0) {
                     logger.debug(`DatabaseUpdater => Videos: ${i + batch.length}/${videosToInsert.length}`);
                 }
@@ -167,7 +178,7 @@ class DatabaseUpdater {
             const duration = ((Date.now() - startTime) / 1000).toFixed(1);
             logger.info(`✅ DatabaseUpdater => Import complete in ${duration}s!`);
             logger.info(`   Series: ${seriesToInsert.length}`);
-            logger.info(`   Videos: ${videosToInsert.length}`);
+            logger.info(`   Videos: ${videosInserted} (prepared: ${videosToInsert.length})`);
             logger.info(`   Streams: ${streamsToInsert.length}`);
 
             return {

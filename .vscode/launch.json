@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Scraper Run",
             "program": "${workspaceFolder}/main.js",
-            "envFile": "${workspaceFolder}/config/.env",
+            "envFile": "${workspaceFolder}/classes/.env",
             "skipFiles": ["<node_internals>/**"],
             "outputCapture": "std"
         },
@@ -22,7 +22,7 @@
                 "<node_internals>/**"
             ],
             "program": "${workspaceFolder}/main.js",
-            "envFile": "${workspaceFolder}/config/.env",
+            "envFile": "${workspaceFolder}/classes/.env",
             "runtimeExecutable": "node"
         },
         {

@@ -25,6 +25,9 @@ stremio-mako.zip
 logs
 logs/stremio*.*
 
+#ignore local database
+classes/database.db
+
 #ignore backup folder
 backups
 backups/*.*

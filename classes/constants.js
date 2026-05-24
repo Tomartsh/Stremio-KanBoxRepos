@@ -16,9 +16,9 @@ module.exports = {
             jitter: [10, 100]   // ← 10-100ms jitter for Mako
         },
         'kan.org.il': {
-            minInterval: 200,        // 200ms minimum between requests (reduced)
-            maxPerMinute: 120,       // Max 120 requests per minute (much more reasonable)
-            jitter: [100, 500]       // Random 100-500ms jitter to appear human
+            minInterval: 2000,       // 2 seconds minimum between requests (very airy)
+            maxPerMinute: 25,        // Max 25 requests per minute (extremely conservative)
+            jitter: [1000, 4000]     // Random 1-4 second jitter to appear human
         },
         '13tv.co.il': {
             minInterval: 0,
@@ -76,10 +76,11 @@ module.exports = {
 
         'KanPodcastsScraper': {
             parallelFetching: false,       // Sequential - Cloudflare protected
-            batchSize: 10,                 // Medium batch size
-            delayBetweenBatches: 1000,     // 1s delay between requests
-            requestsPerSecond: 2,          // Conservative rate limit
-            circuitBreakerThreshold: 5
+            batchSize: 1,                  // Process one series at a time (extremely airy)
+            delayBetweenBatches: 5000,     // 5s delay between series
+            requestsPerSecond: 0.3,        // 1 request every 3+ seconds
+            circuitBreakerThreshold: 2,    // Very quick pause on failures
+            circuitBreakerTimeout: 300000  // 5 minute pause after failures
         },
 
         'Kan88Scraper': {
@@ -143,7 +144,7 @@ module.exports = {
 
     // Incremental Scraping Configuration
     INCREMENTAL_SCRAPING: {
-        enabled: false,        // Master switch - framework ready but off by default
+        enabled: true,         // Master switch - ENABLED to reduce 403s
         forceRefreshDays: 7,   // Re-scrape series older than X days
 
         // Per-scraper configuration

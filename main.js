@@ -29,6 +29,48 @@
  *   Response: Immediate confirmation, scraper runs in background.
  *   Check logs for progress: logs/Stremio-Repos.log
  *
+ * GET /sanityCheck
+ *   Run database sanity checks.
+ *
+ *   Parameters:
+ *     mode (optional):    report (default), fix
+ *     scraper (optional): Check only specific scraper (e.g., kanDigital)
+ *     table (optional):   Check only specific table (series, videos, streams)
+ *     quick (optional):   true=skip URL validations, false=full check
+ *
+ *   Examples:
+ *     /sanityCheck
+ *     /sanityCheck?mode=fix
+ *     /sanityCheck?scraper=kanDigital
+ *     /sanityCheck?mode=report&scraper=kanDigital&quick=true
+ *
+ *   Response: Immediate confirmation, check runs in background.
+ *
+ * GET /admin/stats
+ *   Get database statistics by scraper type.
+ *
+ *   Examples:
+ *     /admin/stats
+ *
+ * GET /admin/wipe/<scraper>
+ *   Delete all data for a specific scraper from database.
+ *   WARNING: This is destructive! Use with caution.
+ *
+ *   Parameters:
+ *     scraper (required): kanDigital, kanArchive, kanKids, kanTeens, kanPodcasts,
+ *                         kan88, mako, reshet, livetv
+ *
+ *   Examples:
+ *     /admin/wipe/kanPodcasts
+ *     /admin/wipe/mako
+ *
+ * GET /admin/diagnose/<scraper>
+ *   Diagnose data for a specific scraper - check episodeLink and streams.
+ *
+ *   Examples:
+ *     /admin/diagnose/kanPodcasts
+ *     /admin/diagnose/kanDigital
+ *
  * GET /healthcheck
  *   Server health check.
  *
@@ -185,6 +227,260 @@ app.get('/sanityCheck', async (req, res) => {
             logger.error(`❌ Error in sanity check:`, err);
         }
     })();
+});
+
+/**
+ * GET /admin/stats
+ *   Get database statistics by scraper type.
+ *
+ *   Examples:
+ *     /admin/stats
+ */
+app.get('/admin/stats', async (req, res) => {
+    try {
+        const DatabaseUpdater = require('./classes/DatabaseUpdater.js');
+        const dbUpdater = new DatabaseUpdater();
+
+        const { data, error } = await dbUpdater.supabase
+            .from('series')
+            .select('scraper');
+
+        const stats = {
+            timestamp: new Date().toISOString(),
+            byScraper: {}
+        };
+
+        if (!error && data) {
+            data.forEach(s => {
+                stats.byScraper[s.scraper] = (stats.byScraper[s.scraper] || 0) + 1;
+            });
+        }
+
+        stats.totalSeries = data?.length || 0;
+        res.json(stats);
+
+    } catch (error) {
+        logger.error(`[ADMIN] Stats error: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * GET /admin/wipe/:scraper
+ *   Delete all data for a specific scraper from database.
+ *   WARNING: This is destructive! Use with caution.
+ *
+ *   Examples:
+ *     /admin/wipe/kanPodcasts
+ *     /admin/wipe/mako
+ */
+app.get('/admin/wipe/:scraper', async (req, res) => {
+    const scraper = req.params.scraper;
+
+    // Validate scraper name
+    const validScrapers = ["kanDigital", "kanArchive", "kanKids", "kanTeens", "kanPodcasts", "kan88", "mako", "reshet", "livetv"];
+    const scraperMap = {
+        "kanDigital": "kandigital",
+        "kanArchive": "kanarchive",
+        "kanKids": "kankids",
+        "kanTeens": "kanteens",
+        "kanPodcasts": "kanpodcasts",
+        "kan88": "kan88",
+        "mako": "mako",
+        "reshet": "reshet",
+        "livetv": "livetv"
+    };
+
+    if (!validScrapers.includes(scraper)) {
+        return res.status(400).json({ error: `Invalid scraper: ${scraper}. Valid options: ${validScrapers.join(', ')}` });
+    }
+
+    const dbKey = scraperMap[scraper];
+
+    logger.warn(`[ADMIN] Wipe requested for: ${dbKey}`);
+
+    try {
+        const DatabaseUpdater = require('./classes/DatabaseUpdater.js');
+        const dbUpdater = new DatabaseUpdater();
+
+        // Get existing series count
+        const { data: existingSeries } = await dbUpdater.supabase
+            .from('series')
+            .select('id')
+            .eq('scraper', dbKey);
+
+        const seriesCount = existingSeries?.length || 0;
+
+        if (seriesCount === 0) {
+            return res.json({
+                message: `No data found for ${scraper}`,
+                deleted: { series: 0, videos: 0, streams: 0 }
+            });
+        }
+
+        const seriesIds = existingSeries.map(s => s.id);
+
+        // Get all video IDs
+        const { data: allVideos } = await dbUpdater.supabase
+            .from('videos')
+            .select('id')
+            .in('series_id', seriesIds);
+
+        const videoCount = allVideos?.length || 0;
+
+        // Delete streams
+        if (allVideos && allVideos.length > 0) {
+            const videoIds = allVideos.map(v => v.id);
+            await dbUpdater.supabase.from('streams').delete().in('video_id', videoIds);
+        }
+
+        // Delete videos
+        await dbUpdater.supabase.from('videos').delete().in('series_id', seriesIds);
+
+        // Delete series
+        await dbUpdater.supabase.from('series').delete().eq('scraper', dbKey);
+
+        const result = {
+            message: `Successfully deleted ${seriesCount} series, ${videoCount} videos for ${scraper}`,
+            deleted: { series: seriesCount, videos: videoCount, streams: videoCount }
+        };
+
+        logger.warn(`[ADMIN] ${result.message}`);
+        res.json(result);
+
+    } catch (error) {
+        logger.error(`[ADMIN] Wipe error: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * GET /admin/diagnose/:scraper
+ *   Diagnose data for a specific scraper - check episodeLink and streams.
+ *
+ *   Examples:
+ *     /admin/diagnose/kanPodcasts
+ *     /admin/diagnose/kanDigital
+ */
+app.get('/admin/diagnose/:scraper', async (req, res) => {
+    const scraper = req.params.scraper;
+
+    // Validate scraper name
+    const validScrapers = ["kanDigital", "kanArchive", "kanKids", "kanTeens", "kanPodcasts", "kan88", "mako", "reshet", "livetv"];
+    const scraperMap = {
+        "kanDigital": "kandigital",
+        "kanArchive": "kanarchive",
+        "kanKids": "kankids",
+        "kanTeens": "kanteens",
+        "kanPodcasts": "kanpodcasts",
+        "kan88": "kan88",
+        "mako": "mako",
+        "reshet": "reshet",
+        "livetv": "livetv"
+    };
+
+    if (!validScrapers.includes(scraper)) {
+        return res.status(400).json({ error: `Invalid scraper: ${scraper}. Valid options: ${validScrapers.join(', ')}` });
+    }
+
+    const dbKey = scraperMap[scraper];
+
+    logger.info(`[ADMIN] Diagnostics requested for: ${dbKey}`);
+
+    try {
+        const DatabaseUpdater = require('./classes/DatabaseUpdater.js');
+        const dbUpdater = new DatabaseUpdater();
+
+        const diagnostics = {
+            timestamp: new Date().toISOString(),
+            scraper: scraper,
+            dbKey: dbKey,
+            series: [],
+            summary: {
+                totalSeries: 0,
+                totalVideos: 0,
+                videosWithEpisodeLink: 0,
+                videosWithStreams: 0,
+                videosWithoutEpisodeLink: 0
+            },
+            errors: []
+        };
+
+        // Get series from database
+        const { data: seriesList, error: seriesError } = await dbUpdater.supabase
+            .from('series')
+            .select('id, name, scraper')
+            .eq('scraper', dbKey)
+            .limit(10); // Sample first 10
+
+        if (seriesError) {
+            diagnostics.errors.push(`Series query error: ${seriesError.message}`);
+            return res.status(500).json(diagnostics);
+        }
+
+        diagnostics.summary.totalSeries = seriesList?.length || 0;
+
+        // For each series, check videos
+        for (const series of seriesList || []) {
+            const seriesInfo = {
+                id: series.id,
+                name: series.name,
+                videoCount: 0,
+                videosWithEpisodeLink: 0,
+                videosWithStreams: 0,
+                sampleVideos: []
+            };
+
+            // Get videos for this series
+            const { data: videos, error: videosError } = await dbUpdater.supabase
+                .from('videos')
+                .select('id, title, episode_link, released')
+                .eq('series_id', series.id)
+                .limit(5); // Sample first 5
+
+            if (!videosError && videos) {
+                seriesInfo.videoCount = videos.length;
+                diagnostics.summary.totalVideos += videos.length;
+
+                for (const video of videos) {
+                    const hasEpisodeLink = !!video.episode_link;
+                    if (hasEpisodeLink) seriesInfo.videosWithEpisodeLink++;
+                    diagnostics.summary.videosWithEpisodeLink += hasEpisodeLink ? 1 : 0;
+                    diagnostics.summary.videosWithoutEpisodeLink += hasEpisodeLink ? 0 : 1;
+
+                    // Check streams for this video
+                    const { data: streams, error: streamsError } = await dbUpdater.supabase
+                        .from('streams')
+                        .select('url')
+                        .eq('video_id', video.id)
+                        .limit(1);
+
+                    const hasStreams = !streamsError && streams && streams.length > 0;
+                    if (hasStreams) {
+                        seriesInfo.videosWithStreams++;
+                        diagnostics.summary.videosWithStreams++;
+                    }
+
+                    seriesInfo.sampleVideos.push({
+                        id: video.id,
+                        title: video.title,
+                        hasEpisodeLink,
+                        hasStreams,
+                        released: video.released
+                    });
+                }
+            }
+
+            diagnostics.series.push(seriesInfo);
+        }
+
+        logger.info(`[ADMIN] Diagnostics complete: ${diagnostics.summary.totalSeries} series, ${diagnostics.summary.totalVideos} videos`);
+        res.json(diagnostics);
+
+    } catch (error) {
+        logger.error(`[ADMIN] Diagnostics error: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Health check
