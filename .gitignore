@@ -32,10 +32,13 @@ classes/database.db
 backups
 backups/*.*
 
-#ignore test scripts folder
-scripts/
+#ignore test scripts folder (removed - now tracking scripts)
 
 #ignore claude code settings
 .claude/
 
 build/
+
+# Syncthing folder and files
+.stfolder/
+.stignore

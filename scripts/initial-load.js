@@ -115,7 +115,8 @@ async function loadJSONFile(filename, scraperName) {
 
     try {
         const jsonData = JSON.parse(fs.readFileSync(filepath, 'utf8'));
-        const seriesData = Object.values(jsonData);
+        // Handle JSON structure with {timestamp, data} wrapper
+        const seriesData = Object.values(jsonData.data || jsonData);
 
         console.log(`   Found ${seriesData.length} series`);
 
