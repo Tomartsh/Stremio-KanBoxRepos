@@ -1123,19 +1123,21 @@ function getNameFromSeriesPage(name){
             name = name.replace("Poster 239 360","");
         }
         if (name.includes("Image Small 239X360")){
-            name = name.replace("Image Small 239X360","");
+            name = name.replaceAll("Image Small 239X360","");
         }
         if (name.includes("פוסטר קטן")){
-            name = name.replace("פוסטר קטן","");
+            name = name.replaceAll("פוסטר קטן","");
         }
         if (name.includes("Poster")){
-            name = name.replace("Poster","");
-        }
-        if (name.includes("Title Logo")){
-            name = name.replace("Title Logo","");
+            name = name.replaceAll("Poster","");
         }
         if (name.includes("1920X1080")){
-            name = name.replace("1920X1080","");
+            name = name.replaceAll("1920X1080","");
+        }
+        // Remove trailing parenthesized numbers like (1), (2) left after image artifact cleanup
+        name = name.replace(/\s*\(\d+\)\s*$/, '').trim();
+        if (name.includes("Title Logo")){
+            name = name.replaceAll("Title Logo","");
         }
         if (name.startsWith("לוגו")){
             name = name.replace("לוגו","");

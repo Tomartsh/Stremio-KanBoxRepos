@@ -251,7 +251,7 @@ class KanDigitalScraper extends BaseScraper {
      * Process a single digital series (extracted from crawlVod for batch processing)
      */
     async processOneDigitalSeries(item) {
-        let title = item.ImageAlt; // Usually the show name
+        let title = getNameFromSeriesPage(item.ImageAlt || ''); // Clean image artifacts from name
         let pageUrl = item.Url; //URL of the series episodes
         const description = item.Description;
 
