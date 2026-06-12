@@ -186,39 +186,35 @@ class KanDigitalScraper extends BaseScraper {
             let duplicateCount = 0;
 
             for (const category of categoriesToScrape) {
-                logger.info(`crawlKanBox => Processing category: ${category.name} (${category.seriesLinks.length} series)`);
+                logger.info(`crawlKanBox => Processing category: ${category.name} (${category.seriesData.length} series)`);
 
-                // Process each series link found in this category
-                for (const seriesUrl of category.seriesLinks) {
-                    if (!seriesUrl) continue;
+                // Process each series found in this category (with image data from lobby)
+                for (const seriesData of category.seriesData) {
+                    if (!seriesData || !seriesData.href) continue;
 
-                    // Build full URL - check if it's already a full URL or relative
-                    let fullSeriesUrl = seriesUrl;
-                    if (seriesUrl.startsWith('/')) {
-                        // Relative path - prepend base URL
-                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + seriesUrl;
-                    } else if (!seriesUrl.startsWith('http')) {
-                        // Not a full URL and not starting with / - treat as relative
-                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + '/' + seriesUrl;
+                    // Build full URL
+                    let fullSeriesUrl = seriesData.href;
+                    if (seriesData.href.startsWith('/')) {
+                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + seriesData.href;
+                    } else if (!seriesData.href.startsWith('http')) {
+                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + '/' + seriesData.href;
                     }
-                    // If it already starts with http, use as-is
 
-                    // Generate series ID to check for duplicates
                     const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
 
-                    // Check if this series already exists in our catalog (from Kan-Digital)
                     if (this._jsonObj.hasOwnProperty(seriesId)) {
                         logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
-                        this.deltaTracker.skipSeries(); // Track skipped duplicate
+                        this.deltaTracker.skipSeries();
                         duplicateCount++;
                         continue;
                     }
 
-                    // Create a minimal item object for processOneDigitalSeries
+                    // Pass image data extracted from lobby page (saves extra requests)
                     const item = {
                         Url: fullSeriesUrl,
-                        Image: '',
-                        ImageAlt: '',
+                        Image: seriesData.src || '',
+                        ImageAlt: seriesData.alt || '',
+                        TitleHint: seriesData.titleFromImg || '',
                         Description: `From Kan-Box category: ${category.name}`
                     };
 
@@ -301,15 +297,74 @@ class KanDigitalScraper extends BaseScraper {
                 }
             }
         }
+        // Fallback: try og:image and twitter:image for thumbnails
+        if ((!imgUrl || imgUrl === KAN_DIGITAL_IMAGE_PREFIX) && (!item.Image || item.Image === '')) {
+            const ogImg = seriesPageDoc.querySelector('meta[property="og:image"]');
+            if (ogImg && ogImg.getAttribute('content')) {
+                imgUrl = ogImg.getAttribute('content');
+                logger.debug(`processOneDigitalSeries => Got image from og:image: ${imgUrl}`);
+            } else {
+                const twImg = seriesPageDoc.querySelector('meta[name="twitter:image"]');
+                if (twImg && twImg.getAttribute('content')) {
+                    imgUrl = twImg.getAttribute('content');
+                    logger.debug(`processOneDigitalSeries => Got image from twitter:image: ${imgUrl}`);
+                }
+            }
+        }
 
-        //verify there is a name to the series
+        //verify there is a name to the series - cascading fallback selectors
         if (title.trim() == ""){
             logger.info("processOneDigitalSeries => Title is empty. Attempting to retrieve it");
-            logger.trace("processOneDigitalSeries => Attempting to retrieve from img.img-fluid");
-            if (seriesPageDoc.querySelector("img.img-fluid").getAttribute("title")){
-                title = getNameFromSeriesPage(seriesPageDoc.querySelector("img.img-fluid").getAttribute("title"));
-            } else if (seriesPageDoc.querySelector("h2.title.h1")){
-                title = getNameFromSeriesPage(seriesPageDoc.querySelector("h2.title.h1").text.trim());
+            
+            // Try TitleHint from lobby page image data first (zero cost - already have it)
+            if (item.TitleHint && item.TitleHint.trim()) {
+                title = getNameFromSeriesPage(item.TitleHint);
+                logger.debug("processOneDigitalSeries => Got title from TitleHint (lobby image)");
+            }
+        }
+        if (title.trim() == ""){
+            // Fallback 1: img.img-fluid title attribute
+            const imgFluid = seriesPageDoc.querySelector("img.img-fluid");
+            if (imgFluid && imgFluid.getAttribute("title")){
+                title = getNameFromSeriesPage(imgFluid.getAttribute("title"));
+                logger.debug("processOneDigitalSeries => Got title from img.img-fluid title attr");
+            }
+        }
+        if (title.trim() == ""){
+            // Fallback 2: h2.title.h1
+            const h2title = seriesPageDoc.querySelector("h2.title.h1");
+            if (h2title){
+                title = getNameFromSeriesPage(h2title.text.trim());
+                logger.debug("processOneDigitalSeries => Got title from h2.title.h1");
+            }
+        }
+        if (title.trim() == ""){
+            // Fallback 3: og:title meta tag
+            const ogTitle = seriesPageDoc.querySelector('meta[property="og:title"]');
+            if (ogTitle && ogTitle.getAttribute("content")){
+                title = getNameFromSeriesPage(ogTitle.getAttribute("content"));
+                logger.debug("processOneDigitalSeries => Got title from og:title");
+            }
+        }
+        if (title.trim() == ""){
+            // Fallback 4: h1 tag
+            const h1 = seriesPageDoc.querySelector("h1");
+            if (h1 && h1.text && h1.text.trim()){
+                title = getNameFromSeriesPage(h1.text.trim());
+                logger.debug("processOneDigitalSeries => Got title from h1");
+            }
+        }
+        if (title.trim() == ""){
+            // Fallback 5: <title> tag (clean up site name suffix)
+            const titleTag = seriesPageDoc.querySelector("title");
+            if (titleTag && titleTag.text){
+                let raw = titleTag.text.trim();
+                // Remove common suffixes like " | כאן" or " - Kan"
+                raw = raw.split(/\s*[|\-–—]\s*(כאן|Kan|KAN)\s*$/i)[0] || raw;
+                if (raw.trim()) {
+                    title = getNameFromSeriesPage(raw.trim());
+                    logger.debug("processOneDigitalSeries => Got title from <title> tag");
+                }
             }
         }
 
