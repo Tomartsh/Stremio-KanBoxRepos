@@ -28,6 +28,14 @@ class KanDigitalScraper extends BaseScraper {
         // Initialize KanDigital-specific properties
         this._kanDigitalJSONObj = {};
         this.seriesIdIterator = 1000;
+
+        // Source tracking counters (Kan 11 lobby vs Kan-Box)
+        this._sourceCounts = {
+            'kan11_lobby': 0,
+            'kan_box': 0,
+            'skipped_duplicate': 0,
+            'total_unique': 0
+        };
     }
 
     /**
@@ -45,6 +53,14 @@ class KanDigitalScraper extends BaseScraper {
             "crawlContent.crawlKanBox",
             this.logger
         );
+
+        // Log source summary
+        this.logger.info('=== KanDigital Scraper - Source Summary ===');
+        this.logger.info(`From Kan 11 lobby (digitalSeries): ${this._sourceCounts['kan11_lobby']} series`);
+        this.logger.info(`From Kan-Box categories: ${this._sourceCounts['kan_box']} series`);
+        this.logger.info(`Total unique series added: ${this._sourceCounts['total_unique']}`);
+        this.logger.info(`Total series in JSON object: ${Object.keys(this._jsonObj).length}`);
+        this.logger.info('===========================================');
     }
 
     /***********************************************************
@@ -76,29 +92,67 @@ class KanDigitalScraper extends BaseScraper {
             const scriptContent = targetScript.rawText;
 
             try {
-                // Extract the JSON portion - use better regex to handle full array
-                const jsonMatch = scriptContent.match(/digitalSeries:\s*(\[[\s\S]*\])\s*,\s*[\w]+:/);
+                // Extract the JSON array using bracket counting for robustness
+                // This correctly handles nested objects and arrays
+                const arrayStartIndex = scriptContent.indexOf('digitalSeries:') + 'digitalSeries:'.length;
+                if (arrayStartIndex >= 0) {
+                    const afterKey = scriptContent.substring(arrayStartIndex).trim();
 
-                if (jsonMatch && jsonMatch[1]) {
-                    let rawJsonString = jsonMatch[1].trim();
+                    if (afterKey.startsWith('[')) {
+                        let bracketCount = 0;
+                        let inString = false;
+                        let escapeNext = false;
+                        let endIdx = -1;
 
-                    //Parse it
-                    items = JSON.parse(rawJsonString);
+                        for (let i = 0; i < afterKey.length; i++) {
+                            const ch = afterKey[i];
 
-                    logger.info(`Success! Found ${items.length} Digital Series items.`);
+                            if (escapeNext) {
+                                escapeNext = false;
+                                continue;
+                            }
 
-                    // Warn if pagination detected
-                    if (items.length === 100 || items.length === 50 || items.length === 20) {
-                        logger.warn(`⚠️  Found exactly ${items.length} series - this might be a pagination limit`);
-                        logger.warn(`⚠️  Last series ID: ${items[items.length - 1]?.Url || 'unknown'}`);
-                    }
-                } else {
-                    // Fallback to original method
-                    const fallbackMatch = scriptContent.match(/digitalSeries:\s*(\[[\s\S]*?\])/);
-                    if (fallbackMatch && fallbackMatch[1]) {
-                        let rawJsonString = fallbackMatch[1].trim();
-                        items = JSON.parse(rawJsonString);
-                        logger.debug(`Fallback method found ${items.length} Digital Series items.`);
+                            if (ch === '\\') {
+                                escapeNext = true;
+                                continue;
+                            }
+
+                            if (ch === '"' && !escapeNext) {
+                                inString = !inString;
+                                continue;
+                            }
+
+                            if (!inString) {
+                                if (ch === '[') {
+                                    bracketCount++;
+                                } else if (ch === ']') {
+                                    bracketCount--;
+                                    if (bracketCount === 0) {
+                                        endIdx = i + 1;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (endIdx > 0) {
+                            let rawJsonString = afterKey.substring(0, endIdx);
+
+                            // Parse it
+                            items = JSON.parse(rawJsonString);
+
+                            logger.info(`Success! Found ${items.length} Digital Series items (via bracket counting).`);
+
+                            // Warn if pagination detected
+                            if (items.length === 100 || items.length === 50 || items.length === 20) {
+                                logger.warn(`⚠️  Found exactly ${items.length} series - this might be a pagination limit`);
+                                logger.warn(`⚠️  Last series ID: ${items[items.length - 1]?.Url || 'unknown'}`);
+                            }
+                        } else {
+                            logger.error('Could not find closing bracket for digitalSeries array');
+                        }
+                    } else {
+                        logger.error('digitalSeries key does not point to an array');
                     }
                 }
             } catch (error) {
@@ -114,7 +168,7 @@ class KanDigitalScraper extends BaseScraper {
         await this.processBatch(
             items,
             async (item, index) => {
-                return await this.processOneDigitalSeries(item);
+                return await this.processOneDigitalSeries(item, 'kan11_lobby');
             },
             "digital-series"
         );
@@ -186,18 +240,18 @@ class KanDigitalScraper extends BaseScraper {
             let duplicateCount = 0;
 
             for (const category of categoriesToScrape) {
-                logger.info(`crawlKanBox => Processing category: ${category.name} (${category.seriesData.length} series)`);
+                logger.info(`crawlKanBox => Processing category: ${category.name} (${category.seriesLinks.length} series links)`);
 
-                // Process each series found in this category (with image data from lobby)
-                for (const seriesData of category.seriesData) {
-                    if (!seriesData || !seriesData.href) continue;
+                // Process each series link found in this category
+                for (const seriesHref of category.seriesLinks) {
+                    if (!seriesHref) continue;
 
                     // Build full URL
-                    let fullSeriesUrl = seriesData.href;
-                    if (seriesData.href.startsWith('/')) {
-                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + seriesData.href;
-                    } else if (!seriesData.href.startsWith('http')) {
-                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + '/' + seriesData.href;
+                    let fullSeriesUrl = seriesHref;
+                    if (seriesHref.startsWith('/')) {
+                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + seriesHref;
+                    } else if (!seriesHref.startsWith('http')) {
+                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + '/' + seriesHref;
                     }
 
                     const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
@@ -209,18 +263,18 @@ class KanDigitalScraper extends BaseScraper {
                         continue;
                     }
 
-                    // Pass image data extracted from lobby page (saves extra requests)
+                    // Create item object for processing
                     const item = {
                         Url: fullSeriesUrl,
-                        Image: seriesData.src || '',
-                        ImageAlt: seriesData.alt || '',
-                        TitleHint: seriesData.titleFromImg || '',
+                        Image: '',
+                        ImageAlt: '',
+                        TitleHint: '',
                         Description: `From Kan-Box category: ${category.name}`
                     };
 
-                    // Process the series using existing method
+                    // Process the series using existing method (source = kan_box)
                     try {
-                        const result = await this.processOneDigitalSeries(item);
+                        const result = await this.processOneDigitalSeries(item, 'kan_box');
                         if (result) {
                             totalSeriesFound++;
                             logger.info(`crawlKanBox => Added series from ${category.name}: ${result.title}`);
@@ -246,7 +300,7 @@ class KanDigitalScraper extends BaseScraper {
     /**
      * Process a single digital series (extracted from crawlVod for batch processing)
      */
-    async processOneDigitalSeries(item) {
+    async processOneDigitalSeries(item, source = 'kan11_lobby') {
         let title = getNameFromSeriesPage(item.ImageAlt || ''); // Clean image artifacts from name
         let pageUrl = item.Url; //URL of the series episodes
         const description = item.Description;
@@ -287,27 +341,27 @@ class KanDigitalScraper extends BaseScraper {
         }
 
         // Extract image from series page if not provided or if the image URL is incomplete
+        // NOTE: All img.img-fluid on KAN series pages are brand logo SVGs, never posters.
+        // The series poster is NOT in any <img> element - use og:image meta tag instead.
         if (!item.Image || item.Image === '') {
-            const seriesImg = seriesPageDoc.querySelector("img.img-fluid");
-            if (seriesImg) {
-                const extractedImgSrc = seriesImg.getAttribute('src');
-                if (extractedImgSrc) {
-                    imgUrl = utils.getImageFromUrl(extractedImgSrc, SUBTYPE);
-                    logger.debug(`processOneDigitalSeries => Extracted image from series page: ${imgUrl}`);
+            // Primary: og:image meta tag (available on all series pages, share-image quality)
+            const ogImgMeta = seriesPageDoc.querySelector('meta[property="og:image"]');
+            if (ogImgMeta && ogImgMeta.getAttribute('content')) {
+                const ogContent = ogImgMeta.getAttribute('content');
+                if (ogContent && !ogContent.includes('brandlogo') && !ogContent.includes('.svg')) {
+                    imgUrl = utils.getImageFromUrl(ogContent, SUBTYPE);
+                    logger.debug(`processOneDigitalSeries => Got image from og:image: ${imgUrl}`);
                 }
             }
-        }
-        // Fallback: try og:image and twitter:image for thumbnails
-        if ((!imgUrl || imgUrl === KAN_DIGITAL_IMAGE_PREFIX) && (!item.Image || item.Image === '')) {
-            const ogImg = seriesPageDoc.querySelector('meta[property="og:image"]');
-            if (ogImg && ogImg.getAttribute('content')) {
-                imgUrl = ogImg.getAttribute('content');
-                logger.debug(`processOneDigitalSeries => Got image from og:image: ${imgUrl}`);
-            } else {
-                const twImg = seriesPageDoc.querySelector('meta[name="twitter:image"]');
-                if (twImg && twImg.getAttribute('content')) {
-                    imgUrl = twImg.getAttribute('content');
-                    logger.debug(`processOneDigitalSeries => Got image from twitter:image: ${imgUrl}`);
+            // Fallback: twitter:image if og:image was not suitable
+            if (!imgUrl || imgUrl === KAN_DIGITAL_IMAGE_PREFIX || imgUrl.includes('brandlogo') || imgUrl.includes('.svg')) {
+                const twImgMeta = seriesPageDoc.querySelector('meta[name="twitter:image"]');
+                if (twImgMeta && twImgMeta.getAttribute('content')) {
+                    const twContent = twImgMeta.getAttribute('content');
+                    if (twContent && !twContent.includes('brandlogo') && !twContent.includes('.svg')) {
+                        imgUrl = utils.getImageFromUrl(twContent, SUBTYPE);
+                        logger.debug(`processOneDigitalSeries => Got image from twitter:image: ${imgUrl}`);
+                    }
                 }
             }
         }
@@ -395,8 +449,11 @@ class KanDigitalScraper extends BaseScraper {
             //check that we have a valid name for the series
 
             this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series");
-            logger.debug(`processOneDigitalSeries => Added series ${title}`);
-            return { id, title };
+            // Track which source this series came from
+            this._sourceCounts[source] = (this._sourceCounts[source] || 0) + 1;
+            this._sourceCounts['total_unique'] += 1;
+            logger.info(`processOneDigitalSeries => [SOURCE: ${source}] Added series: ${title} (URL: ${pageUrl})`);
+            return { id, title, source };
         }
     }
 
