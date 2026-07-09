@@ -428,9 +428,98 @@ class KanDigitalScraper extends BaseScraper {
         //Get the seasons number
         var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
         var videoObj = [];
+
+        // Also check for seasons in the season selector dropdown that are not rendered as div.seasons-item
+        // These are links like <a href=".../p-N/s1/">עונה 1</a> inside a dropdown, for seasons
+        // that Kan hides behind a show-more / dropdown selector (e.g., old seasons not shown as tabs)
+        var extraSeasonHrefs = [];
+        var allLinks = seriesPageDoc.querySelectorAll("a[href*='/p-']");
+        var coveredSeasonNums = new Set();
+        for (var si = 0; si < seasons.length; si++) {
+            var visibleLinks = seasons[si].querySelectorAll("a.card-link");
+            if (visibleLinks.length > 0) {
+                var m = (visibleLinks[0].getAttribute("href") || "").match(/\/s(\d+)\//);
+                if (m) coveredSeasonNums.add(parseInt(m[1], 10));
+            }
+        }
+        for (var ali = 0; ali < allLinks.length; ali++) {
+            var alHref = allLinks[ali].getAttribute("href") || "";
+            var alMatch = alHref.match(/\/p-\d+\/s(\d+)\/?$/);
+            if (alMatch) {
+                var alSeasonNum = parseInt(alMatch[1], 10);
+                if (!coveredSeasonNums.has(alSeasonNum)) {
+                    extraSeasonHrefs.push({ href: alHref, season: alSeasonNum });
+                    coveredSeasonNums.add(alSeasonNum); // avoid duplicates
+                }
+            }
+        }
+
+        if (extraSeasonHrefs.length > 0) {
+            logger.info(`processOneDigitalSeries => Found ${extraSeasonHrefs.length} hidden season(s) in dropdown for ${title}: ${extraSeasonHrefs.map(s => 'S' + s.season).join(', ')}`);
+        }
+
         if ((seasons != undefined) && (seasons.length > 0)){ //generate videos object with media links(streams)
             logger.debug("processOneDigitalSeries => seasons " + title + " length: " + seasons.length);
+
+            // First, process visible seasons
             videoObj = await this.getVideos(seasons, id);
+
+            // Then, process any hidden dropdown seasons
+            for (var dsi = 0; dsi < extraSeasonHrefs.length; dsi++) {
+                var extraSeason = extraSeasonHrefs[dsi];
+                var extraSeasonUrl = extraSeason.href;
+                if (extraSeasonUrl.startsWith("/")) {
+                    extraSeasonUrl = KAN_DIGITAL_IMAGE_PREFIX + extraSeasonUrl;
+                }
+
+                logger.info(`processOneDigitalSeries => Fetching hidden season ${extraSeason.season} from: ${extraSeasonUrl}`);
+
+                try {
+                    // Fetch the dedicated season page (it has its own .seasons-item div)
+                    var extraSeasonDoc = await fetchData(extraSeasonUrl + '?page=1&itemsToShow=1000');
+                    if (extraSeasonDoc) {
+                        var extraSeasonsDivs = extraSeasonDoc.querySelectorAll("div.seasons-item");
+                        if (extraSeasonsDivs.length > 0) {
+                            logger.info(`processOneDigitalSeries => Processing ${extraSeasonsDivs.length} season(s) from hidden page for S${extraSeason.season}`);
+
+                            // Create synthetic season elements to match getVideos() expectations
+                            // We'll fetch the card-links directly from the page and build episodes
+                            var extraEpisodesElems = extraSeasonsDivs[0].querySelectorAll("a.card-link");
+                            var numExtraEps = extraEpisodesElems.length;
+                            logger.info(`processOneDigitalSeries => Hidden season S${extraSeason.season} has ${numExtraEps} episodes`);
+
+                            // Build episode data manually (same pattern as getVideos)
+                            var extraEpisodeData = [];
+                            for (let iter = 0; iter < numExtraEps; iter++) {
+                                const actualEpisodeNo = numExtraEps - iter;
+                                extraEpisodeData.push({
+                                    elem: extraEpisodesElems[numExtraEps - 1 - iter],
+                                    seasonNo: extraSeason.season,
+                                    episodeNo: actualEpisodeNo
+                                });
+                            }
+
+                            // Process episodes in batches
+                            const extraResults = await this.processBatch(
+                                extraEpisodeData,
+                                async (epData, index) => {
+                                    return await this.processOneDigitalEpisode(epData, id);
+                                },
+                                `episodes (Hidden Season ${extraSeason.season})`
+                            );
+
+                            for (const result of extraResults) {
+                                if (result && result.video) {
+                                    videoObj.push(result.video);
+                                    logger.info(`Added (hidden): S${result.video.season} E${result.video.episode} - ${result.video.name}`);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    logger.error(`processOneDigitalSeries => Error fetching hidden season ${extraSeason.season}: ${e.message}`);
+                }
+            }
 
         } else {
             // probably no episodes, only a single movie
@@ -707,10 +796,21 @@ getStream (scripts, id, url){
         var noOfSeasons = videosElems.length;
         logger.info(`getVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
 
-        for (var i = 0 ; i < noOfSeasons; i++){//iterate over seasons (descending - season N is first)
-            var seasonNo = noOfSeasons - i;
+        for (var i = 0 ; i < noOfSeasons; i++){
             var seasonEpisodesElems = videosElems[i].querySelectorAll("a.card-link");
             var numEpisodes = seasonEpisodesElems.length;
+
+            // Extract actual season number from the first episode's URL (e.g., /s3/ -> 3)
+            var seasonNo = i + 1; // default fallback (1-based ascending)
+            if (seasonEpisodesElems.length > 0) {
+                const firstEpHref = seasonEpisodesElems[0].getAttribute("href");
+                if (firstEpHref) {
+                    const seasonMatch = firstEpHref.match(/\/s(\d+)\//);
+                    if (seasonMatch) {
+                        seasonNo = parseInt(seasonMatch[1], 10);
+                    }
+                }
+            }
 
             logger.info(`getVideos => Season ${seasonNo} has ${numEpisodes} episode(s) - processing in descending order`);
 

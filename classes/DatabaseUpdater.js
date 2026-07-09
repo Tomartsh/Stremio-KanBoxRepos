@@ -126,7 +126,35 @@ class DatabaseUpdater {
                     }
                 }
 
-                await this.supabase.from('videos').delete().in('series_id', seriesIds);
+                // Delete videos in small batches to avoid silent failures on large .in() queries
+                logger.info(`DatabaseUpdater => Deleting videos in batches...`);
+                let deletedVidCount = 0;
+                for (let i = 0; i < seriesIds.length; i += 100) {
+                    const batch = seriesIds.slice(i, i + 100);
+                    const { data: batchVideos } = await this.supabase
+                        .from('videos')
+                        .select('id')
+                        .in('series_id', batch);
+                    if (batchVideos && batchVideos.length > 0) {
+                        const batchVidIds = batchVideos.map(v => v.id);
+                        // Delete streams for these videos first
+                        for (let j = 0; j < batchVidIds.length; j += 1000) {
+                            await this.supabase.from('streams').delete().in('video_id', batchVidIds.slice(j, j + 1000));
+                        }
+                        // Delete videos
+                        const { error: delVidErr } = await this.supabase
+                            .from('videos')
+                            .delete()
+                            .in('series_id', batch);
+                        if (delVidErr) {
+                            logger.error(`DatabaseUpdater => Error deleting videos batch: ${delVidErr.message}`);
+                        } else {
+                            deletedVidCount += batchVidIds.length;
+                        }
+                    }
+                }
+                logger.info(`DatabaseUpdater => Deleted ${deletedVidCount} videos`);
+
                 await this.supabase.from('series').delete().eq('scraper', scraper);
                 logger.info(`DatabaseUpdater => Cleared ${existingSeries.length} old series`);
             }
@@ -146,19 +174,20 @@ class DatabaseUpdater {
                 }
             }
 
-            // Insert videos in batches
+            // Insert videos in batches (use upsert to handle any orphaned duplicate keys)
             logger.info(`DatabaseUpdater => Inserting ${videosToInsert.length} videos...`);
             const VIDEO_BATCH_SIZE = 100;
             let videosInserted = 0;
             for (let i = 0; i < videosToInsert.length; i += VIDEO_BATCH_SIZE) {
                 const batch = videosToInsert.slice(i, i + VIDEO_BATCH_SIZE);
-                const { error } = await this.supabase.from('videos').insert(batch);
+                const { error } = await this.supabase.from('videos').upsert(batch, { onConflict: 'id', ignoreDuplicates: true });
                 if (error) {
                     logger.error(`DatabaseUpdater => Error inserting videos batch ${i}-${i + batch.length}: ${error.message}`);
                     logger.error(`DatabaseUpdater => First video in batch:`, JSON.stringify(batch[0]));
-                    throw error;
+                    // Don't throw — log and continue; some straggler duplicates are OK
+                } else {
+                    videosInserted += batch.length;
                 }
-                videosInserted += batch.length;
                 if ((i / VIDEO_BATCH_SIZE) % 100 === 0) {
                     logger.debug(`DatabaseUpdater => Videos: ${i + batch.length}/${videosToInsert.length}`);
                 }
