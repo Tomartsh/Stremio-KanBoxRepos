@@ -339,6 +339,10 @@ class KanDigitalScraper extends BaseScraper {
             logger.error(`processOneDigitalSeries => could not retrieve series page doc from URL ${pageUrl}. Error: ${e}`);
             return null;
         }
+        if (!seriesPageDoc) {
+            logger.warn(`processOneDigitalSeries => could not retrieve series page doc from URL ${pageUrl} (fetchData returned null)`);
+            return null;
+        }
 
         // Extract image from series page if not provided or if the image URL is incomplete
         // NOTE: All img.img-fluid on KAN series pages are brand logo SVGs, never posters.
