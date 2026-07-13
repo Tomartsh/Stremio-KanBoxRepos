@@ -541,7 +541,7 @@ class KanDigitalScraper extends BaseScraper {
             // last minute checks before add the series
             //check that we have a valid name for the series
 
-            this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,"series");
+            this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,SUBTYPE,"series");
             // Track which source this series came from
             this._sourceCounts[source] = (this._sourceCounts[source] || 0) + 1;
             this._sourceCounts['total_unique'] += 1;
