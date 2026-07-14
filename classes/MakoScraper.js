@@ -155,8 +155,11 @@ class MakoScraper {
         logger.debug(`processSeries => Processing ${sortedSeasons.length} seasons in descending order`);
 
         // Process each season in descending order
-        for (const season of sortedSeasons) {
-            const seasonVideos = await this.processSeason(season, id, title, tmdbSeriesId);
+        // Pass reversed index as seasonIndex for year-based season titles (e.g., "2026" -> "S1")
+        for (let i = 0; i < sortedSeasons.length; i++) {
+            const season = sortedSeasons[i];
+            const seasonIndex = sortedSeasons.length - i; // highest sorted => highest index
+            const seasonVideos = await this.processSeason(season, id, title, tmdbSeriesId, seasonIndex);
             if (seasonVideos && seasonVideos.length > 0) {
                 videos.push(...seasonVideos);
             }
@@ -191,9 +194,19 @@ class MakoScraper {
         }
     }
 
-    async processSeason(season, seriesId, seriesTitle, tmdbSeriesId = null) {
+    async processSeason(season, seriesId, seriesTitle, tmdbSeriesId = null, seasonIndex = null) {
         const seasonUrl = MAKO.URL_BASE + season.pageUrl;
-        const makoSeasonId = this.setSeasonId(season.seasonTitle, seasonUrl);
+        let makoSeasonId = this.setSeasonId(season.seasonTitle, seasonUrl);
+
+        // If the season title is a 4-digit year (e.g., "2026"), Mako didn't provide a proper
+        // season number. Use the sequential season index instead to avoid "S2026" names.
+        if (seasonIndex !== null && /^\d{4}$/.test(makoSeasonId)) {
+            const yearNum = parseInt(makoSeasonId, 10);
+            if (yearNum >= 1900 && yearNum <= 2099) {
+                logger.debug(`processSeason => Detected year-based season "${makoSeasonId}", using index ${seasonIndex} instead`);
+                makoSeasonId = String(seasonIndex);
+            }
+        }
 
         logger.debug(`processSeason => Mako Season ID: ${makoSeasonId}, URL: ${seasonUrl}`);
 
@@ -207,18 +220,11 @@ class MakoScraper {
         const videos = await this.getEpisodes(seasonEpisodesPage, seriesId, makoSeasonId, tmdbSeriesId);
 
         if (videos && videos.length > 0) {
-            // Derive correct season year from actual release dates
-            const correctedSeasonId = this.deriveSeasonFromDates(videos, makoSeasonId);
-
-            if (correctedSeasonId !== makoSeasonId) {
-                logger.info(`processSeason => Corrected season ID from ${makoSeasonId} to ${correctedSeasonId} for ${seriesTitle}`);
-                // Update all videos with corrected season
-                videos.forEach(video => {
-                    video.season = parseInt(correctedSeasonId) || 1;
-                });
-            }
-
-            logger.debug(`processSeason => Found ${videos.length} episodes in season ${correctedSeasonId} of ${seriesTitle}`);
+            // NOTE: deriveSeasonFromDates is NOT called here because it was incorrectly
+            // replacing the actual season number (e.g., 1 from "עונה 1") with the release
+            // year (e.g., 2025/2026). This caused "Season 2026" instead of "Season 1".
+            // The season ID from setSeasonId is more reliable.
+            logger.debug(`processSeason => Found ${videos.length} episodes in season ${makoSeasonId} of ${seriesTitle}`);
         }
 
         return videos || [];
@@ -842,10 +848,20 @@ class MakoScraper{
                     continue;
                 }  
             }
-            for (var season of seasons["seasons"]){
+            for (let seasonIdx = 0; seasonIdx < seasons["seasons"].length; seasonIdx++) {
+                var season = seasons["seasons"][seasonIdx];
                 var seasonUrl = MAKO.URL_BASE + season["pageUrl"];
                 var seasonId = this.setSeasonId(season["seasonTitle"],seasonUrl);
-                logger.debug("getSeries => Season ID: " + seasonId + ". URL: " + seasonUrl); 
+                // If the season title is a 4-digit year (e.g., "2026"), use the sequential index instead
+                if (/^\d{4}$/.test(seasonId)) {
+                    const yearNum = parseInt(seasonId, 10);
+                    if (yearNum >= 1900 && yearNum <= 2099) {
+                        const correctedSeasonId = String(seasonIdx + 1);
+                        logger.debug(`getSeries => Corrected year-based season "${seasonId}" to index ${correctedSeasonId}`);
+                        seasonId = correctedSeasonId;
+                    }
+                }
+                logger.debug("getSeries => Season ID: " + seasonId + ". URL: " + seasonUrl);
                 
                 //for each season get the episodes
                 var seasonEpisodesPage = await fetchData(seasonUrl + MAKO.URL_SUFFIX, true); 
