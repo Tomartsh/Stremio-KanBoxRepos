@@ -9,6 +9,7 @@ const {fetchData, writeLog, extractReleaseDate, DeltaTracker, updateDatabaseFrom
 const { parseIsraeliDate } = require("./ScraperHelpers.js");
 const log4js = require("log4js");
 const BaseScraper = require("./BaseScraper.js");
+const TmdbHelper = require("./TmdbHelper.js");
 
 var logger = log4js.getLogger("ReshetScraper");
 
@@ -25,6 +26,7 @@ class ReshetScraper extends BaseScraper {
         this._reshetJSONObj = {};
         this._buildId = "";
         this._videos = [];
+        this.tmdbHelper = new TmdbHelper();
     }
 
     /**
@@ -84,9 +86,18 @@ class ReshetScraper extends BaseScraper {
             return null;
         }
 
-        this.addToJsonObject(id, title, RESHET.URL_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series")
+        // Search TMDB for this series so it can merge with the TMDB addon
+        const tmdbSeriesId = await this.tmdbHelper.searchTMDBSeries(title);
+        if (tmdbSeriesId) {
+            logger.info(`processOneReshetSeries => Found TMDB ID ${tmdbSeriesId} for "${title}"`);
+        } else {
+            logger.debug(`processOneReshetSeries => No TMDB ID found for "${title}"`);
+        }
+
+        const extraFields = tmdbSeriesId ? { tmdbId: tmdbSeriesId } : {};
+        this.addToJsonObject(id, title, RESHET.URL_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series", extraFields)
         logger.debug(`processOneReshetSeries => Added series ${title}`);
-        return { id, title };
+        return { id, title, tmdbSeriesId };
     }
 
     async getEpisodes(seriesReshetName, id){
