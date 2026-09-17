@@ -262,7 +262,11 @@ class MakoScraper {
 
         logger.debug(`getEpisodes => Found ${episodes.length} episodes, channelId: ${channelId}`);
 
-        let episodeNumber = episodes.length;
+        // Mako lists finished seasons oldest-first and ongoing (daily) shows newest-first.
+        // Use the air dates to pick the direction so the premiere is always episode 1.
+        const newestFirst = this.isListedNewestFirst(episodes);
+        const step = newestFirst ? -1 : 1;
+        let episodeNumber = newestFirst ? episodes.length : 1;
 
         for (const episode of episodes) {
             if (episode.componentLayout !== "vod") {
@@ -274,7 +278,7 @@ class MakoScraper {
                 
                 if (episodeData.status !== "1") {
                     logger.warn(`getEpisodes => Skipping episode due to status: ${episodeData.status}`);
-                    episodeNumber--;
+                    episodeNumber += step;
                     continue;
                 }
 
@@ -305,10 +309,62 @@ class MakoScraper {
                 logger.error(`getEpisodes => Error processing episode:`, error.message);
             }
             
-            episodeNumber--;
+            episodeNumber += step;
         }
 
         return videos;
+    }
+
+    /**
+     * Whether a season's VOD list runs newest-first, judged by the air dates in extraInfo.
+     * Defaults to newest-first when the dates don't say.
+     */
+    isListedNewestFirst(episodes) {
+        const dates = episodes
+            .filter(episode => episode.componentLayout === "vod")
+            .map(episode => this.parseExtraInfoDate(episode.extraInfo))
+            .filter(date => date !== null);
+
+        let ascending = 0;
+        let descending = 0;
+        for (let i = 1; i < dates.length; i++) {
+            if (dates[i] > dates[i - 1]) ascending++;
+            if (dates[i] < dates[i - 1]) descending++;
+        }
+        return ascending <= descending;
+    }
+
+    /**
+     * Parse the air date from Mako's extraInfo ("פרק 3@31.01.26" or "31.01.2026").
+     * @returns {Date|null}
+     */
+    parseExtraInfoDate(extraInfo) {
+        if (!extraInfo) {
+            return null;
+        }
+
+        const dateStr = extraInfo.includes("@")
+            ? extraInfo.split("@")[1]
+            : extraInfo;
+
+        // Parse date - handle both DD.MM.YYYY and DD.MM.YY formats
+        let parsedDate;
+        const parts = dateStr.split('.');
+
+        if (parts.length === 3) {
+            const [day, month, year] = parts;
+            // Handle 2-digit year (YY) vs 4-digit year (YYYY)
+            const fullYear = year.length === 2
+                ? (parseInt(year) > 50 ? '19' + year : '20' + year)  // Assume 1950-2049 range
+                : year;
+
+            parsedDate = new Date(`${fullYear}-${month}-${day}`);
+        } else {
+            // Try standard Date parsing as fallback
+            parsedDate = new Date(dateStr);
+        }
+
+        return isNaN(parsedDate.getTime()) ? null : parsedDate;
     }
 
     /**
@@ -373,32 +429,13 @@ class MakoScraper {
 
         // Method 3: Try extraInfo from Mako API (less reliable than TMDB)
         if (episode.extraInfo) {
-            const dateStr = episode.extraInfo.includes("@")
-                ? episode.extraInfo.split("@")[1]
-                : episode.extraInfo;
+            const parsedDate = this.parseExtraInfoDate(episode.extraInfo);
 
-            // Parse date - handle both DD.MM.YYYY and DD.MM.YY formats
-            let parsedDate;
-            const parts = dateStr.split('.');
-
-            if (parts.length === 3) {
-                const [day, month, year] = parts;
-                // Handle 2-digit year (YY) vs 4-digit year (YYYY)
-                const fullYear = year.length === 2
-                    ? (parseInt(year) > 50 ? '19' + year : '20' + year)  // Assume 1950-2049 range
-                    : year;
-
-                parsedDate = new Date(`${fullYear}-${month}-${day}`);
-            } else {
-                // Try standard Date parsing as fallback
-                parsedDate = new Date(dateStr);
-            }
-
-            if (!isNaN(parsedDate.getTime())) {
+            if (parsedDate) {
                 logger.info(`📅 ${episodeId}: Date from extraInfo: ${parsedDate.toISOString().substring(0, 10)}`);
                 return parsedDate.toISOString();
             } else {
-                logger.warn(`⚠️  ${episodeId}: Invalid date in extraInfo: "${dateStr}"`);
+                logger.warn(`⚠️  ${episodeId}: Invalid date in extraInfo: "${episode.extraInfo}"`);
             }
         } else {
             logger.debug(`🔍 ${episodeId}: No extraInfo field, trying next fallback...`);
