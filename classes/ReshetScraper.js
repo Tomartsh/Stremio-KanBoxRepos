@@ -167,12 +167,11 @@ class ReshetScraper extends BaseScraper {
                         }
                     }
 
-                    // Sort by reshetEpisodeId to ensure correct episode numbers
-                    // Then reverse to get descending order for display
-                    logger.debug("getEpisodes() => Sorting episodes by ID, then reversing for descending order");
-                    seasonVideos.sort((a, b) => b.reshetEpisodeId - a.reshetEpisodeId);
+                    // Sort by reshetEpisodeId (ascending = air order) to get correct episode numbers
+                    logger.debug("getEpisodes() => Sorting episodes by ID, oldest first");
+                    seasonVideos.sort((a, b) => a.reshetEpisodeId - b.reshetEpisodeId);
 
-                    // Set episode numbers based on sorted order (highest reshetEpisodeId = episode 1 in our list)
+                    // Set episode numbers based on sorted order (lowest reshetEpisodeId = episode 1)
                     var iter = 1;
                     for (var videoItem of seasonVideos){
                         videoItem.id = videoItem.id + iter;
