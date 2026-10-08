@@ -1,3 +1,9 @@
+function envFlag(name, defaultValue) {
+    const raw = process.env[name];
+    if (raw === undefined || raw === "") return defaultValue;
+    return !["0", "false", "no", "off"].includes(String(raw).toLowerCase());
+}
+
 module.exports = {
     // Rate Limiting Configuration (per domain)
     RATE_LIMITING: {
@@ -134,13 +140,17 @@ module.exports = {
         TYPE: "file"
     },
 
-    SAVE_MODE: "github", // "local", "github", or "both"
+    // "local", "github", or "both". SAVE_MODE=local writes output/ and does not upload.
+    SAVE_MODE: process.env.SAVE_MODE || "github",
     SAVE_FOLDER: "output",
     PREFIX: "il_",
 
-    // Database Update Configuration
-    WRITE_TO_GITHUB: true,     // Write JSON files to GitHub after scraping
-    UPDATE_DATABASE: true,     // Update database after scraping
+    // Database Update Configuration.
+    // Set WRITE_TO_GITHUB=false or UPDATE_DATABASE=false for a local dry run.
+    // An empty result is never published (see BaseScraper), because
+    // updateFromJSON deletes that scraper's Supabase rows before inserting.
+    WRITE_TO_GITHUB: envFlag("WRITE_TO_GITHUB", true),
+    UPDATE_DATABASE: envFlag("UPDATE_DATABASE", true),
 
     // Incremental Scraping Configuration
     INCREMENTAL_SCRAPING: {

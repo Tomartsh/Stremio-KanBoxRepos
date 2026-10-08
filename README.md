@@ -136,6 +136,37 @@ REPO_NAME=your_repo_name
 BRANCH_SECRET=main
 ```
 
+## Regenerating Kan 88
+
+`output/stremio-kan88.zip` on main is the empty catalog (`"data": {}`, about 195 bytes). Supabase has no Kan 88 rows for the addon to show. `www.kan.org.il` returns HTTP 403 from outside Israel, so this catalog has to be scraped from an Israeli host. Playwright is required because the lobby is behind Cloudflare.
+
+Do these three steps from that host, with `classes/.env` containing the Supabase service role:
+
+1. Confirm the scrape actually finds series, without uploading anything:
+
+```bash
+npx playwright install chromium
+npm run scrape:local -- kan88
+```
+
+`scripts/scrape-local.js` forces `SAVE_MODE=local`, `WRITE_TO_GITHUB=false`, and `UPDATE_DATABASE=false`. Check that `output/stremio-kan88.zip` is no longer ~195 bytes and that its `data` object has series. A lobby page that fails to load aborts the run, and `BaseScraper` does not replace an existing ZIP or Supabase rows when the result is empty.
+
+2. Republish the ZIP to GitHub (this is what GitHub Pages serves as the addon fallback) and upsert Supabase. From the scraper server:
+
+```bash
+curl "http://localhost:49999/run?scraper=kan88&mode=full"
+```
+
+That writes `output/stremio-kan88.zip` through the GitHub uploader and calls `updateFromJSON` with scraper `kan88`. The database column `scraper` is `kan88`. The series `subtype` written by this scraper is `8`. The addon catalog also accepts subtypes `kan88` and `88`.
+
+3. Restart or wait for the addon to reload. It reads Supabase first. An empty ZIP is ignored by the addon, so publishing the empty file again will not fill the catalog.
+
+`output/stremio-kankids.zip` already has series. It does not need a regen for this fix.
+
+## Live TV
+
+`classes/LiveTV.js` matches Stremio-KanBoxAddon branch `cursor/fix-stremio-playback-d2c6`: the same channel ids and posters as `classes/liveChannels.js`, and the first playlist from `classes/liveStreamResolver.js`. That includes the Mako `/evrideo/` channels and Reshet's CloudFront backup as the first Reshet stream. It does not write `output/stremio-live.zip`. The addon deleted that archive and ignores the filename. Keshet 12, Channel 24, and the `/evrideo/` channels still need a Mako entitlement ticket, which the addon fetches at playback.
+
 ## Logging
 
 Logs are written to: `logs/Stremio-Repos.log`
