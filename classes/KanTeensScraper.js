@@ -5,7 +5,7 @@ const {
     HINUKHIT,
     SCRAPER_CONFIG
 } = require("./constants.js");
-const { safeExecute } = require("./ScraperHelpers.js");
+const { safeExecute, extractLobbySeries } = require("./ScraperHelpers.js");
 const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
@@ -52,13 +52,7 @@ class KanTeensScraper extends BaseScraper {
 
         var subType = "n";
         var doc = await fetchData(HINUKHIT.URL_TEENS);
-
-        var teensSeries = doc.querySelectorAll("div.umb-block-list div script");
-        var teensScriptStr = teensSeries[4].toString();
-        var startIndex = teensScriptStr.indexOf("[{");
-        var lastIndex = teensScriptStr.lastIndexOf("}]") +2 ;
-        var teensJsonStr = teensScriptStr.substring(startIndex, lastIndex);
-        var teensJsonArr = JSON.parse(teensJsonStr);
+        var teensJsonArr = extractLobbySeries(doc);
 
         // Process teens series using batch processor
         logger.info(`crawlTeens => Found ${teensJsonArr.length} teens series to process`);

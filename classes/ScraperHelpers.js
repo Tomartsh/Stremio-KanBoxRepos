@@ -405,14 +405,48 @@ async function safeFetch(url, context, logger, options = {}, retries = 1) {
 }
 
 /**
- * Wrap a processor function for batch processing with error handling
- * Returns null on error, allowing batch to continue
+ * Kan Kids / Kan Teens lobby pages embed the series list as a JSON array
+ * inside a script tag. The old scraper always read script index 4. When
+ * Cloudflare (or a layout change) returned a different document, that index
+ * threw and the empty result was published.
  *
- * @param {Function} processor - Function to wrap
- * @param {string} context - Context for error logging
- * @param {Object} logger - Logger instance to use
- * @returns {Function} - Wrapped function
+ * Prefer the historical index when it parses, then scan every script.
+ * @param {*} doc parsed HTML document
+ * @returns {Array<object>}
  */
+function extractLobbySeries(doc) {
+    if (!doc || typeof doc.querySelectorAll !== "function") {
+        throw new Error("Lobby page did not load");
+    }
+
+    const ordered = [];
+    const blocks = doc.querySelectorAll("div.umb-block-list div script");
+    if (blocks[4]) ordered.push(blocks[4]);
+    for (const script of doc.querySelectorAll("script")) {
+        ordered.push(script);
+    }
+
+    const seen = new Set();
+    for (const script of ordered) {
+        if (seen.has(script)) continue;
+        seen.add(script);
+        const text = typeof script.toString === "function" ? script.toString() : "";
+        const start = text.indexOf("[{");
+        const end = text.lastIndexOf("}]");
+        if (start < 0 || end <= start) continue;
+        try {
+            const parsed = JSON.parse(text.substring(start, end + 2));
+            if (Array.isArray(parsed) && parsed.some(item => item && typeof item === "object" && item.Url)) {
+                return parsed;
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+
+    throw new Error("Lobby page did not contain a series list");
+}
+
 function wrapProcessor(processor, context, logger) {
     return async (...args) => {
         try {
@@ -434,6 +468,7 @@ module.exports = {
     extractReleaseDateGeneric,
     safeExecute,
     safeFetch,
+    extractLobbySeries,
     wrapProcessor,
     CircuitBreaker,
     RateLimiter

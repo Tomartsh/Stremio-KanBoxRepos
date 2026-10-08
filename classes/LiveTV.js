@@ -1,23 +1,18 @@
-const utils = require("./utilities.js");
-const {fetchData} = require("./utilities.js");
 const {
     LOG4JS,
-    URLS_ASSETS_BASE,
-    KNESSET_URL_TV
+    URLS_ASSETS_BASE
 } = require("./constants.js");
-
-
 
 const log4js = require("log4js");
 log4js.configure({
-    appenders: { 
+    appenders: {
         out: { type: "stdout" },
-        Stremio: 
-        { 
-            type: LOG4JS.TYPE, 
-            filename: LOG4JS.FILENAME, 
-            maxLogSize: LOG4JS.MAX_SIZE, 
-            backups: LOG4JS.BACKUP_FILES, 
+        Stremio:
+        {
+            type: LOG4JS.TYPE,
+            filename: LOG4JS.FILENAME,
+            maxLogSize: LOG4JS.MAX_SIZE,
+            backups: LOG4JS.BACKUP_FILES,
         }
     },
     categories: { default: { appenders: ['Stremio','out'], level: LOG4JS.LEVEL } },
@@ -25,88 +20,230 @@ log4js.configure({
 
 var logger = log4js.getLogger("LiveTV");
 
+/**
+ * Live TV channel list, aligned with Stremio-KanBoxAddon branch
+ * cursor/fix-stremio-playback-d2c6 (PR #7), which follows the merged PR #6 list.
+ *
+ * The addon no longer reads output/stremio-live.zip. That archive was deleted
+ * in May 2026, and classes/zipSources.js skips the filename. Catalog posters
+ * live in the addon's classes/liveChannels.js. Playback URLs are resolved on
+ * demand in classes/liveStreamResolver.js. Writing the zip again would
+ * recreate a file nothing reads, so crawl() does not write it.
+ *
+ * The streamUrl on each channel is the first playlist the addon returns.
+ * Keshet 12, Channel 24, and the Mako /evrideo/ channels need a fresh
+ * entitlementsServicesV2.jsp ticket, which the addon appends at playback.
+ * Reshet's first playlist is the CloudFront backup whose segments are relative.
+ */
+const LIVE_CATALOG = [
+    {
+        id: "il_kanTV_04",
+        name: "כאן 11",
+        genres: ["actuality", "news", "חדשות", "אקטואליה"],
+        posterFile: "kan.jpg",
+        description: "Kan 11 Live Stream From Israel",
+        streamUrl: "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan11/live.livx/playlist.m3u8?dvr=21600000"
+    },
+    {
+        id: "il_kanTV_05",
+        name: "חינוכית",
+        genres: ["Kids", "ילדים ונוער"],
+        posterFile: "hinuchit.jpg",
+        description: "שידורי הטלויזיה החינוכית",
+        streamUrl: "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan_edu/live.livx/playlist.m3u8?dvr=21600000"
+    },
+    {
+        id: "il_kanTV_07",
+        name: "שידורי ערוץ השידור הערבי",
+        genres: ["Actuality", "אקטואליה"],
+        posterFile: "makan.png",
+        description: "שידורי ערוץ השידור הערבי",
+        streamUrl: "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/makan/live.livx/playlist.m3u8?dvr=21600000"
+    },
+    {
+        id: "il_kan_TV_06",
+        name: "שידורי ערוץ הכנסת 99",
+        genres: ["Actuality", "אקטואליה"],
+        posterFile: "knesset.png",
+        description: "שידורי ערוץ הכנסת - 99",
+        streamUrl: "https://kneset.gostreaming.tv/p2-kneset/_definst_/myStream/index.m3u8"
+    },
+    {
+        id: "il_makoTV_01",
+        name: "קשת 12",
+        genres: ["Actuality", "אקטואליה"],
+        posterFile: "LIVE_push_mako_tv.jpg",
+        description: "שידור חי קשת 12",
+        streamUrl: "https://mako-streaming.akamaized.net/stream/hls/live/2033791/k12/index.m3u8"
+    },
+    {
+        id: "il_reshetTV_01",
+        name: "רשת ערוץ 13",
+        genres: ["Actuality", "אקטואליה"],
+        posterFile: "13.jpg",
+        description: "שידור חי רשת ערוץ 13",
+        streamUrl: "https://d18b0e6mopany4.cloudfront.net/out/v1/2f2bc414a3db4698a8e94b89eaf2da2a/index.m3u8"
+    },
+    {
+        id: "il_14TV_01",
+        name: "ערוץ 14",
+        genres: ["Actuality", "אקטואליה"],
+        posterFile: "14square.png",
+        description: "שידור חי ערוץ 14",
+        streamUrl: "https://ch14channel14.encoders.immergo.tv/app/2/streamPlaylist.m3u8"
+    },
+    {
+        id: "il_24_01",
+        name: "ערוץ 24 חדשות",
+        genres: ["Actuality", "אקטואליה", "news"],
+        posterFile: "channel_24_square.jpg",
+        description: "שידור חי ערוץ 24 חדשות",
+        streamUrl: "https://mako-streaming.akamaized.net/direct/hls/live/2035340/ch24live/index.m3u8?as=1"
+    },
+    {
+        id: "il_makoTV_erets",
+        name: "ערוץ ארץ נהדרת",
+        genres: ["Actuality", "אקטואליה"],
+        poster: "https://raw.githubusercontent.com/Fishenzon/repo/master/plugin.video.idanplus/images/12eretz.jpg",
+        description: "שידור חי ערוץ ארץ נהדרת",
+        streamUrl: "https://mako-streaming.akamaized.net/evrideo/hls/live/20001278/erets/index.m3u8"
+    },
+    {
+        id: "il_makoTV_savri",
+        name: "ערוץ סברי מרנן",
+        genres: ["Actuality", "אקטואליה"],
+        poster: "https://raw.githubusercontent.com/Fishenzon/repo/master/plugin.video.idanplus/images/12savri.jpg",
+        description: "שידור חי ערוץ סברי מרנן",
+        streamUrl: "https://mako-streaming.akamaized.net/evrideo/hls/live/20001278/savri/index.m3u8"
+    },
+    {
+        id: "il_makoTV_comedy",
+        name: "ערוץ הקומדיה",
+        genres: ["Actuality", "אקטואליה"],
+        poster: "https://raw.githubusercontent.com/Fishenzon/repo/master/plugin.video.idanplus/images/12comedy.jpg",
+        description: "שידור חי ערוץ הקומדיה",
+        streamUrl: "https://mako-streaming.akamaized.net/evrideo/hls/live/20001278/free_comedy/index.m3u8"
+    },
+    {
+        id: "il_makoTV_drama",
+        name: "ערוץ הדרמה",
+        genres: ["Actuality", "אקטואליה"],
+        poster: "https://raw.githubusercontent.com/Fishenzon/repo/master/plugin.video.idanplus/images/12drama.jpg",
+        description: "שידור חי ערוץ הדרמה",
+        streamUrl: "https://mako-streaming.akamaized.net/evrideo/hls/live/20001278/free_drama/index.m3u8"
+    },
+    {
+        id: "il_makoTV_music",
+        name: "ערוץ המוזיקה",
+        genres: ["Actuality", "אקטואליה"],
+        poster: "https://raw.githubusercontent.com/Fishenzon/repo/master/plugin.video.idanplus/images/12music.jpg",
+        description: "שידור חי ערוץ המוזיקה",
+        streamUrl: "https://mako-streaming.akamaized.net/evrideo/hls/live/20001278/free_music/index.m3u8"
+    },
+    {
+        id: "il_makoTV_food",
+        name: "ערוץ האוכל",
+        genres: ["Actuality", "אקטואליה"],
+        poster: "https://raw.githubusercontent.com/Fishenzon/repo/master/plugin.video.idanplus/images/12food.jpg",
+        description: "שידור חי ערוץ האוכל",
+        streamUrl: "https://mako-streaming.akamaized.net/evrideo/hls/live/20001278/free_food/index.m3u8"
+    },
+    {
+        id: "il_10_live_01",
+        name: "ערוץ עשר",
+        genres: ["Actuality", "אקטואליה"],
+        posterFile: "10.png",
+        description: "שידור חי ערוץ עשר",
+        streamUrl: "https://r.il.cdn-redge.media/livehls/oil/calcala-live/live/channel10/live.livx/playlist.m3u8?dvr=21600000"
+    },
+    {
+        id: "il_ynetTv_01",
+        name: "שידור חי ynet",
+        genres: ["Actuality", "אקטואליה", "news"],
+        posterFile: "ynet.jpg",
+        description: "שידור חי ynet",
+        streamUrl: "https://ynet-live-01.ynet-pic1.yit.co.il/ynet/live_720.m3u8"
+    },
+    {
+        id: "il_24newsHeb_01",
+        name: "i24 עברית",
+        genres: ["Actuality", "אקטואליה", "news"],
+        posterFile: "i24news_hebrew_square.png",
+        description: "שידור חי i24 עברית",
+        streamUrl: "https://i24newshebrew-cdn.encoders.immergo.tv/master.m3u8"
+    },
+    {
+        id: "il_24newsEng_01",
+        name: "i24 English",
+        genres: ["Actuality", "אקטואליה", "news"],
+        posterFile: "i24new_english_square.png",
+        description: "i24 News English live",
+        streamUrl: "https://i24newsenglish-cdn.encoders.immergo.tv/master.m3u8"
+    },
+    {
+        id: "il_24newsFrn_01",
+        name: "i24 Français",
+        genres: ["Actuality", "אקטואליה", "news"],
+        posterFile: "i24news.png",
+        description: "i24 News Français en direct",
+        streamUrl: "https://i24newsfrench-cdn.encoders.immergo.tv/master.m3u8"
+    },
+    {
+        id: "il_24newsArb_01",
+        name: "i24 العربية",
+        genres: ["Actuality", "אקטואליה", "news"],
+        posterFile: "i24news_arabic_square.png",
+        description: "بث مباشر i24 بالعربية",
+        streamUrl: "https://i24newsarabic-cdn.encoders.immergo.tv/master.m3u8"
+    }
+];
+
+function assetUrl(posterFile) {
+    return URLS_ASSETS_BASE + posterFile;
+}
+
+function channelPoster(channel) {
+    if (channel.poster && /^https?:\/\//i.test(channel.poster)) return channel.poster;
+    return assetUrl(channel.posterFile);
+}
+
 class LiveTV {
 
     constructor() {
         this._liveTVJSONObj = {};
     }
 
-    /********************************************************************
-     * 
-     * Kan Live channels handling
-     * 
-     ********************************************************************/
-    
-    crawl(isDoWriteFile = false){
+    crawl(isDoWriteFile = false) {
         logger.info("Start Crawling");
 
-
-        // Kan channels - default referer is kan.org.il
-        this.addToLiveJSON("il_kanTV_04", "כאן 11", ["actuality", "news", "חדשות", "אקטואליה"], URLS_ASSETS_BASE + "kan.jpg", "Kan 11 Live Stream From Israel", "https://n-121-7.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan11/live.livx/playlist.m3u8");
-        this.addToLiveJSON("il_kanTV_05", "חינוכית", ["Kids","ילדים ונוער"], URLS_ASSETS_BASE + URLS_ASSETS_BASE +  + "hinuchit.jpg", "שידורי הטלויזיה החינוכית", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/kan_edu/live.livx/playlist.m3u8");
-        this.addToLiveJSON("il_kanTV_07", "שידורי ערוץ השידור הערבי", ["Actuality","אקטואליה"], URLS_ASSETS_BASE +  + "makan.png", "שידורי ערוץ השידור הערבי", "https://r.il.cdn-redge.media/livehls/oil/kancdn-live/live/makan/live.livx/playlist.m3u8");
-
-        // Knesset
-        this.addToLiveJSON("il_kan_TV_06", "שידורי ערוץ הכנסת 99", ["Actuality","אקטואליה"], URLS_ASSETS_BASE +  +"knesset.png", "שידורי ערוץ הכנסת - 99", "https://kneset.gostreaming.tv/p2-kneset/_definst_/myStream/index.m3u8");
-
-        // Mako/Keshet - Channel 12 & 24
-        // Note: These streams may require entitlement service or have changed
-        // URLs are based on Limelight CDN pattern but may need updating
-        this.addToLiveJSON("il_makoTV_01", "מאקו ערוץ 12", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "LIVE_push_mako_tv.jpg", "שידור חי מאקו ערוץ 12", "https://ll.cdn.mako.co.il/direct/hls/live/2033791/k12/index.m3u8");
-        this.addToLiveJSON("il_24_01", "ערוץ 24 חדשות", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE +  "channel24_square.png", "שידור חי ערוץ 24 חדשות", "https://ll.cdn.mako.co.il/direct/hls/live/2035340/ch24live/index.m3u8");
-
-        // Reshet - Channel 13
-        this.addToLiveJSON("il_reshetTV_01", "רשת ערוץ 13", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "13.jpg", "שידור חי רשת ערוץ 13", "https://dsk76kvc9kie6.cloudfront.net/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8");
-
-        // Channel 14
-        this.addToLiveJSON("il_14TV_01", "ערוץ 14", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "14square.png", "שידור חי ערוץ 14", "https://ch14channel14.encoders.immergo.tv/app/2/streamPlaylist.m3u8");
-
-        // Ynet
-        this.addToLiveJSON("il_ynetTv_01", "שידור חי ynet", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "ynet.jpg", "שידור חי ynet", "https://ynet-live-01.ynet-pic1.yit.co.il/ynet/live.m3u8");
-
-        // i24 News (Fastly/Brightcove CDN)
-        this.addToLiveJSON("il_24newsEng_01", "שידור חי באנגלית i24", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "i24new_english_square.png", "שידור חי באנגלית i24", "https://fastly.live.brightcove.com/6386790908112/eu-central-1/5377161796001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiZXJmajYzLmVncmVzcy53YzQ3bTEiLCJhY2NvdW50X2lkIjoiNTM3NzE2MTc5NjAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI1Mzc3MTYxNzk2MDAxIl0sImp0aSI6IjYzODY3OTA5MDgxMTIifQ._w5c3EwfnEecDCEpDaKuVz07uuEyUb3vXvQN3svv-oU/playlist-hls.m3u8");
-        this.addToLiveJSON("il_24newsHeb_01", "שידור חי בעיברית i24", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "i24news_hebrew_square.png", "שידור חי בעיברית i24", "https://fastly.live.brightcove.com/6386790215112/eu-central-1/5377161796001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiZXJmajYzLmVncmVzcy53YzQ3bTEiLCJhY2NvdW50X2lkIjoiNTM3NzE2MTc5NjAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI1Mzc3MTYxNzk2MDAxIl0sImp0aSI6IjYzODY3OTAyMTUxMTIifQ.8ZawImK7DfcrrXeAT2OVZ62qQJrJiBaoc7Y1DNNq1bg/playlist-hls.m3u8");
-        this.addToLiveJSON("il_24newsFrn_01", "שידור חי בצרפתית i24", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "i24new_french_square.png", "שידור חי בצרפתית i24", "https://fastly.live.brightcove.com/6386790513112/eu-central-1/5377161796001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiZXJmajYzLmVncmVzcy53YzQ3bTEiLCJhY2NvdW50X2lkIjoiNTM3NzE2MTc5NjAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI1Mzc3MTYxNzk2MDAxIl0sImp0aSI6IjYzODY3OTA1MTMxMTIifQ.Szahkl5VVsEWGdM4mgrmlDPVkWPTRgBMwwGg4D5hGFU/playlist-hls.m3u8");
-        this.addToLiveJSON("il_24newsArb_01", "שידור חי בערבית i24", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "i24news_arabic_square.png", "שידור חי בערבית i24", "https://fastly.live.brightcove.com/6386792572112/eu-central-1/5377161796001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiZXJmajYzLmVncmVzcy53YzQ3bTEiLCJhY2NvdW50X2lkIjoiNTM3NzE2MTc5NjAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI1Mzc3MTYxNzk2MDAxIl0sImp0aSI6IjYzODY3OTI1NzIxMTIifQ.vsA8IfCHFqoqo2BHxx4w0PqBgTESPMYgFGL771vzKoA/playlist-hls.m3u8");
-
-        // Walla - stream no longer available
-        // this.addToLiveJSON("il_walla_live_01", "וואלה! NEWS", ["Actuality","אקטואליה","news"], URLS_ASSETS_BASE + "walla_news_square.png", "שידור חי וואלה! NEWS", "", "https://www.walla.co.il/");
-
-        // Channel 10 (Redge CDN)
-        this.addToLiveJSON("il_10_live_01", "ערוץ עשר", ["Actuality","אקטואליה"], URLS_ASSETS_BASE + "10.png", "שידור חי ערוץ עשר", "https://r.il.cdn-redge.media/livehls/oil/calcala-live/live/channel10/live.livx/playlist.m3u8");
-
+        for (const channel of LIVE_CATALOG) {
+            this.addToLiveJSON(
+                channel.id,
+                channel.name,
+                channel.genres,
+                channelPoster(channel),
+                channel.description,
+                channel.streamUrl
+            );
+        }
 
         logger.info("LiveTV => Done Crawling");
-        if (isDoWriteFile){
-            logger.info("crawl => writing JSON file");
+        if (isDoWriteFile) {
             this.writeJSON();
         }
     }
 
-    addToLiveJSON(id, name, genres, bkgImg, desc, streamUrl){
-        // Get current date for released field
-        const today = new Date().toISOString().split('T')[0];
-
-        // ALL live TV channels use empty streams array
-        // Stream URLs are stored in a separate field for the stream handler
+    addToLiveJSON(id, name, genres, bkgImg, desc, streamUrl) {
         this._liveTVJSONObj[id] = {
             id: id,
             type: "tv",
             subtype: "t",
             name: name,
-            //poster: bkgImg,
-            //link: "",
-            //background: bkgImg,
-            //genres: genres,
-            //description: desc,
-            //streamUrl: streamUrl,  // Store URL for stream handler
             meta: {
                 id: id,
                 name: name,
                 type: "tv",
                 subtype: "t",
-                //link: "",
                 background: bkgImg,
                 poster: bkgImg,
                 posterShape: "square",
@@ -115,42 +252,31 @@ class LiveTV {
                 genres: genres,
                 streamUrl: streamUrl,
                 streams: [{
-                            url: streamUrl,  
-                            name: name,
-                            title: name,
-                            //description: desc
-                        }]
-                /*videos: [
-                    {
-                        id: id,
-                        name: name,
-                        title: name,
-                        description: desc,
-                        thumbnail: bkgImg,
-                        released: today,
-                        streams: [{
-                            url: streamUrl, 
-                            name: name,
-                            title: name,
-                            description: desc
-                        }]
-                    }
-                ]*/
+                    url: streamUrl,
+                    name: name,
+                    title: name
+                }]
             }
-        }
+        };
         logger.debug(`addToLiveJSON => Added Live TV - ${name} ID: ${id}`);
     }
 
-    writeJSON(){
-        logger.debug("writeJSON => Entered");
-        utils.writeJSONToFile(this._liveTVJSONObj, "stremio-live");
-        
-        logger.debug("writeJSON => Leaving");
-    } 
+    /**
+     * Intentionally does not write output/stremio-live.zip.
+     * The addon retired that file. See the comment above LIVE_CATALOG.
+     */
+    writeJSON() {
+        logger.info(
+            "LiveTV => Not writing stremio-live.zip. The addon deleted that archive " +
+            "and no longer reads it. Posters and primary URLs are kept in LIVE_CATALOG " +
+            "so they stay aligned with Stremio-KanBoxAddon classes/liveChannels.js " +
+            "and classes/liveStreamResolver.js."
+        );
+    }
 }
 
-
-/**********************************************************
- * Module Exports
- **********************************************************/
 module.exports = LiveTV;
+module.exports.LIVE_CATALOG = LIVE_CATALOG;
+module.exports.assetUrl = assetUrl;
+module.exports.channelPoster = channelPoster;
+module.exports.WRITES_LIVE_ZIP = false;

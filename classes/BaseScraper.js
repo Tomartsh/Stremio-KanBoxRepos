@@ -108,15 +108,34 @@ class BaseScraper {
             await this.initializeStateManager();
         }
 
+        let scrapeError = null;
         try {
             await this.crawlContent();
         } catch (error) {
+            scrapeError = error;
             this.logger.error(`${this.scraperName} scraping failed: ${error.message}`);
             this.logger.error(error.stack);
         }
 
         this.logger.info("Done Crawling");
         this.logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
+
+        const seriesCount = Object.keys(this._jsonObj || {}).length;
+        const allowEmpty = process.env.ALLOW_EMPTY_PUBLISH === "true";
+        // updateFromJSON deletes every existing row for this scraper, then
+        // inserts whatever this run produced. Publishing a failed or empty
+        // run is what wiped Kan 88 (and, for several weeks, Kan Kids).
+        if (scrapeError || (seriesCount === 0 && !allowEmpty)) {
+            const reason = scrapeError
+                ? `scrape failed (${scrapeError.message})`
+                : "scrape produced 0 series";
+            this.logger.error(
+                `${this.scraperName} => Refusing to publish ${this.getExportFilename()}: ${reason}. ` +
+                "The existing ZIP and Supabase rows were left unchanged."
+            );
+            this.isRunning = false;
+            return;
+        }
 
         // Handle output
         if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
