@@ -149,7 +149,7 @@ npx playwright install chromium
 npm run scrape:local -- kan88
 ```
 
-`scripts/scrape-local.js` forces `SAVE_MODE=local`, `WRITE_TO_GITHUB=false`, and `UPDATE_DATABASE=false`. Check that `output/stremio-kan88.zip` is no longer ~195 bytes and that its `data` object has series. A lobby page that fails to load aborts the run, and `BaseScraper` does not replace an existing ZIP or Supabase rows when the result is empty.
+`scripts/scrape-local.js` forces `SAVE_MODE=local`, `WRITE_TO_GITHUB=false`, and `UPDATE_DATABASE=false`. Check that `output/stremio-kan88.zip` is no longer ~195 bytes and that its `data` object has series. A lobby page that fails to load aborts the run, and `BaseScraper` does not replace an existing ZIP or Supabase rows when the result is empty. A Cloudflare HTTP 403 backs off once, then aborts that scraper and is logged as `BLOCKED`. The same publish step also keeps the previous ZIP and Supabase rows when the new video count is under 85% of the previous catalog. Kan requests share one cookie jar and, only after a challenge, one browser.
 
 2. Republish the ZIP to GitHub (this is what GitHub Pages serves as the addon fallback) and upsert Supabase. From the scraper server:
 

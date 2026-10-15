@@ -98,6 +98,7 @@ const app = express();
 const PORT = process.env.PORT || 49999; //set the port if does not exist
 
 const utils = require("./classes/utilities.js");
+const { formatRunResult } = require("./classes/catalogGate.js");
 const {fetchData} = require("./classes/utilities.js");
 const constants = require("./classes/constants.js");
 const {
@@ -158,18 +159,20 @@ app.get('/run', async (req, res) => {
     (async () => {
         try {
             logger.info(`Starting execution for: ${scraper} (mode: ${scrapeMode})`);
+            let outcome;
             switch (scraper) {
-                case "kanDigital": await new KanDigitalscraper().crawl(true, scrapeMode); break;
-                case "kanArchive": await new KanArchivescraper().crawl(true, scrapeMode); break;
-                case "kanKids":    await new KanKidscraper().crawl(true, scrapeMode);    break;
-                case "kanTeens":   await new KanTeensscraper().crawl(true, scrapeMode);   break;
-                case "kanPodcasts": await new KanPodcastsscraper().crawl(true, scrapeMode); break;
-                case "kan88":      await new Kan88scraper().crawl(true, scrapeMode);      break;
-                case "mako":       await new Makoscraper().crawl(true, scrapeMode);       break;
-                case "reshet":     await new Reshetscraper().crawl(true, scrapeMode);     break;
-                case "livetv":     await new LiveTV().crawl(true, scrapeMode);            break;
+                case "kanDigital": outcome = await new KanDigitalscraper().crawl(true, scrapeMode); break;
+                case "kanArchive": outcome = await new KanArchivescraper().crawl(true, scrapeMode); break;
+                case "kanKids":    outcome = await new KanKidscraper().crawl(true, scrapeMode);    break;
+                case "kanTeens":   outcome = await new KanTeensscraper().crawl(true, scrapeMode);   break;
+                case "kanPodcasts": outcome = await new KanPodcastsscraper().crawl(true, scrapeMode); break;
+                case "kan88":      outcome = await new Kan88scraper().crawl(true, scrapeMode);      break;
+                case "mako":       outcome = await new Makoscraper().crawl(true, scrapeMode);       break;
+                case "reshet":     outcome = await new Reshetscraper().crawl(true, scrapeMode);     break;
+                case "livetv":     outcome = await new LiveTV().crawl(true, scrapeMode);            break;
             }
-            logger.info(`✅ ${scraper} completed successfully`);
+            const resultLine = formatRunResult(scraper, outcome);
+            logger[resultLine.level](resultLine.message);
         } catch (err) {
             // Since the response is already sent, we ONLY log the error.
             // This prevents the "Headers already sent" crash.

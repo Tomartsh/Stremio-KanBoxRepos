@@ -8,6 +8,7 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 const {PREFIX } = require ("./constants");
+const { isKanHost, getKanSession, closeKanSession, isKanBlockedError } = require("./kanSession");
 
 let seriesIterator = 1000;
 
@@ -154,7 +155,11 @@ class PlaywrightBrowserManager {
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-accelerated-2d-canvas',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--disable-extensions',
+                '--disable-background-networking',
+                '--mute-audio',
+                '--renderer-process-limit=1'
             ]
         });
         logger.info('PlaywrightBrowserManager => Browser launched successfully');
@@ -218,10 +223,12 @@ process.on('exit', () => {
 });
 process.on('SIGINT', async () => {
     await playwrightManager.close();
+    await closeKanSession();
     process.exit(0);
 });
 process.on('SIGTERM', async () => {
     await playwrightManager.close();
+    await closeKanSession();
     process.exit(0);
 });
 
@@ -429,6 +436,13 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
         return null;
     }
 
+    // kan.org.il keeps one cookie jar and, only if Cloudflare challenges,
+    // one browser. The generic retry ladder waits minutes on each 403.
+    if (isKanHost(hostname)) {
+        logger.debug(`fetchWithRetries => kan.org.il shared session ${url}`);
+        return getKanSession().fetch(url, { asJson, params, headers });
+    }
+
     // Apply rate limiting delay before making request
     await requestTracker.trackAndDelay(hostname);
 
@@ -601,6 +615,7 @@ async function fetchData(url, asJson = false, params = {}, headers = HEADERS, pr
         // We pass the URL through to the retry logic
         return await fetchWithRetries(url, asJson, params, headers, preferredMethod);
     } catch (error) {
+        if (isKanBlockedError(error)) throw error;
         logger.error(`fetchData => Failed to fetch URL ${url} :`, error.message);
         return null; 
     }

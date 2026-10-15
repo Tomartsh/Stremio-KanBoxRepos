@@ -10,6 +10,7 @@
  */
 
 const { fetchData, extractReleaseDate } = require("./utilities.js");
+const { rethrowIfKanBlocked, isKanBlockedError } = require("./kanSession.js");
 const log4js = require("log4js");
 const logger = log4js.getLogger("ScraperHelpers");
 
@@ -361,6 +362,7 @@ async function safeExecute(fn, context, logger, defaultValue = null) {
     try {
         return await fn();
     } catch (error) {
+        rethrowIfKanBlocked(error);
         logger.error(`${context} => Error: ${error.message}`);
         if (error.stack && process.env.NODE_ENV !== 'production') {
             logger.debug(`${context} => Stack: ${error.stack}`);
@@ -392,6 +394,8 @@ async function safeFetch(url, context, logger, options = {}, retries = 1) {
             return result;
         } catch (error) {
             lastError = error;
+            if (isKanBlockedError(error)) throw error;
+            rethrowIfKanBlocked(error);
             if (attempt < retries) {
                 const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
                 logger.warn(`${context} => Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);

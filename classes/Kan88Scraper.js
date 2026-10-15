@@ -8,6 +8,7 @@ const {
     HEADERS
 } = require("./constants.js");
 const BaseScraper = require("./BaseScraper.js");
+const { rethrowIfKanBlocked } = require("./kanSession.js");
 const {
     readLastPageNumber,
     pageUrls,
@@ -45,8 +46,8 @@ class Kan88Scraper extends BaseScraper {
     }
 
     /**
-     * kan.org.il answers plain HTTP clients with a Cloudflare challenge.
-     * Playwright is the fetch path that currently returns the server-rendered lobby.
+     * kan.org.il is served by the shared Kan session: one cookie jar, paced
+     * requests, and one browser only if Cloudflare challenges the session.
      */
     fetchKanPage(url) {
         return fetchData(url, false, {}, HEADERS, "playwright");
@@ -209,6 +210,7 @@ class Kan88Scraper extends BaseScraper {
             logger.debug(`shouldScrapeSeriesQuickCheck => Latest episode changed for ${title} (was: ${state.last_episode_id}, now: ${fullEpisodeLink})`);
             return true;
         } catch (error) {
+            rethrowIfKanBlocked(error);
             logger.warn(`shouldScrapeSeriesQuickCheck => Error checking ${title}: ${error.message}, will scrape`);
             return true;
         }
