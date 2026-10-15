@@ -7,6 +7,13 @@ const {
 } = require("./constants.js");
 const { DeltaTracker, updateDatabaseFromJSON } = require("./utilities.js");
 const { CircuitBreaker, RateLimiter } = require("./ScraperHelpers.js");
+const { bindKanRun, getKanRunState, assertKanOpen, rethrowIfKanBlocked } = require("./kanSession.js");
+const {
+    catalogIsComplete,
+    countCatalog,
+    decidePublish,
+    loadPreviousCatalogCounts
+} = require("./catalogGate.js");
 const StateManager = require("./StateManager.js");
 const log4js = require("log4js");
 
@@ -102,7 +109,16 @@ class BaseScraper {
         this.logger.info(`Started Crawling (Mode: ${this.incrementalMode ? 'INCREMENTAL' : 'FULL'})`);
         this.isRunning = true;
         this.deltaTracker.clear();
+        this.catalogIsComplete = catalogIsComplete(this.scraperName, this.incrementalMode);
 
+        return bindKanRun(() => this._crawlAndMaybePublish(isDoWriteFile));
+    }
+
+    /**
+     * Scrape, then publish only when the catalog is safe to replace the
+     * previous ZIP and Supabase rows.
+     */
+    async _crawlAndMaybePublish(isDoWriteFile) {
         // Initialize state manager if incremental mode
         if (this.incrementalMode) {
             await this.initializeStateManager();
@@ -114,27 +130,52 @@ class BaseScraper {
         } catch (error) {
             scrapeError = error;
             this.logger.error(`${this.scraperName} scraping failed: ${error.message}`);
-            this.logger.error(error.stack);
+            if (error.stack) this.logger.error(error.stack);
         }
 
         this.logger.info("Done Crawling");
         this.logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        const seriesCount = Object.keys(this._jsonObj || {}).length;
+        const counts = countCatalog(this._jsonObj);
+        const runState = getKanRunState() || {};
         const allowEmpty = process.env.ALLOW_EMPTY_PUBLISH === "true";
-        // updateFromJSON deletes every existing row for this scraper, then
-        // inserts whatever this run produced. Publishing a failed or empty
-        // run is what wiped Kan 88 (and, for several weeks, Kan Kids).
-        if (scrapeError || (seriesCount === 0 && !allowEmpty)) {
-            const reason = scrapeError
-                ? `scrape failed (${scrapeError.message})`
-                : "scrape produced 0 series";
-            this.logger.error(
-                `${this.scraperName} => Refusing to publish ${this.getExportFilename()}: ${reason}. ` +
-                "The existing ZIP and Supabase rows were left unchanged."
+        const blocked = !!(runState.blocked || runState.http403 > 0);
+        let previous = null;
+        if (!scrapeError && !blocked && counts.series > 0) {
+            previous = await this.loadPreviousCounts();
+        }
+        if (previous) {
+            this.logger.info(
+                `${this.scraperName} catalog: ${counts.series} series, ${counts.videos} videos ` +
+                `(previous ${previous.series} series, ${previous.videos} videos)`
             );
+        } else {
+            this.logger.info(`${this.scraperName} catalog: ${counts.series} series, ${counts.videos} videos`);
+        }
+
+        // updateFromJSON deletes every existing row for this scraper, then
+        // inserts whatever this run produced. A blocked run, an empty run,
+        // or a catalog whose video count fell below 85% of the previous
+        // publish must leave the ZIP and the rows unchanged.
+        const decision = decidePublish({
+            scraperName: this.scraperName,
+            exportFilename: this.getExportFilename(),
+            scrapeError,
+            counts,
+            previous,
+            blocked,
+            http403: runState.http403 || 0,
+            allowEmpty,
+            catalogComplete: this.catalogIsComplete
+        });
+        decision.series = counts.series;
+        decision.videos = counts.videos;
+
+        if (!decision.published) {
+            this.logger.error(decision.line);
             this.isRunning = false;
-            return;
+            this.lastResult = decision;
+            return decision;
         }
 
         // Handle output
@@ -149,13 +190,14 @@ class BaseScraper {
                 await this.updateDatabase();
             }
         } else if (isDoWriteFile) {
-            // Backward compatibility
             this.logger.info("crawl => writing JSON file");
             this.writeJSON();
         }
 
         this.isRunning = false;
         this.logger.info("crawl => Exiting");
+        this.lastResult = decision;
+        return decision;
     }
 
     /**
@@ -218,12 +260,14 @@ class BaseScraper {
                 const startTime = Date.now();
                 this.logger.debug(`[${itemType}] Processing ${i + 1}/${items.length}`);
                 try {
+                    assertKanOpen();
                     const result = await processor(items[i], i);
                     const duration = Date.now() - startTime;
                     this.logger.debug(`[${itemType}] Completed ${i + 1}/${items.length} in ${duration}ms`);
                     results.push(result);
                 } catch (error) {
                     this.logger.error(`[${itemType}] Failed ${i + 1}/${items.length}: ${error.message}`);
+                    rethrowIfKanBlocked(error);
                     results.push(null);
                 }
             }
@@ -251,6 +295,7 @@ class BaseScraper {
                 const globalIndex = batchStart + indexInBatch;
                 const itemStartTime = Date.now();
                 try {
+                    assertKanOpen();
                     const result = await processor(item, globalIndex);
                     const itemDuration = Date.now() - itemStartTime;
                     this.logger.debug(`[${itemType}] ✓ Item ${globalIndex + 1}/${items.length} completed in ${itemDuration}ms`);
@@ -258,6 +303,7 @@ class BaseScraper {
                 } catch (error) {
                     const itemDuration = Date.now() - itemStartTime;
                     this.logger.error(`[${itemType}] ✗ Item ${globalIndex + 1}/${items.length} failed after ${itemDuration}ms: ${error.message}`);
+                    rethrowIfKanBlocked(error);
                     return { success: false, error, index: globalIndex };
                 }
             });
@@ -411,6 +457,18 @@ class BaseScraper {
         utils.writeJSONToFile(this._jsonObj, this.getExportFilename());
 
         this.logger.trace("writeJSON => Leaving");
+    }
+
+    /**
+     * Counts from the catalog this run would replace.
+     * Tests set previousCountsOverride to skip the network.
+     */
+    async loadPreviousCounts() {
+        if (this.previousCountsOverride !== undefined) return this.previousCountsOverride;
+        return loadPreviousCatalogCounts(this.getExportFilename(), {
+            databaseKey: this.getDatabaseKey(),
+            logger: this.logger
+        });
     }
 
     /**

@@ -54,6 +54,21 @@ module.exports = {
         MAX_CONCURRENT_REQUESTS: 10
     },
 
+    // One shared kan.org.il session for kanDigital, kanArchive, and kan88.
+    // Requests are serial, paced, and reuse the same cookies. A browser is
+    // launched only after a Cloudflare challenge, and only one of them.
+    KAN_SESSION: {
+        MIN_INTERVAL_MS: 2000,
+        JITTER_MS: [1000, 4000],
+        BACKOFF_MS: [8000, 12000],
+        CHALLENGE_WAIT_MS: 8000,
+        REQUEST_TIMEOUT_MS: 20000,
+        VIDEO_KEEP_RATIO: 0.85,
+        // An incremental run that still has this fraction of the previous
+        // series count is a full catalog, so the video check applies to it.
+        FULL_CATALOG_SERIES_RATIO: 0.7
+    },
+
     // Scraper-Specific Configuration for Parallel Fetching
     //
     // IMPORTANT: These settings are tuned to avoid 403/rate limiting errors

@@ -9,6 +9,7 @@ const {
     SCRAPER_CONFIG
 } = require("./constants.js");
 const { extractKanStream, cleanVideoName, safeExecute } = require("./ScraperHelpers.js");
+const { rethrowIfKanBlocked } = require("./kanSession.js");
 const BaseScraper = require("./BaseScraper.js");
 const SUB_PREFIX = "digital";
 const SUBTYPE = "d";
@@ -280,6 +281,7 @@ class KanDigitalScraper extends BaseScraper {
                             logger.info(`crawlKanBox => Added series from ${category.name}: ${result.title}`);
                         }
                     } catch (error) {
+                        rethrowIfKanBlocked(error);
                         logger.error(`crawlKanBox => Error processing series ${fullSeriesUrl}: ${error.message}`);
                     }
                 }
@@ -336,6 +338,7 @@ class KanDigitalScraper extends BaseScraper {
         try{
             seriesPageDoc = await fetchData(`${pageUrl}?page=1&itemsToShow=1000`);
         } catch (e){
+            rethrowIfKanBlocked(e);
             logger.error(`processOneDigitalSeries => could not retrieve series page doc from URL ${pageUrl}. Error: ${e}`);
             return null;
         }
@@ -521,6 +524,7 @@ class KanDigitalScraper extends BaseScraper {
                         }
                     }
                 } catch (e) {
+                    rethrowIfKanBlocked(e);
                     logger.error(`processOneDigitalSeries => Error fetching hidden season ${extraSeason.season}: ${e.message}`);
                 }
             }
@@ -559,6 +563,7 @@ class KanDigitalScraper extends BaseScraper {
         try {
             var movieDoc = await fetchData(url);
         } catch (e) {
+            rethrowIfKanBlocked(e);
             logger.error(`getVideo => could not retrieve movie page doc from URL ${url}. Error: ${e}`);
             return null;
         }
@@ -944,6 +949,7 @@ getStream (scripts, id, url){
                 logger.trace(`processOneDigitalEpisode => Extracted thumbnail: ${episodeLogoUrl} for ${title}`);
             }
         } catch (error) {
+            rethrowIfKanBlocked(error);
             logger.warn(`processOneDigitalEpisode => Could not extract thumbnail/release date for ${title}: ${error.message}`);
         }
 

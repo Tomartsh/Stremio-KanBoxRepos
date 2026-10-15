@@ -39,12 +39,14 @@ async function main() {
 
     console.log(`Local scrape of ${name}. GitHub upload and Supabase updates are off.`);
     const scraper = factory();
-    await scraper.crawl(true, "full");
+    const outcome = await scraper.crawl(true, "full");
     const count = Object.keys(scraper.getJsonObject ? scraper.getJsonObject() : {}).length;
     console.log(`Finished ${name} with ${count} series in memory.`);
-    if (count === 0) {
-        console.error("Nothing was written. The previous ZIP was left in place.");
-        process.exit(2);
+    if (!outcome || outcome.published === false) {
+        console.error(outcome && outcome.line
+            ? outcome.line
+            : "Nothing was written. The previous ZIP was left in place.");
+        process.exit(outcome && outcome.blocked ? 3 : 2);
     }
 }
 

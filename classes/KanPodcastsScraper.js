@@ -7,6 +7,7 @@ const {
     SCRAPER_CONFIG
 } = require("./constants.js");
 const BaseScraper = require("./BaseScraper.js");
+const { rethrowIfKanBlocked } = require("./kanSession.js");
 
 const log4js = require("log4js");
 var logger = log4js.getLogger("KanPodcastsScraper");
@@ -73,6 +74,7 @@ class KanPodcastsScraper extends BaseScraper {
             logger.debug(`shouldScrapeSeriesQuickCheck => Latest episode changed for ${title} (was: ${state.last_episode_id}, now: ${fullEpisodeLink})`);
             return true;
         } catch (error) {
+            rethrowIfKanBlocked(error);
             logger.warn(`shouldScrapeSeriesQuickCheck => Error checking ${title}: ${error.message}, will scrape`);
             return true;
         }
@@ -227,6 +229,7 @@ class KanPodcastsScraper extends BaseScraper {
                 return null;
             }
         } catch (error) {
+            rethrowIfKanBlocked(error);
             logger.error(`processOneSeries => Error processing ${title}:`, error.message);
             return null;
         }
@@ -401,6 +404,7 @@ class KanPodcastsScraper extends BaseScraper {
             return allEpisodes;
 
         } catch (error) {
+            rethrowIfKanBlocked(error);
             logger.error(`getEpisodes => Error:`, error.message);
             return [];
         }
