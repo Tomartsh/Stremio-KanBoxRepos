@@ -99,6 +99,7 @@ const PORT = process.env.PORT || 49999; //set the port if does not exist
 
 const utils = require("./classes/utilities.js");
 const { formatRunResult } = require("./classes/catalogGate.js");
+const { pacingOverridesFromQuery } = require("./classes/pacing.js");
 const {fetchData} = require("./classes/utilities.js");
 const constants = require("./classes/constants.js");
 const {
@@ -159,18 +160,21 @@ app.get('/run', async (req, res) => {
     (async () => {
         try {
             logger.info(`Starting execution for: ${scraper} (mode: ${scrapeMode})`);
-            let outcome;
+            const overrides = pacingOverridesFromQuery(req.query);
+            let instance;
             switch (scraper) {
-                case "kanDigital": outcome = await new KanDigitalscraper().crawl(true, scrapeMode); break;
-                case "kanArchive": outcome = await new KanArchivescraper().crawl(true, scrapeMode); break;
-                case "kanKids":    outcome = await new KanKidscraper().crawl(true, scrapeMode);    break;
-                case "kanTeens":   outcome = await new KanTeensscraper().crawl(true, scrapeMode);   break;
-                case "kanPodcasts": outcome = await new KanPodcastsscraper().crawl(true, scrapeMode); break;
-                case "kan88":      outcome = await new Kan88scraper().crawl(true, scrapeMode);      break;
-                case "mako":       outcome = await new Makoscraper().crawl(true, scrapeMode);       break;
-                case "reshet":     outcome = await new Reshetscraper().crawl(true, scrapeMode);     break;
-                case "livetv":     outcome = await new LiveTV().crawl(true, scrapeMode);            break;
+                case "kanDigital": instance = new KanDigitalscraper(); break;
+                case "kanArchive": instance = new KanArchivescraper(); break;
+                case "kanKids":    instance = new KanKidscraper();    break;
+                case "kanTeens":   instance = new KanTeensscraper();   break;
+                case "kanPodcasts": instance = new KanPodcastsscraper(); break;
+                case "kan88":      instance = new Kan88scraper();      break;
+                case "mako":       instance = new Makoscraper();       break;
+                case "reshet":     instance = new Reshetscraper();     break;
+                case "livetv":     instance = new LiveTV();            break;
             }
+            instance.pacingOverrides = overrides;
+            const outcome = await instance.crawl(true, scrapeMode);
             const resultLine = formatRunResult(scraper, outcome);
             logger[resultLine.level](resultLine.message);
         } catch (err) {

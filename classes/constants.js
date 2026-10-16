@@ -54,7 +54,8 @@ module.exports = {
         MAX_CONCURRENT_REQUESTS: 10
     },
 
-    // One shared kan.org.il session for kanDigital, kanArchive, and kan88.
+    // Fallback timings for a Kan session that is not inside a scraper run.
+    // Scraper runs take their numbers from config/pacing.json (see classes/pacing.js).
     // Requests are serial, paced, and reuse the same cookies. A browser is
     // launched only after a Cloudflare challenge, and only one of them.
     KAN_SESSION: {

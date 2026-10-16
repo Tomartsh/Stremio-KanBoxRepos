@@ -7,7 +7,9 @@ const {
 } = require("./constants.js");
 const { DeltaTracker, updateDatabaseFromJSON } = require("./utilities.js");
 const { CircuitBreaker, RateLimiter } = require("./ScraperHelpers.js");
-const { bindKanRun, getKanRunState, assertKanOpen, rethrowIfKanBlocked } = require("./kanSession.js");
+const { bindKanRun, getKanRunState, assertKanOpen, rethrowIfKanBlocked, KanBudgetError } = require("./kanSession.js");
+const { pacingKeyFor, resolvePacing, formatPacing, PACING_SCRAPERS } = require("./pacing.js");
+const { acquireScraperLock, releaseScraperLock, formatSkipLine } = require("./scraperLock.js");
 const {
     catalogIsComplete,
     countCatalog,
@@ -103,6 +105,35 @@ class BaseScraper {
      * @param {string} mode - Scraping mode: 'auto', 'full', 'incremental', 'skip'
      */
     async crawl(isDoWriteFile = false, mode = 'auto') {
+        const pacingKey = pacingKeyFor(this.scraperName);
+        const pacing = resolvePacing(pacingKey, this.pacingOverrides || {});
+        this.pacing = pacing;
+        this.logger.info(`${this.scraperName} pacing: ${formatPacing(pacing)}`);
+
+        let lock = null;
+        if (this.lockEnabled !== false && PACING_SCRAPERS.includes(pacingKey)) {
+            lock = acquireScraperLock(pacingKey, {
+                budgetMs: pacing.budgetMs,
+                lockDir: this.lockDir
+            });
+            if (!lock.acquired) {
+                const decision = {
+                    published: false,
+                    skipped: true,
+                    blocked: false,
+                    status: "SKIPPED",
+                    reason: `lock held by pid ${lock.holder && lock.holder.pid}`,
+                    line: formatSkipLine(this.scraperName, lock),
+                    series: 0,
+                    videos: 0
+                };
+                this.logger.warn(decision.line);
+                this.lastResult = decision;
+                return decision;
+            }
+            this.logger.info(`${this.scraperName} lock acquired: ${lock.file}`);
+        }
+
         this.scrapeMode = mode;
         this.incrementalMode = this.determineScrapeMode(mode);
 
@@ -111,7 +142,11 @@ class BaseScraper {
         this.deltaTracker.clear();
         this.catalogIsComplete = catalogIsComplete(this.scraperName, this.incrementalMode);
 
-        return bindKanRun(() => this._crawlAndMaybePublish(isDoWriteFile));
+        try {
+            return await bindKanRun(() => this._crawlAndMaybePublish(isDoWriteFile), pacing);
+        } finally {
+            if (lock) releaseScraperLock(lock);
+        }
     }
 
     /**
@@ -140,6 +175,9 @@ class BaseScraper {
         const runState = getKanRunState() || {};
         const allowEmpty = process.env.ALLOW_EMPTY_PUBLISH === "true";
         const blocked = !!(runState.blocked || runState.http403 > 0);
+        if (!scrapeError && runState.budgetExhausted) {
+            scrapeError = new KanBudgetError(runState.reason || "time budget exhausted");
+        }
         let previous = null;
         if (!scrapeError && !blocked && counts.series > 0) {
             previous = await this.loadPreviousCounts();

@@ -12,6 +12,12 @@
  * - keeps one cookie jar
  * - opens one headless browser only after a challenge, and reuses that page
  * - on HTTP 403 or a challenge page, backs off once, retries once, then throws
+ *
+ * A scraper run can install pacing (config/pacing.json) on the async context.
+ * Slow mode keeps the same session and the same page: it waits 45–90s between
+ * kan.org.il requests, pauses every 40 pages, and on a 403 waits 60–90 minutes
+ * and retries that same URL. It gives up only when the time budget is exhausted
+ * (or maxRetries, if that is set). Outside a paced run the timings above apply.
  */
 
 const { AsyncLocalStorage } = require("async_hooks");
@@ -21,6 +27,7 @@ const { wrapper } = require("axios-cookiejar-support");
 const { CookieJar } = require("tough-cookie");
 const log4js = require("log4js");
 const { KAN_SESSION } = require("./constants");
+const { formatDuration } = require("./pacing");
 
 const logger = log4js.getLogger("kanSession");
 const runStore = new AsyncLocalStorage();
@@ -52,6 +59,18 @@ class KanBlockedError extends Error {
 
 function isKanBlockedError(error) {
     return !!(error && (error.code === "BLOCKED" || error.name === "KanBlockedError"));
+}
+
+class KanBudgetError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "KanBudgetError";
+        this.code = "BUDGET";
+    }
+}
+
+function isKanBudgetError(error) {
+    return !!(error && (error.code === "BUDGET" || error.name === "KanBudgetError"));
 }
 
 function isKanHost(hostname) {
@@ -95,8 +114,16 @@ function withParams(url, params) {
     return built.toString();
 }
 
-function bindKanRun(fn) {
-    return runStore.run({ http403: 0, blocked: false, reason: "" }, fn);
+function bindKanRun(fn, pacing) {
+    return runStore.run({
+        http403: 0,
+        blocked: false,
+        reason: "",
+        pacing: pacing || null,
+        startedAt: Date.now(),
+        pages: 0,
+        progress: []
+    }, fn);
 }
 
 function getKanRunState() {
@@ -104,10 +131,13 @@ function getKanRunState() {
 }
 
 function rethrowIfKanBlocked(error) {
-    if (isKanBlockedError(error)) throw error;
+    if (isKanBlockedError(error) || isKanBudgetError(error)) throw error;
     const state = getKanRunState();
     if (state && state.blocked) {
         throw new KanBlockedError(state.reason || "BLOCKED kan.org.il HTTP 403");
+    }
+    if (state && state.budgetExhausted) {
+        throw new KanBudgetError(state.reason || "time budget exhausted");
     }
 }
 
@@ -149,22 +179,33 @@ class KanSession {
     }
 
     async _fetch(url, options) {
+        const timing = this._timing();
+        const extended = timing.slow || timing.maxRetries !== 1 || timing.budgetMs != null;
+        if (extended) return this._fetchSlow(url, options, timing);
+        return this._fetchStandard(url, options, timing);
+    }
+
+    async _fetchStandard(url, options, timing) {
         assertKanOpen();
+        if (timing.budgetMs != null) this._throwIfBudgetSpent(timing, "before request");
         await this._pace();
 
         let first;
         try {
             first = await this._attempt(url, options);
         } catch (error) {
-            if (isKanBlockedError(error)) throw error;
+            if (isKanBlockedError(error) || isKanBudgetError(error)) throw error;
             if (error.statusCode && error.statusCode < 500) throw error;
             await this.sleep(jitterMs([400, 900], this.random));
             first = await this._attempt(url, options);
         }
 
-        if (!first.blocked) return first.value;
+        if (!first.blocked) {
+            await this._afterSuccessfulPage(url, timing);
+            return first.value;
+        }
 
-        const backoff = jitterMs(this.config.BACKOFF_MS, this.random);
+        const backoff = jitterMs([timing.backoffMin, timing.backoffMax], this.random);
         logger.warn(`BLOCKED kan.org.il HTTP ${first.status || 403} on ${url}. Backing off once (${backoff}ms) and retrying the same session.`);
         await this.sleep(backoff);
         this.transport = "browser";
@@ -189,7 +230,165 @@ class KanSession {
         }
 
         logger.info(`kan.org.il challenge cleared for ${url}. Reusing this session for the rest of the scrape.`);
+        await this._afterSuccessfulPage(url, timing);
         return second.value;
+    }
+
+    async _fetchSlow(url, options, timing) {
+        assertKanOpen();
+        this._throwIfBudgetSpent(timing, "before request");
+        await this._pace();
+
+        let blockRound = 0;
+        while (true) {
+            let outcome;
+            try {
+                outcome = await this._attempt(url, options);
+            } catch (error) {
+                if (isKanBlockedError(error) || isKanBudgetError(error)) throw error;
+                if (error.statusCode && error.statusCode < 500) throw error;
+                const gap = jitterMs([400, 900], this.random);
+                await this._sleepBudgeted(gap, "transient retry", timing);
+                outcome = await this._attempt(url, options);
+            }
+
+            if (!outcome.blocked) {
+                await this._afterSuccessfulPage(url, timing);
+                return outcome.value;
+            }
+
+            blockRound += 1;
+            if (timing.maxRetries != null && blockRound > timing.maxRetries) {
+                this._markBlocked(url, `HTTP ${outcome.status || 403}`);
+                const times = timing.maxRetries === 1 ? "one backoff" : `${timing.maxRetries} backoffs`;
+                throw new KanBlockedError(
+                    `BLOCKED kan.org.il HTTP ${outcome.status || 403} after ${times}: ${url}`,
+                    url
+                );
+            }
+
+            const backoff = jitterMs([timing.backoffMin, timing.backoffMax], this.random);
+            const state = getKanRunState();
+            const pages = state ? state.pages || 0 : 0;
+            const left = this._budgetLeft(timing);
+            const prefix = timing.slow ? "kan slow" : "pacing";
+            logger.warn(
+                `${prefix}: HTTP ${outcome.status || 403} on ${url}. sleeping ${formatDuration(backoff)} then resuming this page (not restarting). retry ${blockRound}. pages ${pages}. budget left ${formatDuration(left)}.`
+            );
+            this._pushProgress({ type: "block", url, ms: backoff, retry: blockRound, pages, budgetLeftMs: left });
+            await this._sleepBudgeted(backoff, "403 backoff, then resume this page", timing);
+            this.transport = "browser";
+        }
+    }
+
+    _timing() {
+        const state = getKanRunState();
+        const pacing = state && state.pacing;
+        if (!pacing) {
+            const jitter = this.config.JITTER_MS || [0, 0];
+            const backoff = this.config.BACKOFF_MS || [0, 0];
+            return {
+                slow: false,
+                minIntervalMs: this.config.MIN_INTERVAL_MS || 0,
+                jitterMin: jitter[0],
+                jitterMax: jitter[1],
+                backoffMin: backoff[0],
+                backoffMax: backoff[1],
+                maxRetries: 1,
+                pauseEveryPages: 0,
+                pauseMin: 0,
+                pauseMax: 0,
+                budgetMs: null
+            };
+        }
+        return {
+            slow: !!pacing.slow,
+            minIntervalMs: pacing.minIntervalMs || 0,
+            jitterMin: pacing.requestDelayMinMs,
+            jitterMax: pacing.requestDelayMaxMs,
+            backoffMin: pacing.blockBackoffMinMs,
+            backoffMax: pacing.blockBackoffMaxMs,
+            maxRetries: pacing.maxRetries,
+            pauseEveryPages: pacing.pauseEveryPages || 0,
+            pauseMin: pacing.pauseMinMs || 0,
+            pauseMax: pacing.pauseMaxMs || 0,
+            budgetMs: pacing.budgetMs
+        };
+    }
+
+    _budgetLeft(timing) {
+        if (!timing || timing.budgetMs == null) return null;
+        const state = getKanRunState();
+        const started = state && state.startedAt ? state.startedAt : Date.now();
+        return timing.budgetMs - (Date.now() - started);
+    }
+
+    _throwIfBudgetSpent(timing, reason) {
+        const left = this._budgetLeft(timing);
+        if (left == null || left > 0) return left;
+        const message = `time budget exhausted${reason ? ` (${reason})` : ""}`;
+        const state = getKanRunState();
+        if (state) {
+            state.budgetExhausted = true;
+            state.reason = message;
+        }
+        logger.error(`pacing: ${message}. pages ${state ? state.pages || 0 : 0}. Not publishing.`);
+        throw new KanBudgetError(message);
+    }
+
+    async _sleepBudgeted(ms, reason, timing) {
+        if (ms <= 0) return;
+        const left = this._throwIfBudgetSpent(timing, reason);
+        if (left != null && ms > left) {
+            const message = `time budget exhausted during ${reason}: need ${formatDuration(ms)}, ${formatDuration(left)} left`;
+            const state = getKanRunState();
+            if (state) {
+                state.budgetExhausted = true;
+                state.reason = message;
+            }
+            logger.error(`pacing: ${message}. Not publishing.`);
+            throw new KanBudgetError(message);
+        }
+        const state = getKanRunState();
+        const pages = state ? state.pages || 0 : 0;
+        const prefix = timing.slow ? "kan slow" : "pacing";
+        logger.info(`${prefix}: sleeping ${formatDuration(ms)} (${reason}). pages ${pages}. budget left ${formatDuration(left)}.`);
+        this._pushProgress({ type: "sleep", ms, reason, pages, budgetLeftMs: left });
+        await this.sleep(ms);
+    }
+
+    _pushProgress(event) {
+        const state = getKanRunState();
+        if (!state) return;
+        if (!state.progress) state.progress = [];
+        state.progress.push(event);
+    }
+
+    async _afterSuccessfulPage(url, timing) {
+        if (!timing.slow && !(timing.pauseEveryPages > 0)) return;
+        const state = getKanRunState();
+        const pages = state ? (state.pages = (state.pages || 0) + 1) : 1;
+        const left = this._budgetLeft(timing);
+        const elapsed = state && state.startedAt ? Date.now() - state.startedAt : 0;
+        const eta = timing.budgetMs != null && state && state.startedAt
+            ? new Date(state.startedAt + timing.budgetMs).toISOString()
+            : "n/a";
+        let pauseNote = "";
+        if (timing.pauseEveryPages > 0) {
+            const remainder = pages % timing.pauseEveryPages;
+            if (remainder === 0) pauseNote = " pausing now.";
+            else pauseNote = ` next pause in ${timing.pauseEveryPages - remainder} pages.`;
+        }
+        const prefix = timing.slow ? "kan slow" : "pacing";
+        logger.info(
+            `${prefix}: page ${pages} done (${url}). elapsed ${formatDuration(elapsed)}. budget left ${formatDuration(left)}. ETA ${eta}.${pauseNote}`
+        );
+        this._pushProgress({ type: "page", pages, url, elapsedMs: elapsed, budgetLeftMs: left, eta });
+        if (timing.pauseEveryPages > 0 && pages % timing.pauseEveryPages === 0) {
+            const pause = jitterMs([timing.pauseMin, timing.pauseMax], this.random);
+            logger.info(`${prefix}: pause after ${pages} pages for ${formatDuration(pause)}.`);
+            await this._sleepBudgeted(pause, `pause after ${pages} pages`, timing);
+        }
     }
 
     async _attempt(url, options, extra = {}) {
@@ -286,15 +485,19 @@ class KanSession {
     }
 
     async _pace() {
-        const minInterval = this.config.MIN_INTERVAL_MS || 0;
+        const timing = this._timing();
+        const minInterval = timing.minIntervalMs || 0;
         const now = Date.now();
         let wait = 0;
         if (this.lastRequestAt) {
             const since = now - this.lastRequestAt;
             if (since < minInterval) wait += minInterval - since;
         }
-        wait += jitterMs(this.config.JITTER_MS, this.random);
-        if (wait > 0) await this.sleep(wait);
+        wait += jitterMs([timing.jitterMin, timing.jitterMax], this.random);
+        if (wait > 0) {
+            if (timing.slow) await this._sleepBudgeted(wait, "delay between kan.org.il requests", timing);
+            else await this.sleep(wait);
+        }
         this.lastRequestAt = Date.now();
     }
 
@@ -433,8 +636,10 @@ async function closeKanSession() {
 module.exports = {
     KAN_BROWSER_HEADERS,
     KanBlockedError,
+    KanBudgetError,
     KanSession,
     isKanBlockedError,
+    isKanBudgetError,
     isKanHost,
     isChallengeDocument,
     isHttpBlocked,

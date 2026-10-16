@@ -78,6 +78,16 @@ function decidePublish({
         return refusal(scraperName, file, reason, true);
     }
 
+    if (scrapeError && scrapeError.code === "BUDGET") {
+        return refusal(
+            scraperName,
+            file,
+            scrapeError.message || "time budget exhausted",
+            false,
+            "BUDGET"
+        );
+    }
+
     if (scrapeError) {
         return refusal(scraperName, file, `scrape failed (${scrapeError.message})`, false);
     }
@@ -108,14 +118,14 @@ function decidePublish({
     };
 }
 
-function refusal(scraperName, file, reason, blocked) {
+function refusal(scraperName, file, reason, blocked, status) {
     const line = blocked
         ? `BLOCKED ${scraperName} => Refusing to publish ${file}: ${reason}. The existing ZIP and Supabase rows were left unchanged.`
         : `${scraperName} => Refusing to publish ${file}: ${reason}. The existing ZIP and Supabase rows were left unchanged.`;
     return {
         published: false,
         blocked,
-        status: blocked ? "BLOCKED" : "REFUSED",
+        status: status || (blocked ? "BLOCKED" : "REFUSED"),
         reason,
         line,
         series: 0,
@@ -124,6 +134,9 @@ function refusal(scraperName, file, reason, blocked) {
 }
 
 function formatRunResult(scraperName, outcome) {
+    if (outcome && outcome.skipped) {
+        return { level: "warn", message: outcome.line || `SKIPPED ${scraperName}` };
+    }
     if (!outcome || outcome.published !== false) {
         return { level: "info", message: `✅ ${scraperName} completed successfully` };
     }

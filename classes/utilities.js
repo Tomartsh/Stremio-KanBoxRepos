@@ -8,7 +8,16 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 const {PREFIX } = require ("./constants");
-const { isKanHost, getKanSession, closeKanSession, isKanBlockedError } = require("./kanSession");
+const {
+    isKanHost,
+    getKanSession,
+    closeKanSession,
+    isKanBlockedError,
+    isKanBudgetError,
+    getKanRunState,
+    KanBudgetError,
+    jitterMs
+} = require("./kanSession");
 
 let seriesIterator = 1000;
 
@@ -259,7 +268,24 @@ class RequestTracker {
     }
 
     async trackAndDelay(hostname) {
-        const { minInterval, maxPerMinute, jitter: jitterRange } = this.getRateLimits(hostname);
+        const run = getKanRunState();
+        const governed = run && run.pacing && run.pacing.governHttp && !isKanHost(hostname) ? run.pacing : null;
+        if (governed && governed.budgetMs != null) {
+            const left = governed.budgetMs - (Date.now() - (run.startedAt || Date.now()));
+            if (left <= 0) {
+                run.budgetExhausted = true;
+                run.reason = "time budget exhausted";
+                throw new KanBudgetError("time budget exhausted");
+            }
+        }
+        const domainLimits = this.getRateLimits(hostname);
+        const { minInterval, maxPerMinute, jitter: jitterRange } = governed
+            ? {
+                minInterval: governed.minIntervalMs,
+                maxPerMinute: governed.maxPerMinute || domainLimits.maxPerMinute,
+                jitter: [governed.requestDelayMinMs, governed.requestDelayMaxMs]
+            }
+            : domainLimits;
         const now = Date.now();
         
         if (!this.requestsByDomain.has(hostname)) {
@@ -303,6 +329,23 @@ class RequestTracker {
         
         // Record this request
         timestamps.push(Date.now());
+
+        if (governed && governed.pauseEveryPages > 0) {
+            run.pages = (run.pages || 0) + 1;
+            if (run.pages % governed.pauseEveryPages === 0) {
+                const pause = jitterMs([governed.pauseMinMs, governed.pauseMaxMs]);
+                const left = governed.budgetMs == null
+                    ? null
+                    : governed.budgetMs - (Date.now() - (run.startedAt || Date.now()));
+                if (left != null && (left <= 0 || pause > left)) {
+                    run.budgetExhausted = true;
+                    run.reason = "time budget exhausted during page pause";
+                    throw new KanBudgetError("time budget exhausted during page pause");
+                }
+                logger.info(`pacing: pause after ${run.pages} pages for ${pause}ms (${hostname}).`);
+                await this.sleep(pause);
+            }
+        }
         
         logger.trace(`RequestTracker => ${hostname}: ${timestamps.length} requests in last minute`);
     }
@@ -615,7 +658,7 @@ async function fetchData(url, asJson = false, params = {}, headers = HEADERS, pr
         // We pass the URL through to the retry logic
         return await fetchWithRetries(url, asJson, params, headers, preferredMethod);
     } catch (error) {
-        if (isKanBlockedError(error)) throw error;
+        if (isKanBlockedError(error) || isKanBudgetError(error)) throw error;
         logger.error(`fetchData => Failed to fetch URL ${url} :`, error.message);
         return null; 
     }

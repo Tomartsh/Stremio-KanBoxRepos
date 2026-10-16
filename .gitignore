@@ -42,3 +42,6 @@ build/
 # Syncthing folder and files
 .stfolder/
 .stignore
+
+# Standalone scraper locks (nightly runner skips a scraper whose lock is held)
+locks/

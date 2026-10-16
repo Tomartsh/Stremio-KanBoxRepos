@@ -1,0 +1,56 @@
+{
+  "defaults": {
+    "slow": false,
+    "minIntervalMs": 2000,
+    "requestDelayMinMs": 1000,
+    "requestDelayMaxMs": 4000,
+    "pauseEveryPages": 0,
+    "pauseMinMs": 0,
+    "pauseMaxMs": 0,
+    "blockBackoffMinMs": 8000,
+    "blockBackoffMaxMs": 12000,
+    "budgetMs": null,
+    "maxRetries": 1,
+    "governHttp": false,
+    "maxPerMinute": null
+  },
+  "scrapers": {
+    "kanDigital": {
+      "slow": true,
+      "minIntervalMs": 0,
+      "requestDelayMinMs": 45000,
+      "requestDelayMaxMs": 90000,
+      "pauseEveryPages": 40,
+      "pauseMinMs": 600000,
+      "pauseMaxMs": 1200000,
+      "blockBackoffMinMs": 3600000,
+      "blockBackoffMaxMs": 5400000,
+      "budgetMs": 72000000,
+      "maxRetries": null
+    },
+    "kanTeens": {},
+    "kanKids": {
+      "governHttp": true,
+      "minIntervalMs": 0,
+      "requestDelayMinMs": 10,
+      "requestDelayMaxMs": 50,
+      "maxPerMinute": 1000
+    },
+    "kan88": {},
+    "kanArchive": {},
+    "kanPodcasts": {},
+    "mako": {
+      "governHttp": true,
+      "minIntervalMs": 50,
+      "requestDelayMinMs": 10,
+      "requestDelayMaxMs": 100
+    },
+    "reshet": {
+      "governHttp": true,
+      "minIntervalMs": 0,
+      "requestDelayMinMs": 0,
+      "requestDelayMaxMs": 0,
+      "maxPerMinute": 1000
+    }
+  }
+}
