@@ -136,6 +136,91 @@ REPO_NAME=your_repo_name
 BRANCH_SECRET=main
 ```
 
+## Pacing
+
+Request gaps, page pauses, Cloudflare backoff, the time budget, retry limit, and slow mode are all in [`config/pacing.json`](config/pacing.json). `defaults` apply to every scraper. A `scrapers` entry overrides only the fields it sets. Changing a number there is enough; the scrapers read the file at startup and log the resolved values on the first line of the run.
+
+The file is checked when the process starts. A missing scraper, an unknown field, a min greater than its max, or slow mode with neither a budget nor a retry limit aborts before any request.
+
+| Field | Meaning |
+| --- | --- |
+| `slow` | On: progress logs, and a 403 waits out `blockBackoff` then retries the same URL. Off: one backoff, then `BLOCKED` and no publish. |
+| `minIntervalMs` | Minimum gap since the previous request. `0` in slow mode. |
+| `requestDelayMinMs` / `requestDelayMaxMs` | Extra random wait. With the defaults this is the 1–4s jitter on top of a 2s floor. In slow mode the floor is 0 and this range is the whole gap. |
+| `pauseEveryPages` | Pause after this many completed pages. `0` disables it. |
+| `pauseMinMs` / `pauseMaxMs` | Length of that pause. |
+| `blockBackoffMinMs` / `blockBackoffMaxMs` | Wait after a 403 or Cloudflare challenge. |
+| `budgetMs` | Stop the run at this elapsed time, including sleeps. `null` means no budget. |
+| `maxRetries` | How many 403 backoffs to take before aborting. `null` means until the budget runs out. |
+| `governHttp` | Also use these delays for hosts other than `kan.org.il` (Mako, Reshet, Kan Kids). |
+| `maxPerMinute` | Cap used when `governHttp` is on. `null` keeps that host's existing per-minute cap. |
+
+`kanDigital` is slow by default, sized for a 20-hour window:
+
+- 45–90 seconds between `kan.org.il` requests
+- 10–20 minute pause every 40 pages
+- 60–90 minute wait on a 403, then resume that same page (the scrape does not start over)
+- 20-hour budget. When the budget is spent the run stops and does not publish
+- the 85% video gate still refuses a thinner catalog
+
+Other scrapers keep today's pace until their entry in the file (or an override below) changes it. `--slow` / `KAN_SLOW=1` on a scraper that is not already slow copies `kanDigital`'s slow numbers. `--no-slow` / `KAN_SLOW=0` puts that run back on `defaults`. Numeric overrides still win after that.
+
+Environment (only the variables you set are applied):
+
+```bash
+KAN_SLOW=1
+KAN_BUDGET_HOURS=20
+KAN_BUDGET_MS=72000000
+KAN_REQUEST_DELAY_MIN_MS=45000
+KAN_REQUEST_DELAY_MAX_MS=90000
+KAN_MIN_INTERVAL_MS=0
+KAN_PAUSE_EVERY_PAGES=40
+KAN_PAUSE_MIN_MS=600000
+KAN_PAUSE_MAX_MS=1200000
+KAN_BLOCK_BACKOFF_MIN_MS=3600000
+KAN_BLOCK_BACKOFF_MAX_MS=5400000
+KAN_MAX_RETRIES=unlimited
+```
+
+CLI and the `/run` query use the same knobs. `KAN_BUDGET_MS` wins over `KAN_BUDGET_HOURS` when both are set. CLI wins over environment.
+
+```bash
+node scripts/run-scraper.js kan88 --slow --budget-hours 20
+node scripts/scrape-local.js kanDigital --no-slow
+curl "http://localhost:49999/run?scraper=kanTeens&slow=1&budgetHours=20"
+```
+
+Slow-mode logs look like this:
+
+```text
+KanDigital pacing: slow=true minInterval=0s requestDelay=45s-1m 30s pauseEvery=40 pages pause=10m-20m blockBackoff=1h-1h 30m budget=20h maxRetries=unlimited governHttp=false maxPerMinute=domain-default
+kan slow: page 40 done (https://www.kan.org.il/...). elapsed 1h 12m. budget left 18h 48m. ETA 2026-10-17T05:00:00.000Z. pausing now.
+kan slow: sleeping 12m 4s (pause after 40 pages). pages 40. budget left 18h 36m.
+kan slow: HTTP 403 on https://www.kan.org.il/.... sleeping 1h 12m then resuming this page (not restarting). retry 1. pages 41. budget left 17h 20m.
+```
+
+### Standalone kanDigital on the Windows station
+
+Slow mode is already on for `kanDigital`. Run it in its own process so it can use the 20-hour window. This publishes (GitHub and Supabase follow `WRITE_TO_GITHUB` and `UPDATE_DATABASE`, both on unless you turn them off). `classes/.env` needs the usual Supabase and GitHub keys.
+
+```bat
+cd /d D:\Development\Stremio-KanBoxRepos
+git pull
+set KAN_SLOW=1
+set KAN_BUDGET_HOURS=20
+node scripts/run-scraper.js kanDigital --slow --budget-hours 20
+```
+
+`scripts/scrape-local.js` is the same scrape with upload and Supabase forced off.
+
+### Nightly runner skip
+
+The runner at `D:\Development\kanbox-runner` pulls this repo and starts each scraper through `BaseScraper.crawl` (`/run` or `node scripts/run-scraper.js`). Before any request, crawl creates `locks/<scraper>.lock` in the repo (override the directory with `SCRAPER_LOCK_DIR`) and writes the pid, start time, and a stale-after deadline.
+
+While that file is held by a live pid and is younger than the run's budget plus 2 hours (22 hours for kanDigital's 20-hour budget), the next crawl of that scraper does not start. It logs `SKIPPED`, returns immediately, and does not publish. A standalone slow run holds `locks/kanDigital.lock` for the whole window, so the nightly kanDigital start skips and leaves the current ZIP and Supabase rows in place. The other scrapers have their own lock files and still run.
+
+A lock is stale when the pid is gone, or when the file is older than that deadline (a wedged process). The next run deletes the stale file and starts. The lock is removed when the run finishes, including on process exit.
+
 ## Regenerating Kan 88
 
 `output/stremio-kan88.zip` on main is the empty catalog (`"data": {}`, about 195 bytes). Supabase has no Kan 88 rows for the addon to show. `www.kan.org.il` returns HTTP 403 from outside Israel, so this catalog has to be scraped from an Israeli host. Playwright is required because the lobby is behind Cloudflare.
@@ -149,7 +234,7 @@ npx playwright install chromium
 npm run scrape:local -- kan88
 ```
 
-`scripts/scrape-local.js` forces `SAVE_MODE=local`, `WRITE_TO_GITHUB=false`, and `UPDATE_DATABASE=false`. Check that `output/stremio-kan88.zip` is no longer ~195 bytes and that its `data` object has series. A lobby page that fails to load aborts the run, and `BaseScraper` does not replace an existing ZIP or Supabase rows when the result is empty. A Cloudflare HTTP 403 backs off once, then aborts that scraper and is logged as `BLOCKED`. The same publish step also keeps the previous ZIP and Supabase rows when the new video count is under 85% of the previous catalog. Kan requests share one cookie jar and, only after a challenge, one browser.
+`scripts/scrape-local.js` forces `SAVE_MODE=local`, `WRITE_TO_GITHUB=false`, and `UPDATE_DATABASE=false`. Check that `output/stremio-kan88.zip` is no longer ~195 bytes and that its `data` object has series. A lobby page that fails to load aborts the run, and `BaseScraper` does not replace an existing ZIP or Supabase rows when the result is empty. With slow mode off, a Cloudflare HTTP 403 backs off once, then aborts that scraper and is logged as `BLOCKED`. kanDigital runs in slow mode by default: a 403 waits and retries the same page until the time budget is gone, and a budget exhaustion does not publish. The same publish step also keeps the previous ZIP and Supabase rows when the new video count is under 85% of the previous catalog. Kan requests share one cookie jar and, only after a challenge, one browser.
 
 2. Republish the ZIP to GitHub (this is what GitHub Pages serves as the addon fallback) and upsert Supabase. From the scraper server:
 

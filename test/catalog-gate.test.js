@@ -53,6 +53,25 @@ test("the Oct 12 archive drop fails the video gate while a series increase would
     assert.match(decision.reason, /previous 2168/);
 });
 
+test("a time budget exhaustion refuses publish even when the video count held", () => {
+    const error = new Error("time budget exhausted during 403 backoff, then resume this page: need 1h 30m, 12m left");
+    error.code = "BUDGET";
+    const decision = decidePublish({
+        scraperName: "KanDigital",
+        exportFilename: "stremio-kandigital",
+        scrapeError: error,
+        counts: { series: 40, videos: 2168 },
+        previous: PREVIOUS,
+        catalogComplete: true
+    });
+    assert.equal(decision.published, false);
+    assert.equal(decision.blocked, false);
+    assert.equal(decision.status, "BUDGET");
+    assert.match(decision.line, /time budget exhausted/);
+    assert.match(decision.line, /left unchanged/);
+    assert.doesNotMatch(decision.line, /^BLOCKED /);
+});
+
 test("85% of the previous video count is enough to publish", () => {
     const allowed = decidePublish({
         scraperName: "KanArchive",

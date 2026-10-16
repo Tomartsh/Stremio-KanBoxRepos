@@ -8,7 +8,8 @@
  *
  * Usage:
  *   node scripts/scrape-local.js kan88
- *   node scripts/scrape-local.js kanKids
+ *   node scripts/scrape-local.js kanDigital --slow
+ *   node scripts/scrape-local.js kan88 --slow --budget-hours 20
  *
  * Kan 88 and the other kan.org.il HTML pages need Playwright's Chromium:
  *   npx playwright install chromium
@@ -17,6 +18,8 @@
 process.env.SAVE_MODE = "local";
 process.env.WRITE_TO_GITHUB = "false";
 process.env.UPDATE_DATABASE = "false";
+
+const { parseCommandLine } = require("../classes/pacing.js");
 
 const scrapers = {
     kanDigital: () => new (require("../classes/KanDigitalScraper.js"))(),
@@ -30,16 +33,28 @@ const scrapers = {
 };
 
 async function main() {
-    const name = process.argv[2];
+    let parsed;
+    try {
+        parsed = parseCommandLine(process.argv.slice(2));
+    } catch (error) {
+        console.error(error.message);
+        process.exit(1);
+    }
+    const name = parsed.scraper;
     const factory = scrapers[name];
     if (!factory) {
-        console.error("Usage: node scripts/scrape-local.js <" + Object.keys(scrapers).join("|") + ">");
+        console.error("Usage: node scripts/scrape-local.js <" + Object.keys(scrapers).join("|") + "> [--slow|--no-slow] [--budget-hours N]");
         process.exit(1);
     }
 
     console.log(`Local scrape of ${name}. GitHub upload and Supabase updates are off.`);
     const scraper = factory();
-    const outcome = await scraper.crawl(true, "full");
+    scraper.pacingOverrides = parsed.overrides;
+    const outcome = await scraper.crawl(true, parsed.mode || "full");
+    if (outcome && outcome.skipped) {
+        console.log(outcome.line);
+        process.exit(0);
+    }
     const count = Object.keys(scraper.getJsonObject ? scraper.getJsonObject() : {}).length;
     console.log(`Finished ${name} with ${count} series in memory.`);
     if (!outcome || outcome.published === false) {
