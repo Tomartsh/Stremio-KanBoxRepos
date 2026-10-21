@@ -4,6 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const AdmZip = require("adm-zip");
+const { KanBrowserError } = require("../classes/kanSession");
 const {
     catalogIsComplete,
     countCatalog,
@@ -106,6 +107,21 @@ test("any terminal 403 refuses publish even when the video count held", () => {
     const formatted = formatRunResult("kanDigital", decision);
     assert.equal(formatted.level, "error");
     assert.match(formatted.message, /^BLOCKED /);
+});
+
+test("a missing browser is refused without being called a Cloudflare block", () => {
+    const decision = decidePublish({
+        scraperName: "KanDigital",
+        exportFilename: "stremio-kandigital",
+        scrapeError: new KanBrowserError("KAN BROWSER UNAVAILABLE for https://www.kan.org.il/lobby/kan-box/: Executable doesn't exist"),
+        counts: { series: 0, videos: 0 },
+        catalogComplete: true
+    });
+    assert.equal(decision.published, false);
+    assert.equal(decision.blocked, false);
+    assert.equal(decision.status, "BROWSER");
+    assert.match(decision.line, /KAN BROWSER UNAVAILABLE/);
+    assert.doesNotMatch(decision.line, /^BLOCKED /);
 });
 
 test("an incremental delta with few series is not treated as a wiped catalog", () => {

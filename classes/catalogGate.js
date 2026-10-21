@@ -11,7 +11,7 @@ const path = require("path");
 const axios = require("axios");
 const AdmZip = require("adm-zip");
 const { KAN_SESSION, URL_JSON_BASE, SAVE_FOLDER } = require("./constants");
-const { isKanBlockedError } = require("./kanSession");
+const { isKanBlockedError, isKanBrowserError } = require("./kanSession");
 
 const PARTIAL_INCREMENTAL_SCRAPERS = new Set(["Kan88", "KanPodcasts"]);
 
@@ -85,6 +85,16 @@ function decidePublish({
             scrapeError.message || "time budget exhausted",
             false,
             "BUDGET"
+        );
+    }
+
+    if (scrapeError && (scrapeError.code === "BROWSER" || isKanBrowserError(scrapeError))) {
+        return refusal(
+            scraperName,
+            file,
+            scrapeError.message || "KAN BROWSER UNAVAILABLE",
+            false,
+            "BROWSER"
         );
     }
 

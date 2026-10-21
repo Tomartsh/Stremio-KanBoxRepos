@@ -196,7 +196,9 @@ Slow-mode logs look like this:
 KanDigital pacing: slow=true minInterval=0s requestDelay=45s-1m 30s pauseEvery=40 pages pause=10m-20m blockBackoff=1h-1h 30m budget=20h maxRetries=unlimited governHttp=false maxPerMinute=domain-default
 kan slow: page 40 done (https://www.kan.org.il/...). elapsed 1h 12m. budget left 18h 48m. ETA 2026-10-17T05:00:00.000Z. pausing now.
 kan slow: sleeping 12m 4s (pause after 40 pages). pages 40. budget left 18h 36m.
-kan slow: HTTP 403 on https://www.kan.org.il/.... sleeping 1h 12m then resuming this page (not restarting). retry 1. pages 41. budget left 17h 20m.
+CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... Opening the browser before any long backoff.
+CLOUDFLARE CHALLENGE cleared for https://www.kan.org.il/.... Reusing this browser for the rest of the scrape.
+CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... kan slow: sleeping 1h 12m then resuming this page (not restarting). retry 1. pages 41. budget left 17h 20m.
 ```
 
 ### Standalone kanDigital on the Windows station
@@ -213,6 +215,29 @@ node scripts/run-scraper.js kanDigital --slow --budget-hours 20
 
 `scripts/scrape-local.js` is the same scrape with upload and Supabase forced off.
 
+### Cloudflare on the Windows scraper machine
+
+kan.org.il and kankids.org.il answer plain HTTP, and Playwright's default headless shell, with a Cloudflare challenge. The scrapers open the installed Google Chrome instead, keep one persistent profile, and log `CLOUDFLARE CHALLENGE` when the interstitial is still up. A browser that cannot start is logged as `KAN BROWSER UNAVAILABLE` and is not called a Cloudflare block. Mako and Reshet do not use this browser.
+
+Set these on the scheduled task (Machine or the task itself, not only the interactive user). The profile has to stay off C: and off the interactive Chrome profile:
+
+```bat
+set KAN_BROWSER_CHANNEL=chrome
+set KAN_BROWSER_EXECUTABLE=C:\Program Files\Google\Chrome\Application\chrome.exe
+set KAN_BROWSER_USER_DATA_DIR=D:\KanBox\kan-browser-profile
+set KAN_BROWSER_HEADLESS=false
+```
+
+`KAN_BROWSER_HEADLESS=false` is the default: Chrome stays headed and the window is placed off-screen. New headless (`KAN_BROWSER_HEADLESS=new`) sends a `HeadlessChrome` user agent and was still challenged. `KAN_BROWSER_CHANNEL=chromium` with `PLAYWRIGHT_BROWSERS_PATH=D:\KanBox\ms-playwright` uses the full bundled Chromium (not the headless shell) after `npx playwright install chromium` is run with that variable set. `KAN_CHALLENGE_TIMEOUT_MS` is how long the browser waits for an interstitial (default 30000).
+
+Check one page before a nightly run:
+
+```bat
+node scripts/check-kan-access.js https://www.kan.org.il/lobby/kan-box/
+```
+
+Exit 0 prints `CLEAR`. Exit 3 is a Cloudflare challenge or block. Exit 4 is a browser that did not start.
+
 ### Nightly runner skip
 
 The runner at `D:\Development\kanbox-runner` pulls this repo and starts each scraper through `BaseScraper.crawl` (`/run` or `node scripts/run-scraper.js`). Before any request, crawl creates `locks/<scraper>.lock` in the repo (override the directory with `SCRAPER_LOCK_DIR`) and writes the pid, start time, and a stale-after deadline.
@@ -227,14 +252,14 @@ A lock is stale when the pid is gone, or when the file is older than that deadli
 
 Do these three steps from that host, with `classes/.env` containing the Supabase service role:
 
-1. Confirm the scrape actually finds series, without uploading anything:
+1. Confirm the scrape actually finds series, without uploading anything. Point the browser at installed Chrome first (see "Cloudflare on the Windows scraper machine" above), then:
 
 ```bash
-npx playwright install chromium
+node scripts/check-kan-access.js https://www.kan.org.il/lobby/kan-box/
 npm run scrape:local -- kan88
 ```
 
-`scripts/scrape-local.js` forces `SAVE_MODE=local`, `WRITE_TO_GITHUB=false`, and `UPDATE_DATABASE=false`. Check that `output/stremio-kan88.zip` is no longer ~195 bytes and that its `data` object has series. A lobby page that fails to load aborts the run, and `BaseScraper` does not replace an existing ZIP or Supabase rows when the result is empty. With slow mode off, a Cloudflare HTTP 403 backs off once, then aborts that scraper and is logged as `BLOCKED`. kanDigital runs in slow mode by default: a 403 waits and retries the same page until the time budget is gone, and a budget exhaustion does not publish. The same publish step also keeps the previous ZIP and Supabase rows when the new video count is under 85% of the previous catalog. Kan requests share one cookie jar and, only after a challenge, one browser.
+`scripts/scrape-local.js` forces `SAVE_MODE=local`, `WRITE_TO_GITHUB=false`, and `UPDATE_DATABASE=false`. Check that `output/stremio-kan88.zip` is no longer ~195 bytes and that its `data` object has series. A lobby page that fails to load aborts the run, and `BaseScraper` does not replace an existing ZIP or Supabase rows when the result is empty. With slow mode off, a Cloudflare HTTP 403 opens the browser once, then aborts that scraper and is logged as `BLOCKED` with `CLOUDFLARE CHALLENGE` when the page is still an interstitial. kanDigital runs in slow mode by default: a challenge opens the browser immediately, and a browser that is still challenged waits and retries the same page until the time budget is gone. A budget exhaustion does not publish. The same publish step also keeps the previous ZIP and Supabase rows when the new video count is under 85% of the previous catalog. Kan and Kan Kids requests share one cookie jar and, only after a challenge, one browser.
 
 2. Republish the ZIP to GitHub (this is what GitHub Pages serves as the addon fallback) and upsert Supabase. From the scraper server:
 
