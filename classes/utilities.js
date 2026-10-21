@@ -14,6 +14,7 @@ const {
     closeKanSession,
     isKanBlockedError,
     isKanBudgetError,
+    isKanBrowserError,
     getKanRunState,
     KanBudgetError,
     jitterMs
@@ -658,7 +659,7 @@ async function fetchData(url, asJson = false, params = {}, headers = HEADERS, pr
         // We pass the URL through to the retry logic
         return await fetchWithRetries(url, asJson, params, headers, preferredMethod);
     } catch (error) {
-        if (isKanBlockedError(error) || isKanBudgetError(error)) throw error;
+        if (isKanBlockedError(error) || isKanBudgetError(error) || isKanBrowserError(error)) throw error;
         logger.error(`fetchData => Failed to fetch URL ${url} :`, error.message);
         return null; 
     }

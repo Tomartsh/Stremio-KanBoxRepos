@@ -20,6 +20,7 @@ function immediateSession(extra) {
     const session = new KanSession({
         sleep: async (ms) => { sleeps.push(ms); },
         random: () => 0,
+        snapshotPath: null,
         ...extra
     });
     return { session, sleeps };
@@ -38,11 +39,12 @@ function scriptedClient(responses) {
     };
 }
 
-test("kan.org.il hosts share the session", () => {
+test("kan.org.il and kankids.org.il share the session", () => {
     assert.equal(isKanHost("www.kan.org.il"), true);
     assert.equal(isKanHost("mobapi.kan.org.il"), true);
-    assert.equal(isKanHost("www.kankids.org.il"), false);
+    assert.equal(isKanHost("www.kankids.org.il"), true);
     assert.equal(isKanHost("www.mako.co.il"), false);
+    assert.equal(isKanHost("13tv.co.il"), false);
 });
 
 test("requests use one stable Windows Chrome header set and a polite jittered gap", async () => {
@@ -203,6 +205,51 @@ test("a terminal 403 is recorded on the scraper run that made the request", asyn
     assert.equal(seen.blocked, true);
     assert.equal(seen.http403, 1);
     assert.match(seen.reason, /403/);
+    await session.close();
+});
+
+test("an interstitial is logged as a Cloudflare challenge", async () => {
+    const client = scriptedClient([{ status: 403, data: "<html>Just a moment</html>" }]);
+    const { session } = immediateSession({
+        client,
+        browserFactory: async () => ({
+            browser: {},
+            context: {},
+            page: {
+                async goto() { return { status: () => 403 }; },
+                async content() { return "<html><title>Just a moment...</title></html>"; }
+            }
+        })
+    });
+    let seen = null;
+    await bindKanRun(async () => {
+        const error = await session.fetch(PAGE).catch((caught) => caught);
+        seen = { error, state: { ...getKanRunState() } };
+    });
+    assert.match(seen.error.message, /CLOUDFLARE CHALLENGE/);
+    assert.match(seen.error.message, /BLOCKED/);
+    assert.equal(seen.state.challenge, true);
+    assert.match(seen.state.reason, /CLOUDFLARE CHALLENGE/);
+    await session.close();
+});
+
+test("a missing browser is not reported as a Cloudflare challenge", async () => {
+    const client = scriptedClient([{ status: 403, data: "<html>Just a moment</html>" }]);
+    const { session } = immediateSession({
+        client,
+        browserFactory: async () => {
+            throw new Error("browserType.launch: Executable doesn't exist at C:\\Windows\\System32\\config\\systemprofile\\AppData\\Local\\ms-playwright\\chromium-1200\\chrome-win64\\chrome.exe");
+        }
+    });
+    let seen = null;
+    await bindKanRun(async () => {
+        const error = await session.fetch(PAGE).catch((caught) => caught);
+        seen = { error, state: { ...getKanRunState() } };
+    });
+    assert.equal(seen.error.code, "BROWSER");
+    assert.match(seen.error.message, /KAN BROWSER UNAVAILABLE/);
+    assert.doesNotMatch(seen.error.message, /CLOUDFLARE CHALLENGE/);
+    assert.notEqual(seen.state.blocked, true);
     await session.close();
 });
 

@@ -11,8 +11,9 @@
  *   node scripts/scrape-local.js kanDigital --slow
  *   node scripts/scrape-local.js kan88 --slow --budget-hours 20
  *
- * Kan 88 and the other kan.org.il HTML pages need Playwright's Chromium:
- *   npx playwright install chromium
+ * Kan HTML pages need a real Chrome. See scripts/check-kan-access.js.
+ *   set KAN_BROWSER_CHANNEL=chrome
+ *   set KAN_BROWSER_USER_DATA_DIR=D:\KanBox\kan-browser-profile
  */
 
 process.env.SAVE_MODE = "local";

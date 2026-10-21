@@ -37,6 +37,7 @@ function timedSession(extra = {}) {
             sleeps.push(ms);
             setTimeout(resolve, ms);
         }),
+        snapshotPath: null,
         ...extra
     });
     return { session, sleeps };
@@ -106,7 +107,7 @@ test("kanDigital's configured delay is the gap between requests", { timeout: 500
     await session.close();
 });
 
-test("a 403 waits out the backoff and resumes the same page", { timeout: 5000 }, async (t) => {
+test("an HTTP challenge opens the browser without the long backoff", { timeout: 5000 }, async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
     const client = scriptedClient([
         { status: 200, data: HTML },
@@ -136,10 +137,48 @@ test("a 403 waits out the backoff and resumes the same page", { timeout: 5000 },
 
     assert.deepEqual(client.calls, [LATER, PAGE]);
     assert.deepEqual(fakeBrowser.gotos, [PAGE, NEXT]);
-    assert.equal(sleeps.filter((ms) => ms >= 60 * 60 * 1000).length, 1);
+    assert.equal(sleeps.filter((ms) => ms >= 60 * 60 * 1000).length, 0);
     assert.equal(seen.blocked, false);
     assert.equal(seen.pages, 3);
     assert.ok(seen.progress.includes("page"));
+    await session.close();
+});
+
+test("a browser that is still challenged waits out the backoff and resumes the same page", { timeout: 5000 }, async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+    const client = scriptedClient([
+        { status: 403, data: "<html>Just a moment</html>" }
+    ]);
+    const pages = [
+        { status: 403, content: "<html>Just a moment</html>" },
+        { status: 200 },
+        { status: 200 }
+    ];
+    const fakeBrowser = browser(pages);
+    const { session, sleeps } = timedSession({
+        client,
+        browserFactory: () => fakeBrowser.factory()
+    });
+
+    let seen = null;
+    const pending = bindKanRun(async () => {
+        await session.fetch(PAGE);
+        await session.fetch(NEXT);
+        seen = {
+            blocked: getKanRunState().blocked,
+            pages: getKanRunState().pages,
+            progress: getKanRunState().progress.map((event) => event.type)
+        };
+    }, FAST_SLOW);
+
+    await drain(t);
+    await pending;
+
+    assert.deepEqual(client.calls, [PAGE]);
+    assert.deepEqual(fakeBrowser.gotos, [PAGE, PAGE, NEXT]);
+    assert.equal(sleeps.filter((ms) => ms >= 60 * 60 * 1000).length, 1);
+    assert.equal(seen.blocked, false);
+    assert.equal(seen.pages, 2);
     assert.ok(seen.progress.includes("block"));
     assert.ok(seen.progress.includes("sleep"));
     await session.close();
@@ -183,7 +222,11 @@ test("a 403 gives up only when the time budget cannot cover the next wait", { ti
         { status: 403, data: "Sorry, you have been blocked" },
         { status: 200, data: HTML }
     ]);
-    const { session, sleeps } = timedSession({ client });
+    const fakeBrowser = browser([{ status: 403, content: "Sorry, you have been blocked" }]);
+    const { session, sleeps } = timedSession({
+        client,
+        browserFactory: () => fakeBrowser.factory()
+    });
     const error = await bindKanRun(() => session.fetch(PAGE), pacing).catch((caught) => caught);
     assert.ok(error instanceof KanBudgetError);
     assert.equal(error.code, "BUDGET");
@@ -212,7 +255,10 @@ test("slow mode still aborts after maxRetries when that limit is set", { timeout
         blockBackoffMaxMs: 1000
     };
     const client = scriptedClient([{ status: 403, data: "blocked" }]);
-    const fakeBrowser = browser([{ status: 403, content: "blocked" }]);
+    const fakeBrowser = browser([
+        { status: 403, content: "blocked" },
+        { status: 403, content: "blocked" }
+    ]);
     const { session } = timedSession({
         client,
         browserFactory: () => fakeBrowser.factory()
@@ -222,7 +268,7 @@ test("slow mode still aborts after maxRetries when that limit is set", { timeout
     const error = await pending;
     assert.ok(error instanceof KanBlockedError);
     assert.equal(error.code, "BLOCKED");
-    assert.equal(fakeBrowser.gotos.length, 1);
+    assert.equal(fakeBrowser.gotos.length, 2);
     await session.close();
 });
 

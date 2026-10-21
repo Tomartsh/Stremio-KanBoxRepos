@@ -58,11 +58,17 @@ module.exports = {
     // Scraper runs take their numbers from config/pacing.json (see classes/pacing.js).
     // Requests are serial, paced, and reuse the same cookies. A browser is
     // launched only after a Cloudflare challenge, and only one of them.
+    // KAN_BROWSER_CHANNEL, KAN_BROWSER_EXECUTABLE, KAN_BROWSER_HEADLESS,
+    // KAN_BROWSER_USER_DATA_DIR, and KAN_CHALLENGE_TIMEOUT_MS configure it.
     KAN_SESSION: {
         MIN_INTERVAL_MS: 2000,
         JITTER_MS: [1000, 4000],
         BACKOFF_MS: [8000, 12000],
         CHALLENGE_WAIT_MS: 8000,
+        // Real Playwright pages wait for the interstitial to disappear.
+        // The shorter CHALLENGE_WAIT_MS is only the fallback when the page
+        // cannot wait on its own.
+        CHALLENGE_TIMEOUT_MS: 30000,
         REQUEST_TIMEOUT_MS: 20000,
         VIDEO_KEEP_RATIO: 0.85,
         // An incremental run that still has this fraction of the previous
