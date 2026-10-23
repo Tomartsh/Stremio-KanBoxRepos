@@ -10,6 +10,12 @@ const {
 } = require("./constants.js");
 const { extractKanStream, cleanVideoName, safeExecute } = require("./ScraperHelpers.js");
 const { rethrowIfKanBlocked } = require("./kanSession.js");
+const {
+    parseKanBoxLobby,
+    selectLobbySeries,
+    parseSeriesPage,
+    numberDigitalEpisodes
+} = require("./kanDigitalParse.js");
 const BaseScraper = require("./BaseScraper.js");
 const SUB_PREFIX = "digital";
 const SUBTYPE = "d";
@@ -186,104 +192,60 @@ class KanDigitalScraper extends BaseScraper {
         logger.trace("crawlKanBox => Entering");
         logger.info("crawlKanBox => Starting Kan-Box scraping");
 
-        const { parse } = require('node-html-parser');
-
         try {
-            // Fetch Kan-Box lobby page
+            // Fetch Kan-Box lobby page. Cards are a.cr-item inside content rows;
+            // each href is trimmed to the series root before we visit it.
             logger.info(`crawlKanBox => Fetching: ${KAN_BOX_URL}`);
             const response = await fetchData(KAN_BOX_URL, false);
-            const html = response;
-            const root = parse(html);
+            if (!response) {
+                throw new Error("empty Kan-Box response");
+            }
 
-            // Find all block-list items (categories)
-            const blockLists = root.querySelectorAll('.block-list');
-            logger.info(`crawlKanBox => Found ${blockLists.length} block-list sections`);
+            const entries = parseKanBoxLobby(response);
+            const categoryNames = new Set(entries.map((entry) => entry.category));
+            logger.info(`crawlKanBox => Found ${entries.length} series rows in ${categoryNames.size} categories`);
 
-            let allCategories = [];
+            // Ignore list matches the section heading. A series that also appears
+            // under a category we keep is still scraped.
+            const categoriesToScrape = selectLobbySeries(entries, KAN_BOX_IGNORE_LIST);
+            const ignoredRows = entries.filter((entry) => KAN_BOX_IGNORE_LIST.includes(entry.category)).length;
 
-            // Extract categories and their series from all block-lists
-            blockLists.forEach((blockList, index) => {
-                const items = blockList.querySelectorAll('.block-list-item');
-                logger.debug(`crawlKanBox => Section ${index + 1}: ${items.length} categories`);
+            logger.info(`crawlKanBox => Ignored category rows: ${ignoredRows}`);
+            logger.info(`crawlKanBox => To scrape: ${categoriesToScrape.length} series`);
 
-                items.forEach((item) => {
-                    const titleElem = item.querySelector('.h3.title-elem');
-                    const linkElem = item.querySelector('a.unstyled-link');
-
-                    if (titleElem && linkElem) {
-                        const categoryName = titleElem.text.trim();
-                        const categoryLink = linkElem.getAttribute('href');
-
-                        // Extract series directly from the category item
-                        // The category items contain series links
-                        const seriesLinks = item.querySelectorAll('a.card-link');
-
-                        allCategories.push({
-                            name: categoryName,
-                            link: categoryLink,
-                            seriesLinks: Array.from(seriesLinks).map(link => link.getAttribute('href')).filter(url => url)
-                        });
-                    }
-                });
-            });
-
-            logger.info(`crawlKanBox => Total categories found: ${allCategories.length}`);
-
-            // Filter out ignored categories
-            const categoriesToScrape = allCategories.filter(cat => !KAN_BOX_IGNORE_LIST.includes(cat.name));
-            const ignoredCount = allCategories.length - categoriesToScrape.length;
-
-            logger.info(`crawlKanBox => Ignored: ${ignoredCount} categories`);
-            logger.info(`crawlKanBox => To scrape: ${categoriesToScrape.length} categories`);
-
-            // Scrape series directly from Kan-Box page (no additional requests!)
             let totalSeriesFound = 0;
             let duplicateCount = 0;
 
-            for (const category of categoriesToScrape) {
-                logger.info(`crawlKanBox => Processing category: ${category.name} (${category.seriesLinks.length} series links)`);
+            for (const entry of categoriesToScrape) {
+                const fullSeriesUrl = entry.seriesUrl;
+                if (!fullSeriesUrl) continue;
 
-                // Process each series link found in this category
-                for (const seriesHref of category.seriesLinks) {
-                    if (!seriesHref) continue;
+                const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
 
-                    // Build full URL
-                    let fullSeriesUrl = seriesHref;
-                    if (seriesHref.startsWith('/')) {
-                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + seriesHref;
-                    } else if (!seriesHref.startsWith('http')) {
-                        fullSeriesUrl = KAN_DIGITAL_IMAGE_PREFIX + '/' + seriesHref;
+                if (this._jsonObj.hasOwnProperty(seriesId)) {
+                    logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
+                    this.deltaTracker.skipSeries();
+                    duplicateCount++;
+                    continue;
+                }
+
+                const item = {
+                    Url: fullSeriesUrl,
+                    Image: '',
+                    ImageAlt: '',
+                    TitleHint: '',
+                    Description: `From Kan-Box category: ${entry.category}`
+                };
+
+                try {
+                    const result = await this.processOneDigitalSeries(item, 'kan_box');
+                    if (result) {
+                        totalSeriesFound++;
+                        logger.info(`crawlKanBox => Added series from ${entry.category}: ${result.title}`);
                     }
-
-                    const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
-
-                    if (this._jsonObj.hasOwnProperty(seriesId)) {
-                        logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
-                        this.deltaTracker.skipSeries();
-                        duplicateCount++;
-                        continue;
-                    }
-
-                    // Create item object for processing
-                    const item = {
-                        Url: fullSeriesUrl,
-                        Image: '',
-                        ImageAlt: '',
-                        TitleHint: '',
-                        Description: `From Kan-Box category: ${category.name}`
-                    };
-
-                    // Process the series using existing method (source = kan_box)
-                    try {
-                        const result = await this.processOneDigitalSeries(item, 'kan_box');
-                        if (result) {
-                            totalSeriesFound++;
-                            logger.info(`crawlKanBox => Added series from ${category.name}: ${result.title}`);
-                        }
-                    } catch (error) {
-                        rethrowIfKanBlocked(error);
-                        logger.error(`crawlKanBox => Error processing series ${fullSeriesUrl}: ${error.message}`);
-                    }
+                } catch (error) {
+                    rethrowIfKanBlocked(error);
+                    logger.error(`crawlKanBox => Error processing series ${fullSeriesUrl}: ${error.message}`);
                 }
             }
 
@@ -432,111 +394,21 @@ class KanDigitalScraper extends BaseScraper {
         //set series genres
         const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
 
-        //Get the seasons number
-        var seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
+        // Episodes come from program-grid cards, cr-item cards under this series,
+        // or legacy card-links. Season roots (/p-N/sX/) that are not already
+        // rendered in div.seasons-item are fetched and parsed the same way.
+        // A page with neither episodes nor seasons is a single title.
+        const parsedSeries = parseSeriesPage(seriesPageDoc, pageUrl);
+        const episodes = await this.collectDigitalEpisodes(seriesPageDoc, pageUrl, parsedSeries, title);
         var videoObj = [];
 
-        // Also check for seasons in the season selector dropdown that are not rendered as div.seasons-item
-        // These are links like <a href=".../p-N/s1/">עונה 1</a> inside a dropdown, for seasons
-        // that Kan hides behind a show-more / dropdown selector (e.g., old seasons not shown as tabs)
-        var extraSeasonHrefs = [];
-        var allLinks = seriesPageDoc.querySelectorAll("a[href*='/p-']");
-        var coveredSeasonNums = new Set();
-        for (var si = 0; si < seasons.length; si++) {
-            var visibleLinks = seasons[si].querySelectorAll("a.card-link");
-            if (visibleLinks.length > 0) {
-                var m = (visibleLinks[0].getAttribute("href") || "").match(/\/s(\d+)\//);
-                if (m) coveredSeasonNums.add(parseInt(m[1], 10));
-            }
-        }
-        for (var ali = 0; ali < allLinks.length; ali++) {
-            var alHref = allLinks[ali].getAttribute("href") || "";
-            var alMatch = alHref.match(/\/p-\d+\/s(\d+)\/?$/);
-            if (alMatch) {
-                var alSeasonNum = parseInt(alMatch[1], 10);
-                if (!coveredSeasonNums.has(alSeasonNum)) {
-                    extraSeasonHrefs.push({ href: alHref, season: alSeasonNum });
-                    coveredSeasonNums.add(alSeasonNum); // avoid duplicates
-                }
-            }
-        }
-
-        if (extraSeasonHrefs.length > 0) {
-            logger.info(`processOneDigitalSeries => Found ${extraSeasonHrefs.length} hidden season(s) in dropdown for ${title}: ${extraSeasonHrefs.map(s => 'S' + s.season).join(', ')}`);
-        }
-
-        if ((seasons != undefined) && (seasons.length > 0)){ //generate videos object with media links(streams)
-            logger.debug("processOneDigitalSeries => seasons " + title + " length: " + seasons.length);
-
-            // First, process visible seasons
-            videoObj = await this.getVideos(seasons, id);
-
-            // Then, process any hidden dropdown seasons
-            for (var dsi = 0; dsi < extraSeasonHrefs.length; dsi++) {
-                var extraSeason = extraSeasonHrefs[dsi];
-                var extraSeasonUrl = extraSeason.href;
-                if (extraSeasonUrl.startsWith("/")) {
-                    extraSeasonUrl = KAN_DIGITAL_IMAGE_PREFIX + extraSeasonUrl;
-                }
-
-                logger.info(`processOneDigitalSeries => Fetching hidden season ${extraSeason.season} from: ${extraSeasonUrl}`);
-
-                try {
-                    // Fetch the dedicated season page (it has its own .seasons-item div)
-                    var extraSeasonDoc = await fetchData(extraSeasonUrl + '?page=1&itemsToShow=1000');
-                    if (extraSeasonDoc) {
-                        var extraSeasonsDivs = extraSeasonDoc.querySelectorAll("div.seasons-item");
-                        if (extraSeasonsDivs.length > 0) {
-                            logger.info(`processOneDigitalSeries => Processing ${extraSeasonsDivs.length} season(s) from hidden page for S${extraSeason.season}`);
-
-                            // Create synthetic season elements to match getVideos() expectations
-                            // We'll fetch the card-links directly from the page and build episodes
-                            var extraEpisodesElems = extraSeasonsDivs[0].querySelectorAll("a.card-link");
-                            var numExtraEps = extraEpisodesElems.length;
-                            logger.info(`processOneDigitalSeries => Hidden season S${extraSeason.season} has ${numExtraEps} episodes`);
-
-                            // Build episode data manually (same pattern as getVideos)
-                            var extraEpisodeData = [];
-                            for (let iter = 0; iter < numExtraEps; iter++) {
-                                const actualEpisodeNo = numExtraEps - iter;
-                                extraEpisodeData.push({
-                                    elem: extraEpisodesElems[numExtraEps - 1 - iter],
-                                    seasonNo: extraSeason.season,
-                                    episodeNo: actualEpisodeNo
-                                });
-                            }
-
-                            // Process episodes in batches
-                            const extraResults = await this.processBatch(
-                                extraEpisodeData,
-                                async (epData, index) => {
-                                    return await this.processOneDigitalEpisode(epData, id);
-                                },
-                                `episodes (Hidden Season ${extraSeason.season})`
-                            );
-
-                            for (const result of extraResults) {
-                                if (result && result.video) {
-                                    videoObj.push(result.video);
-                                    logger.info(`Added (hidden): S${result.video.season} E${result.video.episode} - ${result.video.name}`);
-                                }
-                            }
-                        }
-                    }
-                } catch (e) {
-                    rethrowIfKanBlocked(e);
-                    logger.error(`processOneDigitalSeries => Error fetching hidden season ${extraSeason.season}: ${e.message}`);
-                }
-            }
-
+        if (episodes.length > 0) {
+            videoObj = await this.videosFromParsedEpisodes(episodes, id);
+        } else if (parsedSeries.movieUrl) {
+            videoObj = await this.getVideo(parsedSeries.movieUrl, id);
         } else {
-            // probably no episodes, only a single movie
-            if (! seriesPageDoc.querySelector("a.btn.with-arrow")){
-                logger.debug("processOneDigitalSeries => No video button found, skipping");
-                return null;
-            }
-            var moveiLink = seriesPageDoc.querySelector("a.btn.with-arrow").getAttribute("href");
-            videoObj = await this.getVideo(moveiLink, id);
+            logger.debug("processOneDigitalSeries => No video button found, skipping");
+            return null;
         }
         if ((videoObj == null) || (videoObj.length == 0)){
             logger.warn(`processOneDigitalSeries => could not find videos for series ${title} @ URL ${pageUrl}`);
@@ -792,60 +664,106 @@ getStream (scripts, id, url){
         }
     }
 }
-    /**********************************************************
-     * receive the video elements with ID of series and
-     * retrieve the list of videos and streams
-     * @param {*} videosElems
-     * @param {*} id
-     * @returns Array of video json objects
-     *********************************************************/
-    async getVideos(videosElems, id){
-        var videosArr = [];
-
-        var noOfSeasons = videosElems.length;
-        logger.info(`getVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
-
-        for (var i = 0 ; i < noOfSeasons; i++){
-            var seasonEpisodesElems = videosElems[i].querySelectorAll("a.card-link");
-            var numEpisodes = seasonEpisodesElems.length;
-
-            // Extract actual season number from the first episode's URL (e.g., /s3/ -> 3)
-            var seasonNo = i + 1; // default fallback (1-based ascending)
-            if (seasonEpisodesElems.length > 0) {
-                const firstEpHref = seasonEpisodesElems[0].getAttribute("href");
-                if (firstEpHref) {
-                    const seasonMatch = firstEpHref.match(/\/s(\d+)\//);
-                    if (seasonMatch) {
-                        seasonNo = parseInt(seasonMatch[1], 10);
-                    }
-                }
+    /**
+     * Episodes already on the series page, plus any season page that is not
+     * already covered by a div.seasons-item. Season pages are read once.
+     */
+    async collectDigitalEpisodes(seriesPageDoc, pageUrl, parsedSeries, title) {
+        const episodes = [];
+        const seen = new Set();
+        const addEpisodes = (list) => {
+            for (const episode of list || []) {
+                if (!episode || !episode.url || seen.has(episode.url)) continue;
+                seen.add(episode.url);
+                episodes.push(episode);
             }
+        };
+        addEpisodes(parsedSeries.episodes);
 
-            logger.info(`getVideos => Season ${seasonNo} has ${numEpisodes} episode(s) - processing in descending order`);
-
-            // Prepare episode data for batch processing (descending order)
-            // Episode numbers stay correct (episode 36 is still episode 36) but processed in reverse
-            const episodeData = [];
-            for (let iter = 0; iter < numEpisodes; iter++) {
-                // Process from last to first (highest episode number first)
-                const actualEpisodeNo = numEpisodes - iter;  // This keeps the correct episode number
-                episodeData.push({
-                    elem: seasonEpisodesElems[numEpisodes - 1 - iter],  // Access in reverse
-                    seasonNo: seasonNo,
-                    episodeNo: actualEpisodeNo  // Keep correct episode number
-                });
+        const seasonDivs = seriesPageDoc.querySelectorAll
+            ? seriesPageDoc.querySelectorAll("div.seasons-item")
+            : [];
+        const covered = new Set();
+        for (const seasonDiv of seasonDivs) {
+            const links = seasonDiv.querySelectorAll("a.program-grid-card, a.cr-item, a.card-link");
+            for (const link of links) {
+                const match = (link.getAttribute("href") || "").match(/\/s(\d+)\//);
+                if (match) covered.add(parseInt(match[1], 10));
             }
+        }
 
-            // Process episodes in batches
+        const pageKey = String(pageUrl || "").split("?")[0].replace(/\/+$/, "") + "/";
+        const seasonUrls = [];
+        for (const seasonUrl of parsedSeries.seasonUrls || []) {
+            const match = String(seasonUrl).match(/\/s(\d+)\/?$/);
+            if (!match) continue;
+            const seasonNo = parseInt(match[1], 10);
+            if (seasonDivs.length > 0 && covered.has(seasonNo)) continue;
+            const seasonKey = String(seasonUrl).split("?")[0].replace(/\/+$/, "") + "/";
+            if (seasonKey === pageKey) continue;
+            seasonUrls.push(seasonUrl);
+        }
+
+        if (seasonUrls.length > 0) {
+            const seasonLabels = seasonUrls.map((url) => {
+                const match = String(url).match(/\/(s\d+)\/?$/);
+                return match ? match[1] : url;
+            });
+            logger.info(`processOneDigitalSeries => Fetching ${seasonUrls.length} season page(s) for ${title}: ${seasonLabels.join(", ")}`);
+        }
+
+        for (const seasonUrl of seasonUrls) {
+            let fetchUrl = seasonUrl;
+            if (fetchUrl.startsWith("/")) {
+                fetchUrl = KAN_DIGITAL_IMAGE_PREFIX + fetchUrl;
+            }
+            fetchUrl = fetchUrl.split("?")[0];
+            logger.info(`processOneDigitalSeries => Fetching season page: ${fetchUrl}`);
+            try {
+                const seasonDoc = await fetchData(`${fetchUrl}?page=1&itemsToShow=1000`);
+                if (!seasonDoc) continue;
+                const seasonParsed = parseSeriesPage(seasonDoc, pageUrl || fetchUrl);
+                addEpisodes(seasonParsed.episodes);
+            } catch (error) {
+                rethrowIfKanBlocked(error);
+                logger.error(`processOneDigitalSeries => Error fetching season ${fetchUrl}: ${error.message}`);
+            }
+        }
+
+        return episodes;
+    }
+
+    /**
+     * Turn parsed episode cards into video objects. Season numbers come from
+     * the /sN/ path. Episode numbers come from the card title when it says
+     * "פרק N", otherwise from the legacy newest-first position.
+     */
+    async videosFromParsedEpisodes(episodes, id) {
+        const jobs = numberDigitalEpisodes(episodes);
+        const videosArr = [];
+        const bySeason = new Map();
+        for (const job of jobs) {
+            if (!bySeason.has(job.season)) bySeason.set(job.season, []);
+            bySeason.get(job.season).push(job);
+        }
+
+        for (const [seasonNo, seasonJobs] of bySeason) {
+            const ordered = seasonJobs.slice().sort((a, b) => b.episodeNo - a.episodeNo);
+            logger.info(`getVideos => Season ${seasonNo} has ${ordered.length} episode(s) - processing in descending order`);
             const episodeResults = await this.processBatch(
-                episodeData,
-                async (epData, index) => {
+                ordered.map((job) => ({
+                    url: job.url,
+                    title: job.title || "",
+                    description: job.description || "",
+                    seasonNo: job.season,
+                    episodeNo: job.episodeNo
+                })),
+                async (epData) => {
                     return await this.processOneDigitalEpisode(epData, id);
                 },
                 `episodes (Season ${seasonNo})`
             );
 
-            // Add successful episodes to videosArr
             for (const result of episodeResults) {
                 if (result && result.video) {
                     videosArr.push(result.video);
@@ -858,17 +776,47 @@ getStream (scripts, id, url){
         return videosArr;
     }
 
+    /**********************************************************
+     * receive the video elements with ID of series and
+     * retrieve the list of videos and streams
+     * @param {*} videosElems
+     * @param {*} id
+     * @returns Array of video json objects
+     *********************************************************/
+    async getVideos(videosElems, id){
+        const episodes = [];
+        const seen = new Set();
+        const elements = videosElems || [];
+        logger.info(`getVideos => Processing ${elements.length} season element(s) for series ID: ${id}`);
+
+        for (const element of elements) {
+            const parsed = parseSeriesPage(element && element.toString ? element.toString() : "", "");
+            for (const episode of parsed.episodes) {
+                if (!episode.url || seen.has(episode.url)) continue;
+                seen.add(episode.url);
+                episodes.push(episode);
+            }
+        }
+
+        return this.videosFromParsedEpisodes(episodes, id);
+    }
+
     /**
      * Process a single digital episode (extracted from getVideos for batch processing)
      * NOTE: Stream URLs are NOT fetched during scraping to avoid rate limiting/403 errors.
      * The episodeLink is stored and streams are resolved on-demand when user plays.
      */
     async processOneDigitalEpisode(epData, id) {
-        const { elem: seasonEpisodesElem, seasonNo, episodeNo } = epData;
+        const seasonNo = epData.seasonNo;
+        const episodeNo = epData.episodeNo;
+        const seasonEpisodesElem = epData.elem || null;
 
         logger.trace(`processOneDigitalEpisode => season: ${seasonNo} episode: ${episodeNo}`);
 
-        var episodePageLink = seasonEpisodesElem.getAttribute("href");
+        var episodePageLink = epData.url || (seasonEpisodesElem && seasonEpisodesElem.getAttribute("href")) || "";
+        if (!episodePageLink) {
+            return null;
+        }
 
         if (episodePageLink.includes("p-12385/s4")){//season 4 of this series yields no episode. Skipping.
             logger.debug(`processOneDigitalEpisode => Skipping season: ${seasonNo} of id ${id} due to no episodes`);
@@ -877,17 +825,23 @@ getStream (scripts, id, url){
         if (episodePageLink.startsWith("/")){
             episodePageLink = KAN_DIGITAL_IMAGE_PREFIX + episodePageLink;
         }
-        var title = "";
-        const cardTitle = seasonEpisodesElem.querySelector("div.card-title");
-        if (cardTitle) {
-            title = cardTitle.text.trim();
-        } else {
-            title = seasonEpisodesElem.getAttribute("title") || "";
-        }
-        var description = "";
-        const cardText = seasonEpisodesElem.querySelector("div.card-text");
-        if (cardText) {
-            description = cardText.text.trim();
+        var title = epData.title || "";
+        var description = epData.description || "";
+        if (seasonEpisodesElem) {
+            if (!title) {
+                const cardTitle = seasonEpisodesElem.querySelector("div.card-title, h3.cr-title, .program-grid-title");
+                if (cardTitle) {
+                    title = cardTitle.text.trim();
+                } else {
+                    title = seasonEpisodesElem.getAttribute("title") || seasonEpisodesElem.getAttribute("aria-label") || "";
+                }
+            }
+            if (!description) {
+                const cardText = seasonEpisodesElem.querySelector("div.card-text");
+                if (cardText) {
+                    description = cardText.text.trim();
+                }
+            }
         }
         var  videoId = id + ":" + seasonNo + ":" + episodeNo;
 
