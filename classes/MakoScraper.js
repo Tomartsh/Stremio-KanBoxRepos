@@ -154,12 +154,14 @@ class MakoScraper {
 
         logger.debug(`processSeries => Processing ${sortedSeasons.length} seasons in descending order`);
 
-        // Process each season in descending order
         // Pass reversed index as seasonIndex for year-based season titles (e.g., "2026" -> "S1")
+        const seasonIds = sortedSeasons.map((season, i) => this.getMakoSeasonId(season, sortedSeasons.length - i));
+        const seasonNumbers = this.assignSeasonNumbers(seasons.seasons, sortedSeasons, seasonIds);
+
+        // Process each season in descending order
         for (let i = 0; i < sortedSeasons.length; i++) {
             const season = sortedSeasons[i];
-            const seasonIndex = sortedSeasons.length - i; // highest sorted => highest index
-            const seasonVideos = await this.processSeason(season, id, title, tmdbSeriesId, seasonIndex);
+            const seasonVideos = await this.processSeason(season, id, title, tmdbSeriesId, seasonIds[i], seasonNumbers.get(season));
             if (seasonVideos && seasonVideos.length > 0) {
                 videos.push(...seasonVideos);
             }
@@ -194,21 +196,58 @@ class MakoScraper {
         }
     }
 
-    async processSeason(season, seriesId, seriesTitle, tmdbSeriesId = null, seasonIndex = null) {
-        const seasonUrl = MAKO.URL_BASE + season.pageUrl;
-        let makoSeasonId = this.setSeasonId(season.seasonTitle, seasonUrl);
+    getMakoSeasonId(season, seasonIndex = null) {
+        let makoSeasonId = this.setSeasonId(season.seasonTitle, MAKO.URL_BASE + season.pageUrl);
 
         // If the season title is a 4-digit year (e.g., "2026"), Mako didn't provide a proper
         // season number. Use the sequential season index instead to avoid "S2026" names.
         if (seasonIndex !== null && /^\d{4}$/.test(makoSeasonId)) {
             const yearNum = parseInt(makoSeasonId, 10);
             if (yearNum >= 1900 && yearNum <= 2099) {
-                logger.debug(`processSeason => Detected year-based season "${makoSeasonId}", using index ${seasonIndex} instead`);
+                logger.debug(`getMakoSeasonId => Detected year-based season "${makoSeasonId}", using index ${seasonIndex} instead`);
                 makoSeasonId = String(seasonIndex);
             }
         }
+        return makoSeasonId;
+    }
 
-        logger.debug(`processSeason => Mako Season ID: ${makoSeasonId}, URL: ${seasonUrl}`);
+    /**
+     * Some seasons have a name instead of a number ("VIP 5", "נבחרת החלומות", "1993-1999").
+     * Each of them gets the lowest number that no other season of the series uses, in the
+     * order Mako lists the seasons (oldest first). A season numbered later, such as a new
+     * "עונה 13", therefore never renumbers them.
+     * @param {Array} seasons - The seasons in Mako's order
+     * @param {Array} sortedSeasons - The same seasons, in the order of seasonIds
+     * @param {Array<string>} seasonIds - Each season's ID from getMakoSeasonId
+     * @returns {Map} season => season number
+     */
+    assignSeasonNumbers(seasons, sortedSeasons, seasonIds) {
+        const numbers = new Map();
+        sortedSeasons.forEach((season, i) => {
+            if (/^\d+$/.test(seasonIds[i])) {
+                numbers.set(season, parseInt(seasonIds[i], 10));
+            }
+        });
+
+        const used = new Set(numbers.values());
+        let next = 1;
+        for (const season of seasons) {
+            if (numbers.has(season)) {
+                continue;
+            }
+            while (used.has(next)) {
+                next++;
+            }
+            numbers.set(season, next);
+            used.add(next);
+        }
+        return numbers;
+    }
+
+    async processSeason(season, seriesId, seriesTitle, tmdbSeriesId = null, makoSeasonId = this.getMakoSeasonId(season), seasonNumber = null) {
+        const seasonUrl = MAKO.URL_BASE + season.pageUrl;
+
+        logger.debug(`processSeason => Mako Season ID: ${makoSeasonId}, number: ${seasonNumber}, URL: ${seasonUrl}`);
 
         const seasonEpisodesPage = await fetchData(seasonUrl + MAKO.URL_SUFFIX, true);
 
@@ -217,7 +256,7 @@ class MakoScraper {
             return [];
         }
 
-        const videos = await this.getEpisodes(seasonEpisodesPage, seriesId, makoSeasonId, tmdbSeriesId);
+        const videos = await this.getEpisodes(seasonEpisodesPage, seriesId, makoSeasonId, tmdbSeriesId, seasonNumber);
 
         if (videos && videos.length > 0) {
             // NOTE: deriveSeasonFromDates is NOT called here because it was incorrectly
@@ -230,7 +269,7 @@ class MakoScraper {
         return videos || [];
     }
 
-    async getEpisodes(seasonData, id, seasonId = "0", tmdbSeriesId = null) {
+    async getEpisodes(seasonData, id, seasonId = "0", tmdbSeriesId = null, seasonNumber = null) {
         logger.debug(`getEpisodes => SeasonID: ${seasonId}`);
 
         const videos = [];
@@ -287,7 +326,7 @@ class MakoScraper {
                 const videoJsonObj = {
                     id: episodeData.episodeId,
                     title: episodeData.episodeTitle,
-                    season: parseInt(seasonId) || 1,
+                    season: seasonNumber ?? (parseInt(seasonId) || 1),
                     episode: episodeNumber,
                     thumbnail: episodeData.episodePic,
                     episodeLink: episodeData.episodePage,
