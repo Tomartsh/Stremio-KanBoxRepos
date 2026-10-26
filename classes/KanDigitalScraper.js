@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, getNameFromSeriesPage, extractReleaseDate, DeltaTracker, extractLatestDateFromList, hasNewEpisode, hasSeriesChanged, updateDatabaseFromJSON} = require("./utilities.js");
+const {fetchData, getNameFromSeriesPage, DeltaTracker, extractLatestDateFromList, hasNewEpisode, hasSeriesChanged, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     KAN_URL_ADDRESS,
@@ -8,12 +8,19 @@ const {
     KAN_BOX_IGNORE_LIST,
     SCRAPER_CONFIG
 } = require("./constants.js");
-const { extractKanStream, cleanVideoName, safeExecute } = require("./ScraperHelpers.js");
+const { safeExecute } = require("./ScraperHelpers.js");
 const { rethrowIfKanBlocked } = require("./kanSession.js");
+const { loadPreviousCatalog } = require("./catalogGate.js");
 const {
     parseKanBoxLobby,
     selectLobbySeries,
+    parseSeriesMeta,
     parseSeriesPage,
+    seasonUrlsToFetch,
+    planSeriesRefresh,
+    videoFromEpisodeCard,
+    videoFromMovieCard,
+    carryPreviousEpisodeFields,
     numberDigitalEpisodes
 } = require("./kanDigitalParse.js");
 const BaseScraper = require("./BaseScraper.js");
@@ -49,6 +56,8 @@ class KanDigitalScraper extends BaseScraper {
      * Main scraping logic - required by BaseScraper
      */
     async crawlContent() {
+        await this.loadPreviousSeries();
+
         await safeExecute(
             () => this.crawlVod(),
             "crawlContent.crawlVod",
@@ -68,6 +77,41 @@ class KanDigitalScraper extends BaseScraper {
         this.logger.info(`Total unique series added: ${this._sourceCounts['total_unique']}`);
         this.logger.info(`Total series in JSON object: ${Object.keys(this._jsonObj).length}`);
         this.logger.info('===========================================');
+    }
+
+    /**
+     * Previous catalog from the published ZIP (remote, then local). Used to
+     * reuse episode rows and to keep release dates that only exist there.
+     * Does not call Supabase.
+     */
+    async loadPreviousSeries() {
+        this._previousById = new Map();
+        if (this.previousCatalogOverride === null) return;
+        try {
+            let loaded = this.previousCatalogOverride;
+            if (loaded === undefined) {
+                loaded = await loadPreviousCatalog(this.getExportFilename(), {
+                    logger: this.logger,
+                    remote: this.previousCatalogRemote
+                });
+                this.previousCatalogCache = loaded;
+            }
+            const data = loaded && loaded.data;
+            if (!data) return;
+            for (const [id, series] of Object.entries(data)) {
+                if (series && series.meta && Array.isArray(series.meta.videos)) {
+                    this._previousById.set(id, series);
+                }
+            }
+            this.logger.info(`KanDigital previous catalog: ${this._previousById.size} series`);
+        } catch (error) {
+            this.logger.warn(`KanDigital previous catalog unavailable: ${error.message}`);
+        }
+    }
+
+    previousVideosFor(seriesId) {
+        const series = this._previousById && this._previousById.get(seriesId);
+        return series && series.meta && series.meta.videos;
     }
 
     /***********************************************************
@@ -267,7 +311,7 @@ class KanDigitalScraper extends BaseScraper {
     async processOneDigitalSeries(item, source = 'kan11_lobby') {
         let title = getNameFromSeriesPage(item.ImageAlt || ''); // Clean image artifacts from name
         let pageUrl = item.Url; //URL of the series episodes
-        const description = item.Description;
+        let description = item.Description;
 
         //set the series URL
         if (pageUrl == undefined) {
@@ -393,20 +437,47 @@ class KanDigitalScraper extends BaseScraper {
 
         //set series genres
         const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
+        const pageMeta = parseSeriesMeta(seriesPageDoc);
+        if (pageMeta.description) description = pageMeta.description;
 
-        // Episodes come from program-grid cards, cr-item cards under this series,
-        // or legacy card-links. Season roots (/p-N/sX/) that are not already
-        // rendered in div.seasons-item are fetched and parsed the same way.
-        // A page with neither episodes nor seasons is a single title.
+        // Episode title, number, image, and duration come from the season card.
+        // The episode page is not fetched: release date is not on the card, so
+        // it is copied from the previous catalog when the episode URL is known
+        // and left blank for new episodes. Streams stay empty and resolve on play.
         const parsedSeries = parseSeriesPage(seriesPageDoc, pageUrl);
-        const episodes = await this.collectDigitalEpisodes(seriesPageDoc, pageUrl, parsedSeries, title);
-        var videoObj = [];
+        const previousVideos = this.previousVideosFor(id);
+        const seasonUrls = seasonUrlsToFetch(seriesPageDoc, pageUrl, parsedSeries);
+        const plan = (this.incrementalMode && previousVideos && previousVideos.length)
+            ? planSeriesRefresh(previousVideos, parsedSeries.episodes, parsedSeries.seasonUrls)
+            : { reuse: false, seasonUrls, keepUnseenSeasons: false };
 
-        if (episodes.length > 0) {
-            videoObj = await this.videosFromParsedEpisodes(episodes, id);
-        } else if (parsedSeries.movieUrl) {
-            videoObj = await this.getVideo(parsedSeries.movieUrl, id);
+        var videoObj = [];
+        if (plan.reuse) {
+            videoObj = previousVideos.map((video) => Object.assign({}, video));
+            logger.info(`processOneDigitalSeries => Reusing ${videoObj.length} episodes for ${title || pageUrl} (series page unchanged)`);
         } else {
+            const episodes = await this.collectDigitalEpisodes(
+                seriesPageDoc,
+                pageUrl,
+                parsedSeries,
+                title,
+                plan.seasonUrls
+            );
+            if (episodes.length > 0) {
+                videoObj = carryPreviousEpisodeFields(this.videosFromParsedEpisodes(episodes, id), previousVideos);
+                if (plan.keepUnseenSeasons && previousVideos) {
+                    const rebuilt = new Set(videoObj.map((video) => Number(video.season)));
+                    for (const previous of previousVideos) {
+                        if (!rebuilt.has(Number(previous.season))) videoObj.push(Object.assign({}, previous));
+                    }
+                }
+            } else if (parsedSeries.movieUrl) {
+                const movie = videoFromMovieCard(parsedSeries.movieUrl, id, title, description, imgUrl);
+                videoObj = movie ? carryPreviousEpisodeFields([movie], previousVideos) : [];
+            }
+        }
+
+        if (videoObj.length === 0 && !plan.reuse) {
             logger.debug("processOneDigitalSeries => No video button found, skipping");
             return null;
         }
@@ -426,249 +497,11 @@ class KanDigitalScraper extends BaseScraper {
         }
     }
 
-     /**
-     * Get the video element in case of a single episode (movie)
-     * @param {*} url - The link to the movie page
-     */
-    async getVideo(url, id){
-        logger.trace("getVideo => Entering");
-        try {
-            var movieDoc = await fetchData(url);
-        } catch (e) {
-            rethrowIfKanBlocked(e);
-            logger.error(`getVideo => could not retrieve movie page doc from URL ${url}. Error: ${e}`);
-            return null;
-        }
-
-        // Try to get stream URL from redge-player element (new Kan player)
-        var playerElem = movieDoc.querySelector("[id^='redge-player-']");
-        if (playerElem && playerElem.getAttribute("data-hls-url")) {
-            let videoUrl = playerElem.getAttribute("data-hls-url");
-            if (videoUrl.startsWith("//")) {
-                videoUrl = "https:" + videoUrl;
-            }
-            logger.debug("getVideo => Found redge-player URL: " + videoUrl);
-
-            // Get metadata from the page
-            let name = "";
-            let desc = "";
-            let released = "";
-
-            if (movieDoc.querySelectorAll("div.info-title h1.h2").length > 0) {
-                name = movieDoc.querySelectorAll("div.info-title h1.h2")[0].text.trim();
-                name = cleanVideoName(name);
-            } else if (movieDoc.querySelector("title")) {
-                name = movieDoc.querySelector("title").text.trim();
-                name = cleanVideoName(name);
-            }
-
-            if (movieDoc.querySelector("div.info-description") != null) {
-                desc = movieDoc.querySelector("div.info-description").text.trim();
-            }
-
-            if (movieDoc.querySelector("li.date-local") != undefined) {
-                const dateStr = movieDoc.querySelector("li.date-local").getAttribute("data-date-utc");
-                logger.debug("getVideo => Found date string: " + dateStr);
-                if (dateStr) {
-                    // Parse DD.MM.YYYY HH:MM:SS format
-                    const match = dateStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2})?:?(\d{2})?:?(\d{2})?/);
-                    if (match) {
-                        const [, day, month, year, hour = "00", min = "00", sec = "00"] = match;
-                        const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}`);
-                        released = isNaN(date.getTime()) ? "" : date.toISOString();
-                        logger.debug("getVideo => Parsed release date: " + released);
-                    }
-                }
-            }
-
-            const episodeId = `${id}:1:1`;
-            let stream = {
-                url: videoUrl,
-                title: name,
-                name: name
-            };
-
-            return [{
-                id: episodeId,
-                name: name,
-                season: 1,
-                episode: 1,
-                description: desc,
-                thumbnail: "",
-                episodeLink: url,
-                released: released,
-                streams: [stream]
-            }];
-        }
-
-        // Fallback to VideoObject method (legacy)
-        let scripts = movieDoc.querySelectorAll('script[type="application/ld+json"]');
-        let videosList = this.getStream(scripts, id, url);
-
-        if ((videosList == null) || (videosList.length == 0)) {
-            logger.warn(`getVideo => No VideoObject found in the movie page at URL ${url}`);
-        }
-        return videosList;
-
-    }
-
-getStream (scripts, id, url){
-    logger.trace("getStream => Entering");
-    for (const script of scripts){
-        try {
-            let scriptContent = script.text || script.innerText || script.rawText;
-
-            // First check if it's a VideoObject before doing any processing
-            if (!scriptContent.includes('"@type"') || !scriptContent.includes('VideoObject')) {
-                continue; // Skip if not a VideoObject
-            }
-
-            // Only handle HTML entities - keep all quotes as they are
-            scriptContent = scriptContent
-                .replace(/&quot;/g, '"')
-                .replace(/&amp;/g, '&')
-                .replace(/&#xD;&#xA;/g, '\n')
-                .replace(/&#xD;/g, '\n')
-                .replace(/&#xA;/g, '\n')
-                .trim();
-
-            // Split into lines
-            const lines = scriptContent.split('\n');
-
-            let name = '';
-            let desc = '';
-            let thumb = '';
-            let episodeLink = '';
-            let inDescription = false;
-            let descriptionLines = [];
-            let released = '';
-
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
-
-                // Skip empty lines
-                if (!line) continue;
-
-                //skip {, }, @context, @type
-                if (line.startsWith('{') || line.endsWith('}') || line.startsWith('"@context') || line.startsWith('"@type')) { continue; }
-
-                // Handle multi-line description continuation first
-                if (inDescription) {
-                    if (line.endsWith('",') || line.endsWith('"')) {
-                        // End of description
-                        descriptionLines.push(line.replace(/",?$/, ''));
-                        desc = descriptionLines.join('\n');
-                        inDescription = false;
-                        descriptionLines = [];
-                    } else {
-                        descriptionLines.push(line);
-                    }
-                    continue; // Skip other checks while in description mode
-                }
-
-                // Extract name
-                if (line.includes('"name":')) {
-                    const match = line.match(/"name":\s*"([^"]+)"/);
-                    if (match) {
-                        name = match[1];
-                    }
-                    continue;
-                }
-
-                // Extract description (might span multiple lines)
-                if (line.includes('"description":')) {
-                    const match = line.match(/"description":\s*"(.*)$/);
-                    if (match) {
-                        const content = match[1];
-                        // Check if description ends on same line
-                        if (content.endsWith('",') || content.endsWith('"')) {
-                            desc = content.replace(/",?$/, '');
-                        } else {
-                            // Description continues on next lines
-                            inDescription = true;
-                            descriptionLines.push(content);
-                        }
-                    }
-                    continue;
-                }
-
-                // Extract thumbnailUrl
-                if (line.includes('"thumbnailUrl":')) {
-                    const match = line.match(/"thumbnailUrl":\s*"([^"]+)"/);
-                    if (match) {
-                        thumb = match[1];
-                    }
-                    continue;
-                }
-
-                // Extract contentUrl
-                if (line.includes('"contentUrl":')) {
-                    const match = line.match(/"contentUrl":\s*"([^"]+)"/);
-                    if (match) {
-                        episodeLink = match[1];
-                    }
-                    continue;
-                }
-
-                // Extract release date
-                if (line.includes('"uploadDate":')) {
-                    const match = line.match(/"uploadDate":\s*"([^"]+)"/);
-                    if (match) {
-                        let tempDate = match[1];
-                        const date = new Date(tempDate);
-                        released = isNaN(date.getTime()) ? "" : date.toISOString();
-                    }
-                    continue;
-                }
-            }
-
-            // Verify we got the essential fields
-            var videosList = [];
-
-            if (!episodeLink){
-                logger.warn(`getStream => Missing contentUrl in VideoObject at URL ${url}`);
-                return videosList;
-            }
-
-            // Process thumbnail URL if present (convert relative to absolute)
-            let processedThumb = thumb;
-            if (thumb) {
-                processedThumb = utils.getImageFromUrl(thumb, SUBTYPE);
-            }
-
-            const episodeId = `${id}:1:1`;
-            let stream = {
-                    url: episodeLink,
-                    title: name,
-                    name: name
-            }
-
-            videosList.push({
-                id: episodeId,
-                name: name,
-                season: 1,
-                episode: 1,
-                description: desc,
-                thumbnail: processedThumb,
-                episodeLink: url,
-                released: released,
-                streams: [stream]
-            });
-            logger.info(`getStream => Successfully extracted VideoObject: ${name} with thumbnail: ${processedThumb ? 'YES' : 'NO'}`);
-            return videosList;
-
-
-        } catch (e) {
-            logger.debug("getStream => Error processing VideoObject: " + e);
-            return [];
-        }
-    }
-}
     /**
      * Episodes already on the series page, plus any season page that is not
      * already covered by a div.seasons-item. Season pages are read once.
      */
-    async collectDigitalEpisodes(seriesPageDoc, pageUrl, parsedSeries, title) {
+    async collectDigitalEpisodes(seriesPageDoc, pageUrl, parsedSeries, title, seasonUrlsOverride) {
         const episodes = [];
         const seen = new Set();
         const addEpisodes = (list) => {
@@ -680,29 +513,11 @@ getStream (scripts, id, url){
         };
         addEpisodes(parsedSeries.episodes);
 
-        const seasonDivs = seriesPageDoc.querySelectorAll
-            ? seriesPageDoc.querySelectorAll("div.seasons-item")
-            : [];
-        const covered = new Set();
-        for (const seasonDiv of seasonDivs) {
-            const links = seasonDiv.querySelectorAll("a.program-grid-card, a.cr-item, a.card-link");
-            for (const link of links) {
-                const match = (link.getAttribute("href") || "").match(/\/s(\d+)\//);
-                if (match) covered.add(parseInt(match[1], 10));
-            }
-        }
-
-        const pageKey = String(pageUrl || "").split("?")[0].replace(/\/+$/, "") + "/";
-        const seasonUrls = [];
-        for (const seasonUrl of parsedSeries.seasonUrls || []) {
-            const match = String(seasonUrl).match(/\/s(\d+)\/?$/);
-            if (!match) continue;
-            const seasonNo = parseInt(match[1], 10);
-            if (seasonDivs.length > 0 && covered.has(seasonNo)) continue;
-            const seasonKey = String(seasonUrl).split("?")[0].replace(/\/+$/, "") + "/";
-            if (seasonKey === pageKey) continue;
-            seasonUrls.push(seasonUrl);
-        }
+        // An explicit list, including [], is the refresh plan. Undefined
+        // falls back to every season page that is not already on this document.
+        const seasonUrls = seasonUrlsOverride != null
+            ? seasonUrlsOverride
+            : seasonUrlsToFetch(seriesPageDoc, pageUrl, parsedSeries);
 
         if (seasonUrls.length > 0) {
             const seasonLabels = seasonUrls.map((url) => {
@@ -738,41 +553,16 @@ getStream (scripts, id, url){
      * the /sN/ path. Episode numbers come from the card title when it says
      * "פרק N", otherwise from the legacy newest-first position.
      */
-    async videosFromParsedEpisodes(episodes, id) {
+    videosFromParsedEpisodes(episodes, id) {
         const jobs = numberDigitalEpisodes(episodes);
         const videosArr = [];
-        const bySeason = new Map();
         for (const job of jobs) {
-            if (!bySeason.has(job.season)) bySeason.set(job.season, []);
-            bySeason.get(job.season).push(job);
+            const video = videoFromEpisodeCard(job, id);
+            if (!video) continue;
+            videosArr.push(video);
+            logger.info(`Added: S${video.season} E${video.episode} - ${video.name}`);
         }
-
-        for (const [seasonNo, seasonJobs] of bySeason) {
-            const ordered = seasonJobs.slice().sort((a, b) => b.episodeNo - a.episodeNo);
-            logger.info(`getVideos => Season ${seasonNo} has ${ordered.length} episode(s) - processing in descending order`);
-            const episodeResults = await this.processBatch(
-                ordered.map((job) => ({
-                    url: job.url,
-                    title: job.title || "",
-                    description: job.description || "",
-                    seasonNo: job.season,
-                    episodeNo: job.episodeNo
-                })),
-                async (epData) => {
-                    return await this.processOneDigitalEpisode(epData, id);
-                },
-                `episodes (Season ${seasonNo})`
-            );
-
-            for (const result of episodeResults) {
-                if (result && result.video) {
-                    videosArr.push(result.video);
-                    logger.info(`Added: S${result.video.season} E${result.video.episode} - ${result.video.name}`);
-                }
-            }
-        }
-
-        logger.debug(`getVideos => Completed processing all seasons for series ID: ${id}`);
+        logger.debug(`getVideos => ${videosArr.length} episode(s) from series cards for ${id}`);
         return videosArr;
     }
 
@@ -799,143 +589,6 @@ getStream (scripts, id, url){
         }
 
         return this.videosFromParsedEpisodes(episodes, id);
-    }
-
-    /**
-     * Process a single digital episode (extracted from getVideos for batch processing)
-     * NOTE: Stream URLs are NOT fetched during scraping to avoid rate limiting/403 errors.
-     * The episodeLink is stored and streams are resolved on-demand when user plays.
-     */
-    async processOneDigitalEpisode(epData, id) {
-        const seasonNo = epData.seasonNo;
-        const episodeNo = epData.episodeNo;
-        const seasonEpisodesElem = epData.elem || null;
-
-        logger.trace(`processOneDigitalEpisode => season: ${seasonNo} episode: ${episodeNo}`);
-
-        var episodePageLink = epData.url || (seasonEpisodesElem && seasonEpisodesElem.getAttribute("href")) || "";
-        if (!episodePageLink) {
-            return null;
-        }
-
-        if (episodePageLink.includes("p-12385/s4")){//season 4 of this series yields no episode. Skipping.
-            logger.debug(`processOneDigitalEpisode => Skipping season: ${seasonNo} of id ${id} due to no episodes`);
-            return null;
-        }
-        if (episodePageLink.startsWith("/")){
-            episodePageLink = KAN_DIGITAL_IMAGE_PREFIX + episodePageLink;
-        }
-        var title = epData.title || "";
-        var description = epData.description || "";
-        if (seasonEpisodesElem) {
-            if (!title) {
-                const cardTitle = seasonEpisodesElem.querySelector("div.card-title, h3.cr-title, .program-grid-title");
-                if (cardTitle) {
-                    title = cardTitle.text.trim();
-                } else {
-                    title = seasonEpisodesElem.getAttribute("title") || seasonEpisodesElem.getAttribute("aria-label") || "";
-                }
-            }
-            if (!description) {
-                const cardText = seasonEpisodesElem.querySelector("div.card-text");
-                if (cardText) {
-                    description = cardText.text.trim();
-                }
-            }
-        }
-        var  videoId = id + ":" + seasonNo + ":" + episodeNo;
-
-        var episodeLogoUrl = "";
-        let released = "";
-
-        // Extract thumbnail, release date, and title from individual episode page
-        // The series page card may not have the correct episode-specific thumbnail or title
-        try {
-            const episodeDoc = await fetchData(episodePageLink);
-            if (episodeDoc) {
-                // Try to get title from page if not found on season page
-                if (!title) {
-                    // Try meta tags first
-                    const ogTitle = episodeDoc.querySelector('meta[property="og:title"]');
-                    const twitterTitle = episodeDoc.querySelector('meta[name="twitter:title"]');
-                    if (ogTitle) {
-                        title = ogTitle.getAttribute('content');
-                    } else if (twitterTitle) {
-                        title = twitterTitle.getAttribute('content');
-                    } else {
-                        // Try h1 or h2 elements
-                        const h1 = episodeDoc.querySelector('h1');
-                        const h2 = episodeDoc.querySelector('h2');
-                        if (h1) {
-                            title = h1.text.trim();
-                        } else if (h2) {
-                            title = h2.text.trim();
-                        }
-                    }
-                    logger.debug(`processOneDigitalEpisode => Extracted title from episode page: "${title}"`);
-                }
-
-                // Try to get thumbnail from Open Graph or Twitter Card meta tags
-                const ogImage = episodeDoc.querySelector('meta[property="og:image"]');
-                const twitterImage = episodeDoc.querySelector('meta[name="twitter:image"]');
-                const thumbnailMeta = episodeDoc.querySelector('meta[itemprop="thumbnailUrl"]');
-
-                if (thumbnailMeta) {
-                    episodeLogoUrl = thumbnailMeta.getAttribute('content');
-                } else if (ogImage) {
-                    episodeLogoUrl = ogImage.getAttribute('content');
-                } else if (twitterImage) {
-                    episodeLogoUrl = twitterImage.getAttribute('content');
-                }
-
-                // Clean up URL if needed
-                if (episodeLogoUrl) {
-                    episodeLogoUrl = utils.getImageFromUrl(episodeLogoUrl, SUBTYPE);
-                }
-
-                // Extract release date
-                const dateElement = episodeDoc.querySelector("li.date-local");
-                released = extractReleaseDate(dateElement);
-                if (released) {
-                    logger.debug(`processOneDigitalEpisode => Extracted release date: ${released} for "${title}"`);
-                }
-
-                logger.trace(`processOneDigitalEpisode => Extracted thumbnail: ${episodeLogoUrl} for ${title}`);
-            }
-        } catch (error) {
-            rethrowIfKanBlocked(error);
-            logger.warn(`processOneDigitalEpisode => Could not extract thumbnail/release date for ${title}: ${error.message}`);
-        }
-
-        // Create video object with episodeLink for on-demand stream resolution
-        // Stream URL will be fetched when user actually plays the episode
-        const video = {
-            id: videoId,
-            name: title,
-            season: seasonNo,
-            episode: episodeNo,
-            description: description,
-            thumbnail: episodeLogoUrl,
-            episodeLink: episodePageLink,
-            released: released,
-            streams: [] // Streams will be resolved on-demand by the addon
-        };
-        logger.debug(`processOneDigitalEpisode => ✓ processed episode : ${title} season:${seasonNo}, episode: ${episodeNo} (stream on-demand)`);
-        return { video, videoId, title };
-    }
-
-    async getStreams(link){
-        logger.trace("getStreams => Entering");
-        logger.trace("getStreams => Link: " + link);
-
-        const stream = await extractKanStream(link, "KanDigital");
-
-        logger.trace("getStreams => Exiting");
-        return stream || null;
-    }
-
-    getSeriesNameFromSeriesPage(url){
-
     }
 
     /**

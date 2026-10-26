@@ -8,7 +8,11 @@ const {
     parseKanBoxLobby,
     selectLobbySeries,
     parseSeriesPage,
-    numberDigitalEpisodes
+    numberDigitalEpisodes,
+    planSeriesRefresh,
+    videoFromEpisodeCard,
+    videoFromMovieCard,
+    carryPreviousEpisodeFields
 } = require("../classes/kanDigitalParse");
 
 const fixtureDir = path.join(__dirname, "fixtures/kandigital");
@@ -187,6 +191,87 @@ test("cr-item episodes stay inside the requested series", () => {
     assert.equal(parsed.episodes[0].title, "מתווית");
     assert.equal(parsed.episodes[0].season, 6);
     assert.equal(parsed.episodes[0].url, "https://www.kan.org.il/content/kan/kan-11/p-12832/s6/1/");
+});
+
+test("episode cards become videos without an episode-page fetch", () => {
+    const numbered = numberDigitalEpisodes([{
+        url: "https://www.kan.org.il/content/kan/kan-11/p-1/s3/a/",
+        title: "אורח",
+        subtitle: "עונה 3, פרק 23",
+        image: "https://www.kan.org.il/media/a.jpg?width=490",
+        duration: "00:38:46",
+        season: 3,
+        description: ""
+    }, {
+        url: "https://www.kan.org.il/content/kan/kan-11/p-12385/s4/1/",
+        title: "פרק 1",
+        season: 4
+    }]);
+    assert.equal(numbered[0].episodeNo, 23);
+
+    const video = videoFromEpisodeCard(numbered[0], "il_kan_digital_1");
+    assert.equal(video.id, "il_kan_digital_1:3:23");
+    assert.equal(video.name, "אורח");
+    assert.equal(video.season, 3);
+    assert.equal(video.episode, 23);
+    assert.equal(video.thumbnail, "https://www.kan.org.il/media/a.jpg?width=490");
+    assert.equal(video.episodeLink, "https://www.kan.org.il/content/kan/kan-11/p-1/s3/a/");
+    assert.deepEqual(video.streams, []);
+    assert.equal(video.duration, "00:38:46");
+    assert.equal(Object.hasOwn(video, "released"), false);
+    assert.equal(videoFromEpisodeCard(numbered[1], "il_kan_digital_1"), null);
+
+    const carried = carryPreviousEpisodeFields([video], [{
+        episodeLink: "https://www.kan.org.il/content/kan/kan-11/p-1/s3/a",
+        released: "2020-01-02T00:00:00.000Z",
+        thumbnail: "https://www.kan.org.il/media/og-1200.jpg",
+        description: "תיאור מעמוד הפרק"
+    }]);
+    assert.equal(carried[0].released, "2020-01-02T00:00:00.000Z");
+    assert.equal(carried[0].thumbnail, video.thumbnail);
+    assert.equal(carried[0].description, "תיאור מעמוד הפרק");
+
+    const movie = videoFromMovieCard(
+        "https://www.kan.org.il/content/kan/kan-11/p-525000/525002/",
+        "il_kan_digital_525000",
+        "סרט",
+        "תקציר מהעמוד",
+        "https://www.kan.org.il/media/poster.jpg"
+    );
+    assert.equal(movie.episodeLink, "https://www.kan.org.il/content/kan/kan-11/p-525000/525002/");
+    assert.deepEqual(movie.streams, []);
+    assert.equal(Object.hasOwn(movie, "released"), false);
+});
+
+test("an unchanged series is reused and a partial season page is fetched", () => {
+    const seasonUrl = "https://www.kan.org.il/content/kan/kan-11/p-9/s2/";
+    const full = [1, 2, 3].map((n) => ({
+        season: 2,
+        episodeLink: `https://www.kan.org.il/content/kan/kan-11/p-9/s2/${n}/`
+    }));
+    const samePage = full.map((video) => ({ season: 2, url: video.episodeLink }));
+    const unchanged = planSeriesRefresh(full, samePage, [seasonUrl]);
+    assert.deepEqual(unchanged, { reuse: true, seasonUrls: [], keepUnseenSeasons: false });
+
+    const partial = planSeriesRefresh(full, [samePage[0]], [seasonUrl]);
+    assert.equal(partial.reuse, false);
+    assert.deepEqual(partial.seasonUrls, [seasonUrl]);
+    assert.equal(partial.keepUnseenSeasons, true);
+
+    const added = planSeriesRefresh(
+        full,
+        samePage.concat([{ season: 2, url: "https://www.kan.org.il/content/kan/kan-11/p-9/s2/4/" }]),
+        [seasonUrl]
+    );
+    assert.equal(added.reuse, false);
+    assert.deepEqual(added.seasonUrls, []);
+    assert.equal(added.keepUnseenSeasons, true);
+
+    const newSeason = "https://www.kan.org.il/content/kan/kan-11/p-9/s3/";
+    const grown = planSeriesRefresh(full, samePage, [seasonUrl, newSeason]);
+    assert.equal(grown.reuse, false);
+    assert.deepEqual(grown.seasonUrls, [newSeason]);
+    assert.equal(grown.keepUnseenSeasons, false);
 });
 
 test("missing markup does not throw", () => {

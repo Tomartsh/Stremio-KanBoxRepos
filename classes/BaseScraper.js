@@ -14,7 +14,10 @@ const {
     catalogIsComplete,
     countCatalog,
     decidePublish,
-    loadPreviousCatalogCounts
+    loadPreviousCatalog,
+    loadPreviousCatalogCounts,
+    recoverCatalogAfterBudget,
+    shouldRecoverAfterBudget
 } = require("./catalogGate.js");
 const StateManager = require("./StateManager.js");
 const log4js = require("log4js");
@@ -171,12 +174,24 @@ class BaseScraper {
         this.logger.info("Done Crawling");
         this.logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        const counts = countCatalog(this._jsonObj);
+        let counts = countCatalog(this._jsonObj);
         const runState = getKanRunState() || {};
         const allowEmpty = process.env.ALLOW_EMPTY_PUBLISH === "true";
         const blocked = !!(runState.blocked || runState.http403 > 0);
         if (!scrapeError && runState.budgetExhausted) {
             scrapeError = new KanBudgetError(runState.reason || "time budget exhausted");
+        }
+        if (shouldRecoverAfterBudget({ scrapeError, blocked, http403: runState.http403 || 0 })) {
+            const recovered = await this.mergeWithPreviousAfterBudget();
+            if (recovered) {
+                this._jsonObj = recovered.data;
+                counts = recovered.counts;
+                this.logger.warn(
+                    `${this.scraperName} => Time budget exhausted. Merged this run with the previous catalog ` +
+                    `(${counts.series} series, ${counts.videos} videos). The video-count gate still applies.`
+                );
+                scrapeError = null;
+            }
         }
         let previous = null;
         if (!scrapeError && !blocked && counts.series > 0) {
@@ -503,10 +518,38 @@ class BaseScraper {
      */
     async loadPreviousCounts() {
         if (this.previousCountsOverride !== undefined) return this.previousCountsOverride;
+        if (this.previousCatalogCache && this.previousCatalogCache.root) {
+            const cached = countCatalog(this.previousCatalogCache.root);
+            if (cached.series > 0) return cached;
+        }
         return loadPreviousCatalogCounts(this.getExportFilename(), {
             databaseKey: this.getDatabaseKey(),
             logger: this.logger
         });
+    }
+
+    /**
+     * A budget stop used to throw away every series collected in the run.
+     * Merge the finished series into the previous ZIP instead, then let the
+     * existing video-count gate accept or refuse that catalog. A blocked run
+     * never gets here. No Supabase read.
+     */
+    async mergeWithPreviousAfterBudget() {
+        try {
+            let catalog = this.previousCatalogCache;
+            if (!catalog || !catalog.data) {
+                catalog = await loadPreviousCatalog(this.getExportFilename(), {
+                    logger: this.logger,
+                    remote: this.previousCatalogRemote
+                });
+                if (catalog) this.previousCatalogCache = catalog;
+            }
+            if (!catalog) return null;
+            return recoverCatalogAfterBudget(catalog.root, this._jsonObj);
+        } catch (error) {
+            this.logger.warn(`${this.scraperName} => Could not merge the previous catalog after the time budget: ${error.message}`);
+            return null;
+        }
     }
 
     /**
