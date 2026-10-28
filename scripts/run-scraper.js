@@ -14,6 +14,7 @@
  *   set KAN_SLOW=1
  *   set KAN_BUDGET_HOURS=20
  *   node scripts/run-scraper.js kanDigital --slow --budget-hours 20
+ *   node scripts/run-scraper.js kanDigital --slow --budget-hours 20 --mode full
  */
 
 const path = require("path");
@@ -44,7 +45,8 @@ async function main() {
     const parsed = parseCommandLine(process.argv.slice(2));
     const factory = scrapers[parsed.scraper];
     if (!factory) {
-        console.error("Usage: node scripts/run-scraper.js <" + Object.keys(scrapers).join("|") + "> [--slow|--no-slow] [--budget-hours N] [--mode full]");
+        console.error("Usage: node scripts/run-scraper.js <" + Object.keys(scrapers).join("|") + "> [--slow|--no-slow] [--budget-hours N] [--mode full|incremental]");
+        console.error("kanDigital defaults to incremental. Pass --mode full to scrape every listed series.");
         return 1;
     }
 

@@ -401,7 +401,12 @@ function parseCommandLine(argv) {
         }
         positional.push(arg);
     }
-    return { scraper: positional[0] || "", mode: positional.mode || "full", overrides };
+    const scraper = positional[0] || "";
+    // kanDigital's nightly entry omits --mode. Incremental is the default
+    // there so the run stays inside the time budget. --mode full still
+    // forces a full scrape. Other scrapers keep the full default.
+    const mode = positional.mode || (scraper === "kanDigital" ? "incremental" : "full");
+    return { scraper, mode, overrides };
 }
 
 function pacingOverridesFromQuery(query) {

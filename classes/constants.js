@@ -211,7 +211,9 @@ module.exports = {
         'Priority': 'u=0, i'
     },
     
-    URL_JSON_BASE: "https://tomartsh.github.io/Stremio-KanBoxRepos/output/", 
+    // Published catalogs are committed under output/ on main. GitHub Pages
+    // (*.github.io) does not serve that folder and returns HTTP 404.
+    URL_JSON_BASE: "https://raw.githubusercontent.com/tomartsh/Stremio-KanBoxRepos/main/output/", 
     URLS_ASSETS_BASE: "https://raw.githubusercontent.com/tomartsh/Stremio-KanBoxAddon/main/assets/",
 
     //Kan constants

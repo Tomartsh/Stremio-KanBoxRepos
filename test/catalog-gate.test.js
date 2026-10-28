@@ -5,13 +5,17 @@ const os = require("os");
 const path = require("path");
 const AdmZip = require("adm-zip");
 const { KanBrowserError } = require("../classes/kanSession");
+const { URL_JSON_BASE } = require("../classes/constants");
 const {
     catalogIsComplete,
     countCatalog,
     countZipBuffer,
     decidePublish,
     formatRunResult,
-    readLocalCatalogCounts
+    readLocalCatalogCounts,
+    loadPreviousCatalog,
+    recoverCatalogAfterBudget,
+    shouldRecoverAfterBudget
 } = require("../classes/catalogGate");
 
 const PREVIOUS = { series: 40, videos: 2168 };
@@ -164,6 +168,75 @@ test("a missing baseline does not block a non-empty catalog", () => {
         catalogComplete: true
     });
     assert.equal(decision.published, true);
+});
+
+test("the remote baseline is the committed output folder, not GitHub Pages", () => {
+    assert.match(URL_JSON_BASE, /^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/main\/output\/$/);
+    assert.equal(URL_JSON_BASE.includes("github.io"), false);
+});
+
+test("a budget stop merges finished series and keeps series this run did not reach", () => {
+    const previous = {
+        data: {
+            kept: { id: "kept", name: "ישן", meta: { videos: [{ id: "k1" }, { id: "k2" }] } },
+            replaced: { id: "replaced", name: "ישן", meta: { videos: [{ id: "r1" }, { id: "r2" }, { id: "r3" }] } },
+            empty: { id: "empty", name: "ישן", meta: { videos: [{ id: "e1" }] } }
+        }
+    };
+    const scraped = {
+        replaced: { id: "replaced", name: "חדש", meta: { videos: [{ id: "n1" }] } },
+        empty: { id: "empty", name: "ריק", meta: { videos: [] } },
+        fresh: { id: "fresh", name: "חדש", meta: { videos: [{ id: "f1" }] } }
+    };
+    const recovered = recoverCatalogAfterBudget(previous, scraped);
+    assert.equal(recovered.data.kept.meta.videos.length, 2);
+    assert.equal(recovered.data.replaced.name, "חדש");
+    assert.equal(recovered.data.replaced.meta.videos.length, 1);
+    assert.equal(recovered.data.empty.name, "ישן");
+    assert.equal(recovered.data.empty.meta.videos.length, 1);
+    assert.equal(recovered.data.fresh.meta.videos.length, 1);
+    assert.deepEqual(recovered.counts, { series: 4, videos: 5 });
+
+    const tooSmall = decidePublish({
+        scraperName: "KanDigital",
+        exportFilename: "stremio-kandigital",
+        counts: recovered.counts,
+        previous: countCatalog(previous),
+        catalogComplete: true
+    });
+    assert.equal(tooSmall.published, false);
+    assert.match(tooSmall.line, /85%/);
+
+    assert.equal(recoverCatalogAfterBudget(null, scraped), null);
+    assert.equal(recoverCatalogAfterBudget({ data: {} }, scraped), null);
+});
+
+test("a blocked run is not a candidate for merging a partial catalog", () => {
+    const budget = new Error("time budget exhausted");
+    budget.code = "BUDGET";
+    assert.equal(shouldRecoverAfterBudget({ scrapeError: budget, blocked: false, http403: 0 }), true);
+    assert.equal(shouldRecoverAfterBudget({ scrapeError: budget, blocked: true, http403: 0 }), false);
+    assert.equal(shouldRecoverAfterBudget({ scrapeError: budget, blocked: false, http403: 1 }), false);
+    assert.equal(shouldRecoverAfterBudget({ scrapeError: new Error("nope"), blocked: false }), false);
+});
+
+test("a local previous catalog is read without the network", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kan-catalog-"));
+    const zip = new AdmZip();
+    zip.addFile("stremio-kandigital.json", Buffer.from(JSON.stringify({
+        timestamp: "2026-10-25T00:00:00.000Z",
+        data: {
+            show: { id: "show", name: "א", meta: { videos: [{ id: "v", episodeLink: "https://example/1/" }] } }
+        }
+    })));
+    zip.writeZip(path.join(dir, "stremio-kandigital.zip"));
+    const loaded = await loadPreviousCatalog("stremio-kandigital", {
+        outputDir: dir,
+        remote: false,
+        logger: { warn() {}, info() {} }
+    });
+    assert.equal(loaded.data.show.meta.videos.length, 1);
+    assert.equal(await loadPreviousCatalog("missing", { outputDir: dir, remote: false }), null);
 });
 
 test("local zip counts are read from the output directory", () => {

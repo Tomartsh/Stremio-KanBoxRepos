@@ -7,6 +7,14 @@ const {
     SCRAPER_CONFIG
 } = require("./constants.js");
 const { extractKanStream } = require("./ScraperHelpers.js");
+const { rethrowIfKanBlocked } = require("./kanSession.js");
+const {
+    parseArchiveIndex,
+    parseSeriesMeta,
+    parseSeriesPage,
+    seasonUrlsToFetch,
+    numberDigitalEpisodes
+} = require("./kanDigitalParse.js");
 const BaseScraper = require("./BaseScraper.js");
 const SUB_PREFIX = "archive";
 
@@ -42,45 +50,34 @@ class KanArchiveScraper extends BaseScraper {
         logger.trace("crawlVod => Entered");
         logger.debug("crawlVod => Starting retrieval of VOD series");
 
-        var doc = await fetchData(KAN_ARCHIVE.URL_ADDRESS);
-
-        var series = doc.querySelectorAll("a.card-link");
-        for (var seriesElem of series){// iterate over series
-            if (seriesElem == undefined) { continue;} //if we do not have an element, skip
-
-            //set the series URL
-            var seriesUrl = seriesElem.getAttribute("href");
-            if (seriesUrl == undefined) { continue;} // if there is not link to the series then skip
-            if (seriesUrl.startsWith("/")) { seriesUrl = KAN_ARCHIVE.URL_ADDRESS + seriesUrl; }
-
-            if (seriesUrl.includes("kan-actual")){continue;} //we are skipping news item (for rnow)
-
-            if (seriesUrl.includes("podcasts")){continue;} //we are skipping podcasts, we will deal with them later
-
-            if (! seriesUrl.includes("/archive1/")) { continue; }
-
-            var subType = "a";
-
-            //set series ID
-            // in case the id is not numbers only we need to invent an ID. We will start with 5,000
-            // the generateId will return also the incremented series iterator
-            var id = utils.generateSeriesId(seriesUrl, SUB_PREFIX);
-
-            //set series image link
-            var imageElem = seriesElem.querySelector("img");
-            var imgUrlStr = imageElem.getAttribute("src");
-            var imgUrl = imgUrlStr.substring(0,imgUrlStr.indexOf("?"));
-            if (imgUrl.startsWith("/")){
-                imgUrl = KAN_ARCHIVE.IMAGE_PREFIX + imgUrl;
-            }
-
-            this.addToJsonObject(id, "",seriesUrl,imgUrl,"","",[],subType,"series");
+        const doc = await fetchData(KAN_ARCHIVE.URL_ADDRESS);
+        if (!doc) {
+            logger.error("crawlVod => Could not retrieve the archive index");
+            return;
         }
 
-        //start working on each series
-        await this.getSeries()
-        logger.trace("crawl() => Exiting");
+        // Names come from the poster alt. The old crawl stored "" and only
+        // filled the name after an episode-button check the new layout fails.
+        const series = parseArchiveIndex(doc);
+        logger.info(`crawlVod => ${series.length} archive series on the index`);
+        for (const card of series) {
+            if (!card.url) continue;
+            const id = utils.generateSeriesId(card.url, SUB_PREFIX);
+            this.addToJsonObject(
+                id,
+                card.name || "",
+                card.url,
+                card.image || "",
+                card.description || "",
+                "",
+                [],
+                "a",
+                "series"
+            );
+        }
 
+        await this.getSeries();
+        logger.trace("crawl() => Exiting");
     }
 
     async getSeries(){
@@ -106,221 +103,155 @@ class KanArchiveScraper extends BaseScraper {
      * Process a single series (extracted from getSeries for batch processing)
      */
     async processOneSeries(key) {
-        const id = this._jsonObj[key]["id"];
-        const subType = this._jsonObj[key]["subtype"];
-        const retrieveLink = this._jsonObj[key]["link"] + "?page=1&itemsToShow=1000";
+        const series = this._jsonObj[key];
+        if (!series) return null;
+        const id = series.id;
+        const pageUrl = series.link;
+        const joiner = String(pageUrl).includes("?") ? "&" : "?";
+        const retrieveLink = pageUrl + joiner + "page=1&itemsToShow=1000";
 
         logger.debug(`processOneSeries => Fetching series ID: ${id} from ${retrieveLink}`);
-        const seriesPageDoc = await fetchData(retrieveLink);
+        let seriesPageDoc;
+        try {
+            seriesPageDoc = await fetchData(retrieveLink);
+        } catch (error) {
+            rethrowIfKanBlocked(error);
+            logger.warn(`processOneSeries => Failed to fetch series page for ID: ${id}: ${error.message}`);
+            delete this._jsonObj[key];
+            return null;
+        }
 
         if (!seriesPageDoc) {
             logger.warn(`processOneSeries => Failed to fetch series page for ID: ${id}`);
+            delete this._jsonObj[key];
             return null;
         }
 
-        let episodeLink;
+        const pageMeta = parseSeriesMeta(seriesPageDoc);
+        const title = utils.getNameFromSeriesPage(pageMeta.title || series.name || "");
+        if (title) {
+            series.name = title;
+            series.meta.name = title;
+        }
+        if (pageMeta.description) series.meta.description = pageMeta.description;
+        series.meta.genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
 
-        // Check if this is empty
+        // Same card parser as Kan Digital. Season from the /sN/ path. The
+        // legacy button, card-link, and seasons-item selectors stay inside it.
+        const parsed = parseSeriesPage(seriesPageDoc, pageUrl);
+        const seasonUrls = seasonUrlsToFetch(seriesPageDoc, pageUrl, parsed);
+        let episodes = [];
         try {
-            const btnElement = seriesPageDoc.querySelector("a.btn.with-arrow.info-link.btn-gradient");
-            if (!btnElement || btnElement.getAttribute("href") == undefined) {
-                logger.debug(`processOneSeries => Series page is empty, skipping series ID: ${id}`);
-                return null;
-            }
-            episodeLink = btnElement.getAttribute("href");
-        } catch(error) {
-            logger.debug(`processOneSeries => Series page is empty, skipping series ID: ${id} - Error: ${error.message}`);
-            return null;
+            episodes = await this.collectArchiveEpisodes(parsed, seasonUrls, title);
+        } catch (error) {
+            rethrowIfKanBlocked(error);
+            logger.error(`processOneSeries => season fetch failed for ${id}: ${error.message}`);
         }
 
-        logger.debug(`processOneSeries => Working on series ID: ${id}`);
-
-        // Set series Description
-        if (seriesPageDoc.querySelector("div.info-description p") != undefined) {
-            this._jsonObj[key]["meta"]["description"] = this.setDescription(seriesPageDoc.querySelector("div.info-description p"));
+        if (episodes.length === 0 && parsed.movieUrl) {
+            const added = await this.addArchiveMovie(id, title || series.name || "", pageMeta.description || "", series.meta.poster || "", parsed.movieUrl);
+            if (added) return { id, title };
         }
 
-        // Set series genres
-        this._jsonObj[key]["meta"]["genres"] = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
-
-        // Set series name
-        const titleTemp = seriesPageDoc.querySelector("title").text;
-        const title = utils.getNameFromSeriesPage(titleTemp);
-        this._jsonObj[key]["meta"]["name"] = title;
-        this._jsonObj[key]["name"] = title;
-
-        const seasons = seriesPageDoc.querySelectorAll("div.seasons-item");
-        logger.debug(`processOneSeries => Series "${title}" has ${seasons.length} season(s)`);
-
-        if (seasons.length > 0) {
-            // Multiple seasons and episodes
-            await this.getVideos(seasons, id, subType);
-        } else {
-            // Single episode (movie)
-            const movieTitle = seriesPageDoc.querySelector("h2").text.trim();
-            let description = "";
-            if (seriesPageDoc.querySelector("div.info-description p") != undefined) {
-                description = seriesPageDoc.querySelector("div.info-description p").text.trim();
+        const numbered = numberDigitalEpisodes(episodes);
+        for (const episode of numbered) {
+            let streams;
+            try {
+                streams = await this.getStreams(episode.url);
+            } catch (error) {
+                rethrowIfKanBlocked(error);
+                logger.warn(`processOneSeries => stream fetch failed for ${episode.url}: ${error.message}`);
+                continue;
             }
-            const videoId = key + ":1:1";
-
-            const elemImage = seriesPageDoc.querySelector("div.block-img").toString();
-            const startPoint = elemImage.indexOf("--desktop-vod-bg-image: url(") + 29;
-            let imgUrl = elemImage.substring(startPoint);
-            if (imgUrl.indexOf("?") < 1) {
-                logger.warn(`processOneSeries => Could not extract image URL for series ID: ${id}`);
-                return null;
+            if (!streams || !streams.url) {
+                logger.warn(`processOneSeries => No stream for "${episode.title}" (${episode.url})`);
+                continue;
             }
-            imgUrl = imgUrl.substring(0, imgUrl.indexOf("?"));
-            if (imgUrl.startsWith("/")) {
-                imgUrl = "https://www.kan.org.il" + imgUrl;
-            }
-
-            this._jsonObj[key]["meta"]["link"] = episodeLink;
-            this._jsonObj[key]["meta"]["description"] = description;
-            this._jsonObj[key]["meta"]["poster"] = imgUrl;
-
-            // Get streams
-            const streams = await this.getStreams(episodeLink);
-
-            this.addVideoToMeta(id, videoId, movieTitle, "1", "1", description, imgUrl, episodeLink, streams.released, streams);
-            logger.info(`processOneSeries => Added movie "${movieTitle}" for series ID: ${id}`);
-        }
-
-        return { id, title };
-    }
-
-    /**********************************************************
-     * receive the video elements with ID of series and the
-     * subtype, and retrieve the list of videos and streams
-     * @param {*} videosElems
-     * @param {*} id
-     * @param {*} subType
-     * @returns Array of video json objects
-     *********************************************************/
-    async getVideos(videosElems, id, subType){
-        const noOfSeasons = videosElems.length;
-        logger.info(`getVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
-
-        for (let i = 0; i < noOfSeasons; i++) {
-            const seasonNo = noOfSeasons - i;
-            const seasonEpisodesElems = videosElems[i].querySelectorAll("a.card-link");
-            const numEpisodes = seasonEpisodesElems.length;
-
-            logger.info(`getVideos => Season ${seasonNo} has ${numEpisodes} episode(s) - processing in descending order`);
-
-            // Prepare episode data for batch processing (descending order)
-            const episodeData = [];
-            for (let iter = 0; iter < numEpisodes; iter++) {
-                // Process from last to first (highest episode number first)
-                const actualEpisodeNo = numEpisodes - iter;  // Keep correct episode number
-                episodeData.push({
-                    elem: seasonEpisodesElems[numEpisodes - 1 - iter],  // Access in reverse
-                    seasonNo: seasonNo,
-                    episodeNo: actualEpisodeNo  // Keep correct episode number
-                });
-            }
-
-            // Process episodes in batches
-            await this.processBatch(
-                episodeData,
-                async (epData, index) => {
-                    return await this.processOneEpisode(epData, id, subType);
-                },
-                `episodes (Season ${seasonNo})`
+            this.addVideoToMeta(
+                id,
+                `${id}:${episode.season}:${episode.episodeNo}`,
+                episode.title || `Episode ${episode.episodeNo}`,
+                episode.season,
+                episode.episodeNo,
+                episode.description || streams.description || "",
+                episode.image || "",
+                episode.url,
+                streams.released,
+                [{
+                    url: streams.url,
+                    type: streams.type,
+                    name: streams.name,
+                    description: streams.description
+                }]
             );
         }
 
-        logger.debug(`getVideos => Completed processing all seasons for series ID: ${id}`);
-    }
-
-    /**
-     * Process a single episode (extracted from getVideos for batch processing)
-     */
-    async processOneEpisode(epData, id, subType) {
-        const { elem: seasonEpisodesElem, seasonNo, episodeNo } = epData;
-
-        logger.trace(`processOneEpisode => Season: ${seasonNo}, Episode: ${episodeNo}`);
-
-        let episodePageLink = seasonEpisodesElem.getAttribute("href");
-        if (episodePageLink.startsWith("/")) {
-            episodePageLink = KAN_DIGITAL_IMAGE_PREFIX + episodePageLink;
-        }
-
-        let title = "";
-        // Try multiple selectors for title (HTML structure may vary)
-        const titleSelectors = [
-            "h2.card-title",           // h2 with card-title class
-            "h3.card-title",           // h3 with card-title class
-            "div.card-title",          // div with card-title class
-            "h2",                      // Any h2 element
-            "h3",                      // Any h3 element
-            ".card-title"              // Any element with card-title class
-        ];
-
-        for (const selector of titleSelectors) {
-            const titleElem = seasonEpisodesElem.querySelector(selector);
-            if (titleElem) {
-                title = titleElem.text.trim();
-                if (title) break; // Found a title, stop looking
-            }
-        }
-
-        // Final fallback: use title attribute
-        if (!title) {
-            title = seasonEpisodesElem.getAttribute("title") || "";
-        }
-
-        // If still no title, generate a default one
-        if (!title) {
-            title = `Episode ${episodeNo}`;
-        }
-
-        let description = "";
-        if (seasonEpisodesElem.querySelector("div.card-text") != undefined) {
-            description = seasonEpisodesElem.querySelector("div.card-text").text.trim();
-        }
-
-        const videoId = id + ":" + seasonNo + ":" + episodeNo;
-
-        let episodeLogoUrl = "";
-        if (seasonEpisodesElem.querySelector("div.card-img")) {
-            const elemImage = seasonEpisodesElem.querySelector("div.card-img");
-            try {
-                if ((elemImage != null) && (elemImage.querySelector("img.img-full") != null)) {
-                    const elemEpisodeLogo = elemImage.querySelector("img.img-full");
-
-                    if (elemEpisodeLogo != null) {
-                        episodeLogoUrl = utils.getImageFromUrl(elemEpisodeLogo.attrs["src"], subType);
-                    }
-                    logger.trace(`processOneEpisode => episodeLogoUrl location: ${episodeLogoUrl}`);
-                }
-            } catch(ex) {
-                logger.error(`processOneEpisode => episodeLogoUrl error: ${ex}`);
-            }
-        }
-
-        // Get streams
-        const streams = await this.getStreams(episodePageLink);
-
-        if (!streams || !streams.url) {
-            logger.warn(`processOneEpisode => No streams found for episode "${title}" (S${seasonNo}E${episodeNo})`);
+        const videos = series.meta && series.meta.videos;
+        if (!videos || videos.length === 0) {
+            logger.debug(`processOneSeries => Series page is empty, skipping series ID: ${id}`);
+            delete this._jsonObj[key];
             return null;
         }
 
-        const streamsArr = [
-            {
+        logger.info(`processOneSeries => Added ${videos.length} video(s) for "${title}" (${id})`);
+        return { id, title };
+    }
+
+    async collectArchiveEpisodes(parsedSeries, seasonUrls, title) {
+        const episodes = [];
+        const seen = new Set();
+        const addEpisodes = (list) => {
+            for (const episode of list || []) {
+                if (!episode || !episode.url || seen.has(episode.url)) continue;
+                seen.add(episode.url);
+                episodes.push(episode);
+            }
+        };
+        addEpisodes(parsedSeries && parsedSeries.episodes);
+        if (seasonUrls && seasonUrls.length > 0) {
+            logger.info(`processOneSeries => Fetching ${seasonUrls.length} season page(s) for ${title}`);
+        }
+        for (const seasonUrl of seasonUrls || []) {
+            let fetchUrl = seasonUrl;
+            if (fetchUrl.startsWith("/")) fetchUrl = KAN_DIGITAL_IMAGE_PREFIX + fetchUrl;
+            fetchUrl = fetchUrl.split("?")[0];
+            try {
+                const seasonDoc = await fetchData(`${fetchUrl}?page=1&itemsToShow=1000`);
+                if (!seasonDoc) continue;
+                addEpisodes(parseSeriesPage(seasonDoc, fetchUrl).episodes);
+            } catch (error) {
+                rethrowIfKanBlocked(error);
+                logger.error(`processOneSeries => Error fetching season ${fetchUrl}: ${error.message}`);
+            }
+        }
+        return episodes;
+    }
+
+    async addArchiveMovie(id, title, description, poster, movieUrl) {
+        const streams = await this.getStreams(movieUrl);
+        if (!streams || !streams.url) {
+            logger.warn(`processOneSeries => No stream for movie ${movieUrl}`);
+            return false;
+        }
+        this.addVideoToMeta(
+            id,
+            `${id}:1:1`,
+            title,
+            "1",
+            "1",
+            description,
+            poster,
+            movieUrl,
+            streams.released,
+            [{
                 url: streams.url,
                 type: streams.type,
                 name: streams.name,
                 description: streams.description
-            }
-        ];
-
-        this.addVideoToMeta(id, videoId, title, seasonNo, episodeNo, description, episodeLogoUrl, episodePageLink, streams.released, streamsArr);
-        logger.debug(`processOneEpisode => ✓ Added episode "${title}" (S${seasonNo}E${episodeNo})`);
-
-        return { videoId, title, seasonNo, episodeNo };
+            }]
+        );
+        logger.info(`processOneSeries => Added movie "${title}" for series ID: ${id}`);
+        return true;
     }
 
     async getStreams(link){

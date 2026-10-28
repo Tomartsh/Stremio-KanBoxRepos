@@ -40,12 +40,52 @@ function countCatalog(root) {
     return { series, videos };
 }
 
-function countZipBuffer(buffer) {
+function catalogFromZipBuffer(buffer) {
     const zip = new AdmZip(buffer);
     const entry = zip.getEntries().find((item) => item.entryName.endsWith(".json"));
     if (!entry) return null;
-    const parsed = JSON.parse(entry.getData().toString("utf8"));
-    return countCatalog(parsed);
+    const root = JSON.parse(entry.getData().toString("utf8"));
+    return { root, data: unwrapCatalog(root) };
+}
+
+function countZipBuffer(buffer) {
+    const catalog = catalogFromZipBuffer(buffer);
+    if (!catalog) return null;
+    return countCatalog(catalog.root);
+}
+
+function seriesEntries(root) {
+    const entries = [];
+    for (const [id, series] of Object.entries(unwrapCatalog(root))) {
+        if (!series || typeof series !== "object" || Array.isArray(series)) continue;
+        if (!series.meta && series.id == null && series.name == null) continue;
+        entries.push([id, series]);
+    }
+    return entries;
+}
+
+/**
+ * Keep every previous series, and replace a series only when this run
+ * finished it with at least one video. A series that was not reached, or
+ * that came back empty, stays as it was. The caller still runs the video
+ * count gate on the merged catalog.
+ */
+function recoverCatalogAfterBudget(previousRoot, scrapedRoot) {
+    const previous = seriesEntries(previousRoot);
+    if (previous.length === 0) return null;
+    const data = {};
+    for (const [id, series] of previous) data[id] = series;
+    for (const [id, series] of seriesEntries(scrapedRoot)) {
+        const videos = series.meta && series.meta.videos;
+        if (!Array.isArray(videos) || videos.length === 0) continue;
+        data[id] = series;
+    }
+    return { data, counts: countCatalog({ data }) };
+}
+
+function shouldRecoverAfterBudget({ scrapeError = null, blocked = false, http403 = 0 } = {}) {
+    if (blocked || http403 > 0 || isKanBlockedError(scrapeError)) return false;
+    return !!(scrapeError && scrapeError.code === "BUDGET");
 }
 
 function shouldCheckVideoCount({ catalogComplete, counts, previous, seriesRatio }) {
@@ -162,15 +202,54 @@ function formatRunResult(scraperName, outcome) {
     };
 }
 
-function readLocalCatalogCounts(exportFilename, outputDir) {
+function readLocalCatalog(exportFilename, outputDir) {
     const zipPath = path.join(outputDir, `${exportFilename}.zip`);
     const jsonPath = path.join(outputDir, `${exportFilename}.json`);
-    if (fs.existsSync(zipPath)) {
-        return countZipBuffer(fs.readFileSync(zipPath));
-    }
+    if (fs.existsSync(zipPath)) return catalogFromZipBuffer(fs.readFileSync(zipPath));
     if (fs.existsSync(jsonPath)) {
-        return countCatalog(JSON.parse(fs.readFileSync(jsonPath, "utf8")));
+        const root = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+        return { root, data: unwrapCatalog(root) };
     }
+    return null;
+}
+
+function readLocalCatalogCounts(exportFilename, outputDir) {
+    const catalog = readLocalCatalog(exportFilename, outputDir);
+    if (!catalog) return null;
+    return countCatalog(catalog.root);
+}
+
+/**
+ * Previous published catalog: the ZIP on the raw output URL, then the local
+ * ZIP. No Supabase read. Returns null when neither copy has a series.
+ */
+async function loadPreviousCatalog(exportFilename, options = {}) {
+    const logger = options.logger || console;
+    const outputDir = options.outputDir || path.join(__dirname, `../${SAVE_FOLDER}`);
+    const remote = options.remote !== false && process.env.CATALOG_GATE_OFFLINE !== "1";
+
+    if (remote) {
+        const remoteUrl = `${URL_JSON_BASE}${exportFilename}.zip`;
+        try {
+            const response = await axios.get(remoteUrl, {
+                responseType: "arraybuffer",
+                timeout: options.timeoutMs || 8000,
+                validateStatus: (status) => status >= 200 && status < 300
+            });
+            const catalog = catalogFromZipBuffer(Buffer.from(response.data));
+            if (catalog && countCatalog(catalog.root).series > 0) return catalog;
+        } catch (error) {
+            logger.warn(`catalogGate => No remote baseline for ${exportFilename}: ${error.message}`);
+        }
+    }
+
+    try {
+        const local = readLocalCatalog(exportFilename, outputDir);
+        if (local && countCatalog(local.root).series > 0) return local;
+    } catch (error) {
+        logger.warn(`catalogGate => Could not read local baseline for ${exportFilename}: ${error.message}`);
+    }
+
     return null;
 }
 
@@ -200,29 +279,11 @@ async function countFromSupabase(databaseKey, logger) {
 
 async function loadPreviousCatalogCounts(exportFilename, options = {}) {
     const logger = options.logger || console;
-    const outputDir = options.outputDir || path.join(__dirname, `../${SAVE_FOLDER}`);
     const remote = options.remote !== false && process.env.CATALOG_GATE_OFFLINE !== "1";
-
-    if (remote) {
-        const remoteUrl = `${URL_JSON_BASE}${exportFilename}.zip`;
-        try {
-            const response = await axios.get(remoteUrl, {
-                responseType: "arraybuffer",
-                timeout: options.timeoutMs || 8000,
-                validateStatus: (status) => status >= 200 && status < 300
-            });
-            const counts = countZipBuffer(Buffer.from(response.data));
-            if (counts && counts.series > 0) return counts;
-        } catch (error) {
-            logger.warn(`catalogGate => No remote baseline for ${exportFilename}: ${error.message}`);
-        }
-    }
-
-    try {
-        const local = readLocalCatalogCounts(exportFilename, outputDir);
-        if (local && local.series > 0) return local;
-    } catch (error) {
-        logger.warn(`catalogGate => Could not read local baseline for ${exportFilename}: ${error.message}`);
+    const catalog = await loadPreviousCatalog(exportFilename, options);
+    if (catalog) {
+        const counts = countCatalog(catalog.root);
+        if (counts.series > 0) return counts;
     }
 
     if (options.databaseKey && remote) {
@@ -241,6 +302,10 @@ module.exports = {
     shouldCheckVideoCount,
     decidePublish,
     formatRunResult,
+    readLocalCatalog,
     readLocalCatalogCounts,
-    loadPreviousCatalogCounts
+    loadPreviousCatalog,
+    loadPreviousCatalogCounts,
+    recoverCatalogAfterBudget,
+    shouldRecoverAfterBudget
 };

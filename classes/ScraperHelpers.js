@@ -134,74 +134,15 @@ async function extractKanStream(link, siteName = "Kan") {
         return null;
     }
 
-    let released = "";
-    let videoUrl = "";
-    let nameVideo = "";
-    let descVideo = "";
-
-    // Extract release date
-    const dateElement = doc.querySelector("li.date-local");
-    released = extractReleaseDate(dateElement);
-    if (released) {
-        logger.debug(`extractKanStream => Extracted release date: ${released}`);
-    }
-
-    // Try to get stream URL from redge-player element (new Kan player)
-    const playerElem = doc.querySelector("[id^='redge-player-']");
-    if (playerElem && playerElem.getAttribute("data-hls-url")) {
-        videoUrl = playerElem.getAttribute("data-hls-url");
-        // Ensure URL has protocol
-        if (videoUrl.startsWith("//")) {
-            videoUrl = "https:" + videoUrl;
-        }
-        logger.debug(`extractKanStream => Found redge-player URL: ${videoUrl}`);
-    } else {
-        // Fallback to VideoObject method (legacy - Kaltura URLs, may not work)
-        logger.debug("extractKanStream => No redge-player found, falling back to VideoObject");
-        const scriptElems = doc.querySelectorAll("script");
-        for (const scriptElem of scriptElems) {
-            if (scriptElem.toString().includes("VideoObject")) {
-                videoUrl = extractVideoObjectUrl(scriptElem.toString());
-                // Ensure URL has protocol
-                if (videoUrl && videoUrl.startsWith("//")) {
-                    videoUrl = "https:" + videoUrl;
-                }
-                break;
-            }
-        }
-    }
-
-    // Extract video name
-    if (doc.querySelectorAll("div.info-title h1.h2").length > 0) {
-        nameVideo = doc.querySelectorAll("div.info-title h1.h2")[0].text.trim();
-        nameVideo = cleanVideoName(nameVideo);
-    } else if (doc.querySelector("title")) {
-        nameVideo = doc.querySelector("title").text.trim();
-        nameVideo = cleanVideoName(nameVideo);
-    }
-
-    // Extract description
-    if (doc.querySelector("div.info-description") != null) {
-        descVideo = doc.querySelector("div.info-description").text.trim();
-    }
-
-    if (!videoUrl) {
+    const streamObj = streamFromKanDocument(doc);
+    if (!streamObj) {
         logger.warn(`extractKanStream => No stream URL found for ${link}`);
         return null;
     }
-
-    const streamObj = {
-        url: videoUrl,
-        type: "series",
-        name: nameVideo,
-        description: descVideo
-    };
-
-    if (released) {
-        streamObj.released = released;
+    if (streamObj.released) {
+        logger.debug(`extractKanStream => Extracted release date: ${streamObj.released}`);
     }
-
-    logger.trace(`extractKanStream => Exiting with ${videoUrl ? 'stream' : 'no stream'}`);
+    logger.trace(`extractKanStream => Exiting with ${streamObj.url ? 'stream' : 'no stream'}`);
     return streamObj;
 }
 
@@ -212,14 +153,74 @@ async function extractKanStream(link, siteName = "Kan") {
  * @returns {string} - The extracted URL or empty string
  */
 function extractVideoObjectUrl(scriptContent) {
-    const startPoint = scriptContent.indexOf("contentUrl");
+    const text = String(scriptContent || "");
+    const match = text.match(/"contentUrl"\s*:\s*"([^"]+)"/);
+    if (match) return match[1];
+
+    const startPoint = text.indexOf("contentUrl");
     if (startPoint === -1) return "";
 
-    let link = scriptContent.substring(startPoint + 14);
+    let link = text.substring(startPoint + 14);
     const endPoint = link.indexOf('"');
+    if (endPoint < 0) return "";
     link = link.substring(0, endPoint);
 
     return link;
+}
+
+/**
+ * Stream fields from an already-fetched episode document. redge-player on
+ * archive pages has no data-hls-url; the playable URL is VideoObject.contentUrl.
+ *
+ * @param {object} doc parsed HTML document
+ * @returns {object|null}
+ */
+function streamFromKanDocument(doc) {
+    if (!doc || typeof doc.querySelector !== "function") return null;
+
+    let released = "";
+    let videoUrl = "";
+    let nameVideo = "";
+    let descVideo = "";
+
+    const dateElement = doc.querySelector(".date-local");
+    released = extractReleaseDate(dateElement);
+
+    const playerElem = doc.querySelector("[id^='redge-player-']");
+    if (playerElem && playerElem.getAttribute("data-hls-url")) {
+        videoUrl = playerElem.getAttribute("data-hls-url");
+        if (videoUrl.startsWith("//")) videoUrl = "https:" + videoUrl;
+    } else {
+        const scriptElems = doc.querySelectorAll("script");
+        for (const scriptElem of scriptElems) {
+            const scriptText = scriptElem.toString();
+            if (!scriptText.includes("VideoObject")) continue;
+            videoUrl = extractVideoObjectUrl(scriptText);
+            if (videoUrl && videoUrl.startsWith("//")) videoUrl = "https:" + videoUrl;
+            if (videoUrl) break;
+        }
+    }
+
+    if (doc.querySelectorAll("div.info-title h1.h2").length > 0) {
+        nameVideo = cleanVideoName(doc.querySelectorAll("div.info-title h1.h2")[0].text.trim());
+    } else if (doc.querySelector("title")) {
+        nameVideo = cleanVideoName(doc.querySelector("title").text.trim());
+    }
+
+    if (doc.querySelector("div.info-description") != null) {
+        descVideo = doc.querySelector("div.info-description").text.trim();
+    }
+
+    if (!videoUrl) return null;
+
+    const streamObj = {
+        url: videoUrl,
+        type: "series",
+        name: nameVideo,
+        description: descVideo
+    };
+    if (released) streamObj.released = released;
+    return streamObj;
 }
 
 /**
@@ -464,6 +465,7 @@ function wrapProcessor(processor, context, logger) {
 
 module.exports = {
     extractKanStream,
+    streamFromKanDocument,
     extractVideoObjectUrl,
     cleanVideoName,
     parseIsraeliDate,

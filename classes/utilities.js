@@ -1175,9 +1175,8 @@ function getNameFromSeriesPage(name){
         if (name.indexOf ("- סרטונים מלאים לצפייה ישירה") > 0){
             name = name.substring(0,name.indexOf("-") - 1).trim();
         }
-        if (name.indexOf (".כאן 11") > 0){
-            name = name.replace("כאן 11.","");
-        }
+        // Card titles end in ".כאן11", ".כאן 11", or ".כאן ארכיון".
+        name = name.replace(/\s*\.כאן(?:\s*(?:11|ארכיון))?\s*$/u, "").trim();
         if (name.indexOf ("239 360") > 0){
             name = name.replace("Poster 239 360","");
         }
