@@ -6,6 +6,7 @@ const {
     KAN_DIGITAL_IMAGE_PREFIX,
     KAN_BOX_URL,
     KAN_BOX_IGNORE_LIST,
+    INCREMENTAL_SCRAPING,
     SCRAPER_CONFIG
 } = require("./constants.js");
 const { safeExecute } = require("./ScraperHelpers.js");
@@ -26,6 +27,24 @@ const {
 const BaseScraper = require("./BaseScraper.js");
 const SUB_PREFIX = "digital";
 const SUBTYPE = "d";
+
+/**
+ * Each known series is fetched again once per forceRefreshDays. The day
+ * bucket is stable, so a nightly run refreshes about 1/N of the catalog
+ * and leaves the rest on the previous episodes.
+ */
+function seriesDueForRefresh(seriesId, options = {}) {
+    const days = Math.max(1, Number(options.forceRefreshDays) || 3);
+    const now = options.now instanceof Date ? options.now : new Date();
+    const day = Math.floor(now.getTime() / 86400000);
+    const bucket = ((day % days) + days) % days;
+    let hash = 0;
+    const text = String(seriesId || "");
+    for (let i = 0; i < text.length; i++) {
+        hash = (Math.imul(hash, 33) + text.charCodeAt(i)) >>> 0;
+    }
+    return (hash % days) === bucket;
+}
 
 const log4js = require("log4js");
 var logger = log4js.getLogger("KanDigitalScraper");
@@ -50,13 +69,23 @@ class KanDigitalScraper extends BaseScraper {
             'skipped_duplicate': 0,
             'total_unique': 0
         };
+        this._handledThisRun = new Set();
+    }
+
+    /**
+     * Supabase scrape_state is not the source of "unchanged" for this
+     * scraper. A missing database must not turn the nightly back into a
+     * full fetch of every series page.
+     */
+    async initializeStateManager() {
+        this.logger.info("KanDigital refresh uses the previous catalog and a rotating slice");
     }
 
     /**
      * Main scraping logic - required by BaseScraper
      */
     async crawlContent() {
-        await this.loadPreviousSeries();
+        await this.seedPreviousCatalog();
 
         await safeExecute(
             () => this.crawlVod(),
@@ -107,6 +136,55 @@ class KanDigitalScraper extends BaseScraper {
         } catch (error) {
             this.logger.warn(`KanDigital previous catalog unavailable: ${error.message}`);
         }
+    }
+
+    /**
+     * Start from the previous published catalog. Series the budget never
+     * reaches, and series that are no longer in either lobby, stay in the
+     * object that gets published. A later successful scrape replaces its row.
+     */
+    async seedPreviousCatalog() {
+        await this.loadPreviousSeries();
+        const loaded = this.previousCatalogOverride !== undefined
+            ? this.previousCatalogOverride
+            : this.previousCatalogCache;
+        if (loaded && !this.previousCatalogCache) this.previousCatalogCache = loaded;
+        const data = loaded && loaded.data;
+        if (!data || typeof data !== "object") return 0;
+        const copy = {};
+        for (const [id, series] of Object.entries(data)) {
+            if (!series || typeof series !== "object" || Array.isArray(series)) continue;
+            if (!series.meta && series.id == null && series.name == null) continue;
+            copy[id] = JSON.parse(JSON.stringify(series));
+        }
+        this._jsonObj = copy;
+        this.logger.info(`KanDigital seeded ${Object.keys(copy).length} series from the previous catalog`);
+        return Object.keys(copy).length;
+    }
+
+    refreshIntervalDays() {
+        const config = INCREMENTAL_SCRAPING.KanDigitalScraper || {};
+        return config.forceRefreshDays || INCREMENTAL_SCRAPING.forceRefreshDays || 3;
+    }
+
+    shouldReuseCachedSeries(seriesId) {
+        if (!this.incrementalMode || this.scrapeMode === "full") return false;
+        const previous = this.previousVideosFor(seriesId);
+        if (!previous || !previous.length) return false;
+        if (!this._jsonObj[seriesId]) return false;
+        return !seriesDueForRefresh(seriesId, {
+            now: this.refreshClock || new Date(),
+            forceRefreshDays: this.refreshIntervalDays()
+        });
+    }
+
+    noteHandled(seriesId) {
+        if (!this._handledThisRun) this._handledThisRun = new Set();
+        this._handledThisRun.add(seriesId);
+    }
+
+    alreadyHandled(seriesId) {
+        return !!(this._handledThisRun && this._handledThisRun.has(seriesId));
     }
 
     previousVideosFor(seriesId) {
@@ -266,7 +344,9 @@ class KanDigitalScraper extends BaseScraper {
 
                 const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
 
-                if (this._jsonObj.hasOwnProperty(seriesId)) {
+                // Seeded catalog rows are not duplicates. Skip only a series
+                // the Kan 11 lobby already handled in this run.
+                if (this.alreadyHandled(seriesId)) {
                     logger.debug(`crawlKanBox => Duplicate found: ${seriesId} - skipping`);
                     this.deltaTracker.skipSeries();
                     duplicateCount++;
@@ -338,6 +418,15 @@ class KanDigitalScraper extends BaseScraper {
 
         var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
         var imgUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
+        this.noteHandled(id);
+
+        if (this.shouldReuseCachedSeries(id)) {
+            const cached = this._jsonObj[id];
+            const cachedName = (cached && cached.name) || title;
+            const cachedCount = cached && cached.meta && cached.meta.videos ? cached.meta.videos.length : 0;
+            logger.info(`processOneDigitalSeries => Keeping ${cachedCount} cached episodes for ${cachedName || id}`);
+            return { id, title: cachedName, source, cached: true };
+        }
 
         //get the doc of the series
         var seriesPageDoc;
@@ -609,6 +698,10 @@ class KanDigitalScraper extends BaseScraper {
         }
 
         return utils.setGenreFromString(genres);
+    }
+
+    static seriesDueForRefresh(seriesId, options) {
+        return seriesDueForRefresh(seriesId, options);
     }
 }
 

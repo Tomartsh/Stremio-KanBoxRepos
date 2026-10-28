@@ -84,7 +84,7 @@ function cardImage(card) {
  * is a trailer or extra and stays out, so a single-title page still resolves
  * through the hero watch link. Participant cards are never episodes.
  */
-function episodeFromHref(href, seriesId) {
+function episodeFromHref(href, seriesId, options) {
     const parsedHref = parseHref(href);
     if (!parsedHref) return null;
     if (parsedHref.path.includes("/participants/")) return null;
@@ -99,13 +99,32 @@ function episodeFromHref(href, seriesId) {
     }
 
     const archiveMatch = parsedHref.path.match(/\/archive1\/(?:[^/]+\/)*?(p-\d+)\/([^/]+)\/$/);
-    if (!archiveMatch) return null;
-    if (/^s\d+$/.test(archiveMatch[2])) return null;
-    if (seriesId && archiveMatch[1] !== seriesId) return null;
+    if (archiveMatch && !/^s\d+$/.test(archiveMatch[2])) {
+        if (seriesId && archiveMatch[1] !== seriesId) return null;
+        return {
+            url: absoluteUrl(parsedHref),
+            season: 0
+        };
+    }
+
+    // Single-season digital shows (p-13779, p-13871) list episodes at
+    // /p-N/<id>/ with no /sN/ segment. The same shape is also a trailer, so
+    // only a card titled "פרק N" counts. Trailers ("טריילר", "הצצה") stay out
+    // and a one-title page still resolves through the hero watch link.
+    const flatMatch = parsedHref.path.match(/\/(p-\d+)\/([^/]+)\/$/);
+    if (!flatMatch || /^s\d+$/.test(flatMatch[2])) return null;
+    if (!(options && options.allowFlatEpisode)) return null;
+    if (seriesId && flatMatch[1] !== seriesId) return null;
     return {
         url: absoluteUrl(parsedHref),
-        season: 0
+        season: 1
     };
+}
+
+function cardIsFlatEpisode(title) {
+    // Subtitles on trailer cards also say "פרק N". The episode title itself
+    // is what separates /p-N/<id>/ episodes from those trailers.
+    return /פרק\s*\d+/u.test(String(title || ""));
 }
 
 function seasonFromHref(href, seriesId) {
@@ -129,10 +148,12 @@ function seriesRootFromHref(href) {
 }
 
 function pushEpisode(episodes, seen, href, title, duration, description, seriesId, extras) {
-    const info = episodeFromHref(href, seriesId);
+    const extra = extras || {};
+    const info = episodeFromHref(href, seriesId, {
+        allowFlatEpisode: cardIsFlatEpisode(title)
+    });
     if (!info || seen.has(info.url)) return;
     seen.add(info.url);
-    const extra = extras || {};
     episodes.push({
         url: info.url,
         title: title || "",

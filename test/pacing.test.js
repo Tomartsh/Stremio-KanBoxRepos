@@ -110,6 +110,8 @@ test("CLI and query strings parse the same knobs", () => {
     ]);
     assert.equal(parsed.scraper, "kanDigital");
     assert.equal(parsed.mode, "full");
+    assert.equal(parseCommandLine(["kanDigital", "--slow"]).mode, "incremental");
+    assert.equal(parseCommandLine(["kanArchive"]).mode, "full");
     assert.equal(parsed.overrides.slow, true);
     assert.equal(parsed.overrides.budgetHours, "20");
     assert.equal(parsed.overrides.maxRetries, "unlimited");

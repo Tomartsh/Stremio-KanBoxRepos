@@ -101,6 +101,37 @@ test("program-grid series page yields titles and durations for season 3", () => 
     assert.equal(parsed.episodes[0].url, "https://www.kan.org.il/content/kan/kan-11/p-682519/s3/1067700/");
 });
 
+test("a single-season page lists /p-N/id/ episodes and skips the trailer card", () => {
+    const maNisgar = parseSeriesPage(
+        readFixture("series-p-13779.html"),
+        "https://www.kan.org.il/content/kan/kan-11/p-13779/"
+    );
+    const numbered = numberDigitalEpisodes(maNisgar.episodes);
+    assert.equal(maNisgar.episodes.length, 44);
+    assert.equal(maNisgar.seasonUrls.length, 0);
+    assert.equal(maNisgar.movieUrl, null);
+    assert.equal(maNisgar.episodes.some((episode) => episode.url.endsWith("/919238/")), false);
+    assert.ok(maNisgar.episodes.every((episode) => episode.season === 1));
+    assert.ok(maNisgar.episodes.every((episode) => /\/p-13779\/\d+\//.test(episode.url) && !/\/s\d+\//.test(episode.url)));
+    const first = numbered.find((episode) => episode.url.endsWith("/96241/"));
+    const last = numbered.find((episode) => episode.url.endsWith("/105742/"));
+    assert.equal(first.episodeNo, 1);
+    assert.equal(last.episodeNo, 44);
+    assert.equal(last.title, "פרק 44");
+    assert.ok(first.image.startsWith("https://www.kan.org.il/media/"));
+
+    const tequma = parseSeriesPage(
+        readFixture("series-p-13871.html"),
+        "https://www.kan.org.il/content/kan/kan-11/p-13871/"
+    );
+    const tequmaNumbers = numberDigitalEpisodes(tequma.episodes);
+    assert.equal(tequma.episodes.length, 22);
+    assert.equal(tequma.episodes.some((episode) => episode.url.endsWith("/880716/")), false);
+    assert.ok(tequma.episodes.every((episode) => episode.season === 1 && episode.url.includes("/p-13871/")));
+    assert.equal(tequmaNumbers.find((episode) => episode.url.endsWith("/114689/")).episodeNo, 1);
+    assert.equal(tequmaNumbers.find((episode) => episode.url.endsWith("/114752/")).episodeNo, 22);
+});
+
 test("single-title page uses the hero watch link and ignores the trailer card", () => {
     const parsed = parseSeriesPage(
         readFixture("movie-p525000-raw.html"),
