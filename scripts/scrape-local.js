@@ -51,7 +51,7 @@ async function main() {
     console.log(`Local scrape of ${name}. GitHub upload and Supabase updates are off.`);
     const scraper = factory();
     scraper.pacingOverrides = parsed.overrides;
-    const outcome = await scraper.crawl(true, parsed.mode || "full");
+    const outcome = await scraper.crawl(true, parsed.mode);
     if (outcome && outcome.skipped) {
         console.log(outcome.line);
         process.exit(0);

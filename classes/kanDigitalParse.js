@@ -563,6 +563,62 @@ function videoFromMovieCard(movieUrl, seriesId, title, description, image) {
     };
 }
 
+/**
+ * Keep seeded episodes when a rescrape returns fewer, zero, or a failed
+ * season. A smaller card list is merged back with the seeded rows so a
+ * partial parse cannot shrink the catalog. Episodes are dropped only when
+ * that season loaded and the new list is at least as long as the seeded one.
+ *
+ * @param {object[]} scrapedVideos
+ * @param {object[]} previousVideos
+ * @param {{failedSeasons?: number[], keepPrevious?: boolean}} options
+ * @returns {object[]}
+ */
+function mergeSeededVideos(scrapedVideos, previousVideos, options = {}) {
+    const previous = Array.isArray(previousVideos) ? previousVideos : [];
+    const scraped = Array.isArray(scrapedVideos) ? scrapedVideos : [];
+    if (options.keepPrevious) {
+        return previous.map((video) => Object.assign({}, video));
+    }
+
+    const failed = new Set((options.failedSeasons || []).map((season) => Number(season)));
+    const scrapedLinks = new Set();
+    const scrapedBySeason = new Map();
+    for (const video of scraped) {
+        const link = normalizeEpisodeUrl(video && (video.episodeLink || video.url));
+        if (link) scrapedLinks.add(link);
+        const season = Number(video && video.season) || 0;
+        scrapedBySeason.set(season, (scrapedBySeason.get(season) || 0) + 1);
+    }
+    const previousBySeason = new Map();
+    for (const video of previous) {
+        const season = Number(video && video.season) || 0;
+        previousBySeason.set(season, (previousBySeason.get(season) || 0) + 1);
+    }
+
+    const merged = [];
+    const seen = new Set();
+    const push = (video) => {
+        if (!video) return;
+        const link = normalizeEpisodeUrl(video.episodeLink || video.url);
+        const key = link || video.id;
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        merged.push(Object.assign({}, video));
+    };
+
+    for (const video of scraped) push(video);
+    for (const video of previous) {
+        const link = normalizeEpisodeUrl(video && (video.episodeLink || video.url));
+        if (link && scrapedLinks.has(link)) continue;
+        const season = Number(video && video.season) || 0;
+        const scrapedCount = scrapedBySeason.get(season) || 0;
+        const previousCount = previousBySeason.get(season) || 0;
+        if (failed.has(season) || scrapedCount < previousCount) push(video);
+    }
+    return merged;
+}
+
 function carryPreviousEpisodeFields(videos, previousVideos) {
     const byLink = new Map();
     for (const video of previousVideos || []) {
@@ -657,6 +713,7 @@ module.exports = {
     videoFromEpisodeCard,
     videoFromMovieCard,
     carryPreviousEpisodeFields,
+    mergeSeededVideos,
     numberDigitalEpisodes,
     normalizeEpisodeUrl
 };

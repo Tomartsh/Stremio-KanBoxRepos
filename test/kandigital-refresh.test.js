@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const KanDigitalScraper = require("../classes/KanDigitalScraper");
 const { countCatalog, decidePublish } = require("../classes/catalogGate");
+const { mergeSeededVideos } = require("../classes/kanDigitalParse");
 
 function seriesRow(id, videoCount) {
     return {
@@ -113,6 +114,67 @@ test("unchanged series stay cached except for one rotating slice, and full mode 
         scraper.refreshClock = quiet;
         assert.equal(scraper.shouldReuseCachedSeries(id), false);
     });
+});
+
+function episode(season, n) {
+    return {
+        season,
+        episode: n,
+        name: `פרק ${n}`,
+        episodeLink: `https://www.kan.org.il/content/kan/kan-11/p-1/s${season}/${n}/`
+    };
+}
+
+test("a shorter, empty, or blocked rescrape keeps the seeded episodes", () => {
+    const seeded = [1, 2, 3, 4].map((n) => episode(1, n));
+    const shorter = mergeSeededVideos(seeded.slice(0, 1), seeded, {});
+    assert.equal(shorter.length, 4);
+    assert.ok(shorter.some((video) => video.episodeLink.endsWith("/4/")));
+
+    const empty = mergeSeededVideos([], seeded, {});
+    assert.equal(empty.length, 4);
+
+    const blocked = mergeSeededVideos([], seeded, { keepPrevious: true });
+    assert.deepEqual(blocked.map((video) => video.episodeLink), seeded.map((video) => video.episodeLink));
+
+    const withFailedSeason = mergeSeededVideos(
+        [episode(2, 1)],
+        seeded.concat([episode(2, 9)]),
+        { failedSeasons: [2] }
+    );
+    assert.ok(withFailedSeason.some((video) => video.episodeLink.endsWith("/s1/4/")));
+    assert.ok(withFailedSeason.some((video) => video.episodeLink.endsWith("/s2/9/")));
+    assert.ok(withFailedSeason.some((video) => video.episodeLink.endsWith("/s2/1/")));
+});
+
+test("mode=full stays incremental for kanDigital; force-full does not", () => {
+    const scraper = new KanDigitalScraper();
+    assert.equal(scraper.determineScrapeMode("full"), true);
+    assert.equal(scraper.determineScrapeMode("auto"), true);
+    assert.equal(scraper.determineScrapeMode("incremental"), true);
+    assert.equal(scraper.determineScrapeMode("force-full"), false);
+    const previous = process.env.KAN_DIGITAL_FORCE_FULL;
+    process.env.KAN_DIGITAL_FORCE_FULL = "1";
+    try {
+        assert.equal(scraper.determineScrapeMode("full"), false);
+    } finally {
+        if (previous === undefined) delete process.env.KAN_DIGITAL_FORCE_FULL;
+        else process.env.KAN_DIGITAL_FORCE_FULL = previous;
+    }
+});
+
+test("delta summary counts new, updated, and skipped series", async () => {
+    const scraper = new KanDigitalScraper();
+    scraper.previousCatalogOverride = { data: { "kept-0": seriesRow("kept-0", 4) } };
+    await scraper.seedPreviousCatalog();
+    scraper.recordSeriesDelta("kept-0", "kept-0", 4);
+    scraper.recordSeriesDelta("new-1", "new-1", 2);
+    scraper.deltaTracker.skipSeries();
+    const summary = scraper.deltaTracker.getSummary();
+    assert.equal(summary.updatedSeries, 1);
+    assert.equal(summary.newSeries, 1);
+    assert.equal(summary.skippedSeries, 1);
+    assert.equal(summary.totalChanges, 2);
 });
 
 test("kanDigital keeps incremental mode without a scrape-state database", async () => {
