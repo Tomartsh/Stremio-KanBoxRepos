@@ -22,6 +22,7 @@ const {
     videoFromEpisodeCard,
     videoFromMovieCard,
     carryPreviousEpisodeFields,
+    mergeSeededVideos,
     numberDigitalEpisodes
 } = require("./kanDigitalParse.js");
 const BaseScraper = require("./BaseScraper.js");
@@ -33,6 +34,18 @@ const SUBTYPE = "d";
  * bucket is stable, so a nightly run refreshes about 1/N of the catalog
  * and leaves the rest on the previous episodes.
  */
+function seasonNumberFromUrl(url) {
+    const match = String(url || "").match(/\/s(\d+)\/?(?:\?|$)/);
+    return match ? parseInt(match[1], 10) : null;
+}
+
+function pageIsChallenge(doc) {
+    if (!doc || typeof doc.querySelector !== "function") return true;
+    const titleNode = doc.querySelector("title");
+    const title = titleNode && titleNode.text ? String(titleNode.text) : "";
+    return /רק רגע|Just a moment|Attention Required|cf-browser-verification/i.test(title);
+}
+
 function seriesDueForRefresh(seriesId, options = {}) {
     const days = Math.max(1, Number(options.forceRefreshDays) || 3);
     const now = options.now instanceof Date ? options.now : new Date();
@@ -79,6 +92,24 @@ class KanDigitalScraper extends BaseScraper {
      */
     async initializeStateManager() {
         this.logger.info("KanDigital refresh uses the previous catalog and a rotating slice");
+    }
+
+    /**
+     * The nightly runner passes mode=full for every scraper. For kanDigital
+     * that selects a full pass over both lobbies and is what ran for 15 hours.
+     * Incremental stays the default. --mode force-full or
+     * KAN_DIGITAL_FORCE_FULL=1 still scrapes every listed series.
+     */
+    determineScrapeMode(mode) {
+        if (mode === "force-full" || process.env.KAN_DIGITAL_FORCE_FULL === "1") return false;
+        if (mode === "full") {
+            this.logger.warn(
+                "KanDigital => mode=full is the nightly runner's historical flag. " +
+                "This run stays incremental. Pass --mode force-full to scrape every listed series."
+            );
+            return true;
+        }
+        return super.determineScrapeMode(mode);
     }
 
     /**
@@ -158,8 +189,9 @@ class KanDigitalScraper extends BaseScraper {
             copy[id] = JSON.parse(JSON.stringify(series));
         }
         this._jsonObj = copy;
-        this.logger.info(`KanDigital seeded ${Object.keys(copy).length} series from the previous catalog`);
-        return Object.keys(copy).length;
+        this._seededIds = new Set(Object.keys(copy));
+        this.logger.info(`KanDigital seeded ${this._seededIds.size} series from the previous catalog`);
+        return this._seededIds.size;
     }
 
     refreshIntervalDays() {
@@ -425,6 +457,7 @@ class KanDigitalScraper extends BaseScraper {
             const cachedName = (cached && cached.name) || title;
             const cachedCount = cached && cached.meta && cached.meta.videos ? cached.meta.videos.length : 0;
             logger.info(`processOneDigitalSeries => Keeping ${cachedCount} cached episodes for ${cachedName || id}`);
+            this.deltaTracker.skipSeries();
             return { id, title: cachedName, source, cached: true };
         }
 
@@ -437,8 +470,8 @@ class KanDigitalScraper extends BaseScraper {
             logger.error(`processOneDigitalSeries => could not retrieve series page doc from URL ${pageUrl}. Error: ${e}`);
             return null;
         }
-        if (!seriesPageDoc) {
-            logger.warn(`processOneDigitalSeries => could not retrieve series page doc from URL ${pageUrl} (fetchData returned null)`);
+        if (!seriesPageDoc || pageIsChallenge(seriesPageDoc)) {
+            logger.warn(`processOneDigitalSeries => series page unavailable for ${pageUrl}; keeping seeded episodes`);
             return null;
         }
 
@@ -545,24 +578,36 @@ class KanDigitalScraper extends BaseScraper {
             videoObj = previousVideos.map((video) => Object.assign({}, video));
             logger.info(`processOneDigitalSeries => Reusing ${videoObj.length} episodes for ${title || pageUrl} (series page unchanged)`);
         } else {
-            const episodes = await this.collectDigitalEpisodes(
+            const collected = await this.collectDigitalEpisodes(
                 seriesPageDoc,
                 pageUrl,
                 parsedSeries,
                 title,
                 plan.seasonUrls
             );
+            const episodes = collected.episodes || [];
+            let scraped = [];
             if (episodes.length > 0) {
-                videoObj = carryPreviousEpisodeFields(this.videosFromParsedEpisodes(episodes, id), previousVideos);
+                scraped = carryPreviousEpisodeFields(this.videosFromParsedEpisodes(episodes, id), previousVideos);
                 if (plan.keepUnseenSeasons && previousVideos) {
-                    const rebuilt = new Set(videoObj.map((video) => Number(video.season)));
+                    const rebuilt = new Set(scraped.map((video) => Number(video.season)));
                     for (const previous of previousVideos) {
-                        if (!rebuilt.has(Number(previous.season))) videoObj.push(Object.assign({}, previous));
+                        if (!rebuilt.has(Number(previous.season))) scraped.push(Object.assign({}, previous));
                     }
                 }
             } else if (parsedSeries.movieUrl) {
                 const movie = videoFromMovieCard(parsedSeries.movieUrl, id, title, description, imgUrl);
-                videoObj = movie ? carryPreviousEpisodeFields([movie], previousVideos) : [];
+                scraped = movie ? carryPreviousEpisodeFields([movie], previousVideos) : [];
+            }
+            const before = scraped.length;
+            videoObj = mergeSeededVideos(scraped, previousVideos, {
+                failedSeasons: collected.failedSeasons
+            });
+            if (previousVideos && videoObj.length > before) {
+                logger.warn(
+                    `processOneDigitalSeries => Parsed ${before} episodes for ${title || id}; ` +
+                    `kept seeded episodes the page did not return (${videoObj.length} now)`
+                );
             }
         }
 
@@ -577,6 +622,7 @@ class KanDigitalScraper extends BaseScraper {
             // last minute checks before add the series
             //check that we have a valid name for the series
 
+            this.recordSeriesDelta(id, title, videoObj.length);
             this.addToJsonObject(id, title, pageUrl, imgUrl,description,genres,videoObj,SUBTYPE,"series");
             // Track which source this series came from
             this._sourceCounts[source] = (this._sourceCounts[source] || 0) + 1;
@@ -607,6 +653,7 @@ class KanDigitalScraper extends BaseScraper {
         const seasonUrls = seasonUrlsOverride != null
             ? seasonUrlsOverride
             : seasonUrlsToFetch(seriesPageDoc, pageUrl, parsedSeries);
+        const failedSeasons = [];
 
         if (seasonUrls.length > 0) {
             const seasonLabels = seasonUrls.map((url) => {
@@ -623,18 +670,33 @@ class KanDigitalScraper extends BaseScraper {
             }
             fetchUrl = fetchUrl.split("?")[0];
             logger.info(`processOneDigitalSeries => Fetching season page: ${fetchUrl}`);
+            const seasonNo = seasonNumberFromUrl(seasonUrl);
             try {
                 const seasonDoc = await fetchData(`${fetchUrl}?page=1&itemsToShow=1000`);
-                if (!seasonDoc) continue;
+                if (!seasonDoc || pageIsChallenge(seasonDoc)) {
+                    if (seasonNo != null) failedSeasons.push(seasonNo);
+                    logger.warn(`processOneDigitalSeries => Season page unavailable, keeping seeded episodes: ${fetchUrl}`);
+                    continue;
+                }
                 const seasonParsed = parseSeriesPage(seasonDoc, pageUrl || fetchUrl);
                 addEpisodes(seasonParsed.episodes);
             } catch (error) {
                 rethrowIfKanBlocked(error);
+                if (seasonNo != null) failedSeasons.push(seasonNo);
                 logger.error(`processOneDigitalSeries => Error fetching season ${fetchUrl}: ${error.message}`);
             }
         }
 
-        return episodes;
+        return { episodes, failedSeasons };
+    }
+
+    recordSeriesDelta(seriesId, title, videoCount) {
+        const payload = { name: title || "", videoCount };
+        if (this._seededIds && this._seededIds.has(seriesId)) {
+            this.deltaTracker.addUpdatedSeries(seriesId, payload);
+        } else {
+            this.deltaTracker.addNewSeries(seriesId, payload);
+        }
     }
 
     /**
