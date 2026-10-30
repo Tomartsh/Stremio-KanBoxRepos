@@ -23,7 +23,9 @@ const {
     videoFromMovieCard,
     carryPreviousEpisodeFields,
     mergeSeededVideos,
-    numberDigitalEpisodes
+    numberDigitalEpisodes,
+    pickSeriesTitle,
+    repairVideoNames
 } = require("./kanDigitalParse.js");
 const BaseScraper = require("./BaseScraper.js");
 const SUB_PREFIX = "digital";
@@ -501,61 +503,27 @@ class KanDigitalScraper extends BaseScraper {
             }
         }
 
-        //verify there is a name to the series - cascading fallback selectors
-        if (title.trim() == ""){
-            logger.info("processOneDigitalSeries => Title is empty. Attempting to retrieve it");
-            
-            // Try TitleHint from lobby page image data first (zero cost - already have it)
-            if (item.TitleHint && item.TitleHint.trim()) {
-                title = getNameFromSeriesPage(item.TitleHint);
-                logger.debug("processOneDigitalSeries => Got title from TitleHint (lobby image)");
-            }
+        // Pick the series name. Lobby image alt text is sometimes a caption
+        // ("5", "6  Image Big 1200X1800", "תמונת אורך פרק"), so each candidate
+        // is checked and the next source is used when it is not a real title.
+        // If the page gives nothing valid, keep the name the previous catalog had.
+        const previousRow = (this._jsonObj && this._jsonObj[id])
+            || (this._previousById && this._previousById.get(id));
+        const previousName = previousRow ? (previousRow.name || (previousRow.meta && previousRow.meta.name) || "") : "";
+        const picked = pickSeriesTitle(seriesPageDoc, {
+            imageAlt: item.ImageAlt || "",
+            titleHint: item.TitleHint || "",
+            previousName,
+            clean: getNameFromSeriesPage
+        });
+        if (picked.rejected.length > 0) {
+            logger.info(
+                `processOneDigitalSeries => Rejected title candidate(s) ${JSON.stringify(picked.rejected)}; ` +
+                `using ${JSON.stringify(picked.title)} from ${picked.source || "none"}`
+            );
         }
-        if (title.trim() == ""){
-            // Fallback 1: img.img-fluid title attribute
-            const imgFluid = seriesPageDoc.querySelector("img.img-fluid");
-            if (imgFluid && imgFluid.getAttribute("title")){
-                title = getNameFromSeriesPage(imgFluid.getAttribute("title"));
-                logger.debug("processOneDigitalSeries => Got title from img.img-fluid title attr");
-            }
-        }
-        if (title.trim() == ""){
-            // Fallback 2: h2.title.h1
-            const h2title = seriesPageDoc.querySelector("h2.title.h1");
-            if (h2title){
-                title = getNameFromSeriesPage(h2title.text.trim());
-                logger.debug("processOneDigitalSeries => Got title from h2.title.h1");
-            }
-        }
-        if (title.trim() == ""){
-            // Fallback 3: og:title meta tag
-            const ogTitle = seriesPageDoc.querySelector('meta[property="og:title"]');
-            if (ogTitle && ogTitle.getAttribute("content")){
-                title = getNameFromSeriesPage(ogTitle.getAttribute("content"));
-                logger.debug("processOneDigitalSeries => Got title from og:title");
-            }
-        }
-        if (title.trim() == ""){
-            // Fallback 4: h1 tag
-            const h1 = seriesPageDoc.querySelector("h1");
-            if (h1 && h1.text && h1.text.trim()){
-                title = getNameFromSeriesPage(h1.text.trim());
-                logger.debug("processOneDigitalSeries => Got title from h1");
-            }
-        }
-        if (title.trim() == ""){
-            // Fallback 5: <title> tag (clean up site name suffix)
-            const titleTag = seriesPageDoc.querySelector("title");
-            if (titleTag && titleTag.text){
-                let raw = titleTag.text.trim();
-                // Remove common suffixes like " | כאן" or " - Kan"
-                raw = raw.split(/\s*[|\-–—]\s*(כאן|Kan|KAN)\s*$/i)[0] || raw;
-                if (raw.trim()) {
-                    title = getNameFromSeriesPage(raw.trim());
-                    logger.debug("processOneDigitalSeries => Got title from <title> tag");
-                }
-            }
-        }
+        const rejectedTitles = picked.rejected.concat(previousName ? [previousName] : []);
+        title = picked.title;
 
         //set series genres
         const genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
@@ -610,6 +578,8 @@ class KanDigitalScraper extends BaseScraper {
                 );
             }
         }
+
+        videoObj = repairVideoNames(videoObj, rejectedTitles, title);
 
         if (videoObj.length === 0 && !plan.reuse) {
             logger.debug("processOneDigitalSeries => No video button found, skipping");

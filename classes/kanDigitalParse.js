@@ -702,6 +702,101 @@ function numberDigitalEpisodes(episodes) {
     return jobs;
 }
 
+/**
+ * Series names sometimes come from a poster's alt text or caption instead of
+ * the show title: "5", "6  Image Big 1200X1800", "4  image_small_239X360",
+ * "תמונת אורך פרק". Those are rejected so a better source can be used.
+ * A name that merely contains the word תמונה / תמונות is a real title and
+ * stays valid.
+ *
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isValidSeriesTitle(name) {
+    const text = String(name == null ? "" : name).replace(/\s+/g, " ").trim();
+    if (!text) return false;
+    if (/^[\d\s\p{P}\p{S}]+$/u.test(text)) return false;
+    if (/\d+\s*[xX×]\s*\d+/u.test(text)) return false;
+    if (/image[\s_-]*(?:small|big)/iu.test(text)) return false;
+    if (/תמונת\s+אורך\s+פרק/u.test(text)) return false;
+    return true;
+}
+
+/**
+ * Drop a trailing site name: " | כאן", " - Kan", ".כאן11".
+ */
+function stripSiteSuffix(value) {
+    let text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    text = text.replace(/\s*[|\-–—]\s*(?:כאן|Kan)(?:\s*(?:11|ארכיון|חינוכית|Box|דיגיטל))?\s*$/iu, "");
+    text = text.replace(/\s*\.כאן(?:\s*(?:11|ארכיון))?\s*$/u, "");
+    return text.trim();
+}
+
+/**
+ * Pick the series name. Candidates are tried in the order the scraper always
+ * used (lobby image alt, lobby title hint, page image title, h2.title.h1,
+ * og:title, h1, <title>), then the name already in the previous catalog.
+ * The first candidate that passes isValidSeriesTitle wins. When none does,
+ * the first non-empty candidate is kept so the series is not dropped.
+ *
+ * @param {string|object} html series page
+ * @param {{imageAlt?: string, titleHint?: string, previousName?: string, clean?: function}} options
+ * @returns {{title: string, source: string, rejected: string[]}}
+ */
+function pickSeriesTitle(html, options = {}) {
+    const doc = ensureDoc(html);
+    const clean = typeof options.clean === "function" ? options.clean : (value) => value;
+    const attr = (selector, name) => {
+        const node = doc.querySelector(selector);
+        return node ? node.getAttribute(name) || "" : "";
+    };
+    const candidates = [
+        ["imageAlt", options.imageAlt],
+        ["titleHint", options.titleHint],
+        ["img.img-fluid", attr("img.img-fluid", "title")],
+        ["h2.title.h1", elementText(doc.querySelector("h2.title.h1"))],
+        ["og:title", attr('meta[property="og:title"]', "content")],
+        ["h1", elementText(doc.querySelector("h1"))],
+        ["title", elementText(doc.querySelector("title"))],
+        ["previous", options.previousName]
+    ];
+    const rejected = [];
+    let firstNonEmpty = null;
+    for (const [source, raw] of candidates) {
+        const rawText = String(raw == null ? "" : raw).trim();
+        if (!rawText) continue;
+        const value = stripSiteSuffix(clean(stripSiteSuffix(rawText)) || "");
+        if (isValidSeriesTitle(value)) return { title: value, source, rejected };
+        rejected.push(value || rawText);
+        if (firstNonEmpty == null && value) firstNonEmpty = { title: value, source };
+    }
+    if (firstNonEmpty) return Object.assign(firstNonEmpty, { rejected });
+    return { title: "", source: "", rejected };
+}
+
+/**
+ * A single-title series reuses the series name for its one video, so a bad
+ * alt-text name also ended up on the video. Replace a video name only when it
+ * is invalid and is one of the rejected series names; real episode names
+ * (including dates like "11/11/22") are left alone.
+ *
+ * @param {object[]} videos
+ * @param {string[]} rejectedNames
+ * @param {string} title
+ * @returns {object[]}
+ */
+function repairVideoNames(videos, rejectedNames, title) {
+    if (!Array.isArray(videos) || !isValidSeriesTitle(title)) return videos;
+    const norm = (value) => String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    const bad = new Set((rejectedNames || []).map(norm).filter(Boolean));
+    return videos.map((video) => {
+        if (!video) return video;
+        const name = norm(video.name);
+        if (!name || isValidSeriesTitle(name) || !bad.has(name)) return video;
+        return Object.assign({}, video, { name: title });
+    });
+}
+
 module.exports = {
     parseKanBoxLobby,
     selectLobbySeries,
@@ -715,5 +810,9 @@ module.exports = {
     carryPreviousEpisodeFields,
     mergeSeededVideos,
     numberDigitalEpisodes,
-    normalizeEpisodeUrl
+    normalizeEpisodeUrl,
+    isValidSeriesTitle,
+    stripSiteSuffix,
+    pickSeriesTitle,
+    repairVideoNames
 };
