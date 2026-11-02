@@ -40,6 +40,17 @@ test("image alt and caption text is not a valid series title", () => {
     }
 });
 
+test("the site name and a photo caption are not titles; תמונות still is", () => {
+    assert.equal(isValidSeriesTitle("כאן ארכיון"), false);
+    assert.equal(isValidSeriesTitle("המסעדה הגדולה, 1985"), false);
+    assert.equal(isValidSeriesTitle("ספי ריבלין הצעיר, בערוגות החשק, 1978"), false);
+    assert.equal(isValidSeriesTitle("תמונות מחיי נישואים"), true);
+    assert.equal(isValidSeriesTitle("היום זה אנחנו 2017"), true);
+    assert.equal(stripSiteSuffix("כאן ארכיון | איזו דרמה"), "איזו דרמה");
+    assert.equal(stripSiteSuffix("דרך הודו.ארכיון"), "דרך הודו");
+    assert.equal(stripSiteSuffix("שעת הסין.ארכיון"), "שעת הסין");
+});
+
 test("real titles stay valid, including ones with the word תמונות or תמונה", () => {
     const good = [
         "ההמצאות של המחר",
@@ -70,7 +81,7 @@ test("a bad lobby alt falls back to og:title, then h1, then <title>", () => {
     });
     assert.equal(og.title, "טריפ של חמלה");
     assert.equal(og.source, "og:title");
-    assert.deepEqual(og.rejected, ["6 Image Big 1200X1800"]);
+    assert.deepEqual(og.rejected, ["6"]);
 
     const h1 = pickSeriesTitle(seriesPage({ title: "x", h1: "מיני די.וי.כאן" }), {
         imageAlt: "5",

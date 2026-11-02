@@ -73,7 +73,13 @@ module.exports = {
         VIDEO_KEEP_RATIO: 0.85,
         // An incremental run that still has this fraction of the previous
         // series count is a full catalog, so the video check applies to it.
-        FULL_CATALOG_SERIES_RATIO: 0.7
+        FULL_CATALOG_SERIES_RATIO: 0.7,
+        // Publish comparisons use series count, video count, and the
+        // uncompressed JSON. Compressed ZIP size is not one of them: empty
+        // descriptions shrink a ZIP even when the catalog grew.
+        SERIES_KEEP_RATIO: 0.9,
+        JSON_KEEP_RATIO: 0.7,
+        DESCRIPTION_KEEP_RATIO: 0.5
     },
 
     // Scraper-Specific Configuration for Parallel Fetching

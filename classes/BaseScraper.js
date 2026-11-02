@@ -12,7 +12,8 @@ const { pacingKeyFor, resolvePacing, formatPacing, PACING_SCRAPERS } = require("
 const { acquireScraperLock, releaseScraperLock, formatSkipLine } = require("./scraperLock.js");
 const {
     catalogIsComplete,
-    countCatalog,
+    measureCatalog,
+    formatCatalogComparison,
     decidePublish,
     loadPreviousCatalog,
     loadPreviousCatalogCounts,
@@ -174,7 +175,7 @@ class BaseScraper {
         this.logger.info("Done Crawling");
         this.logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        let counts = countCatalog(this._jsonObj);
+        let counts = measureCatalog(this._jsonObj);
         const runState = getKanRunState() || {};
         const allowEmpty = process.env.ALLOW_EMPTY_PUBLISH === "true";
         const blocked = !!(runState.blocked || runState.http403 > 0);
@@ -197,14 +198,7 @@ class BaseScraper {
         if (!scrapeError && !blocked && counts.series > 0) {
             previous = await this.loadPreviousCounts();
         }
-        if (previous) {
-            this.logger.info(
-                `${this.scraperName} catalog: ${counts.series} series, ${counts.videos} videos ` +
-                `(previous ${previous.series} series, ${previous.videos} videos)`
-            );
-        } else {
-            this.logger.info(`${this.scraperName} catalog: ${counts.series} series, ${counts.videos} videos`);
-        }
+        this.logger.info(formatCatalogComparison(this.scraperName, counts, previous));
 
         // updateFromJSON deletes every existing row for this scraper, then
         // inserts whatever this run produced. A blocked run, an empty run,
@@ -223,6 +217,15 @@ class BaseScraper {
         });
         decision.series = counts.series;
         decision.videos = counts.videos;
+
+        if (decision.seriesDrops && decision.seriesDrops.length > 0) {
+            const listed = decision.seriesDrops.slice(0, 15).map((drop) => {
+                return `${drop.name} ${drop.previous}->${drop.current}`;
+            }).join(", ");
+            this.logger.warn(
+                `${this.scraperName} => ${decision.seriesDrops.length} series have fewer videos than the published catalog: ${listed}`
+            );
+        }
 
         if (!decision.published) {
             this.logger.error(decision.line);
@@ -518,9 +521,21 @@ class BaseScraper {
      */
     async loadPreviousCounts() {
         if (this.previousCountsOverride !== undefined) return this.previousCountsOverride;
-        if (this.previousCatalogCache && this.previousCatalogCache.root) {
-            const cached = countCatalog(this.previousCatalogCache.root);
-            if (cached.series > 0) return cached;
+        try {
+            let catalog = this.previousCatalogCache;
+            if (!catalog || !catalog.root) {
+                catalog = await loadPreviousCatalog(this.getExportFilename(), {
+                    logger: this.logger,
+                    remote: this.previousCatalogRemote
+                });
+                if (catalog) this.previousCatalogCache = catalog;
+            }
+            if (catalog && catalog.root) {
+                const measured = measureCatalog(catalog.root);
+                if (measured.series > 0) return measured;
+            }
+        } catch (error) {
+            this.logger.warn(`${this.scraperName} => Could not measure the previous catalog: ${error.message}`);
         }
         return loadPreviousCatalogCounts(this.getExportFilename(), {
             databaseKey: this.getDatabaseKey(),
