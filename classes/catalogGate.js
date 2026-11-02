@@ -27,17 +27,105 @@ function unwrapCatalog(root) {
 }
 
 function countCatalog(root) {
+    const measured = measureCatalog(root);
+    return { series: measured.series, videos: measured.videos };
+}
+
+/**
+ * Series count, video count, how many videos have a description, the
+ * uncompressed JSON size of the catalog object, and a per-series video count.
+ * The JSON size is JSON.stringify of the series map, not the compressed ZIP.
+ */
+function measureCatalog(root) {
     const data = unwrapCatalog(root);
     let series = 0;
     let videos = 0;
-    for (const value of Object.values(data)) {
+    let described = 0;
+    const perSeries = {};
+    for (const [id, value] of Object.entries(data)) {
         if (!value || typeof value !== "object" || Array.isArray(value)) continue;
         if (!value.meta && value.id == null && value.name == null) continue;
         series += 1;
         const list = (value.meta && value.meta.videos) || value.videos;
-        if (Array.isArray(list)) videos += list.length;
+        const count = Array.isArray(list) ? list.length : 0;
+        videos += count;
+        if (Array.isArray(list)) {
+            for (const video of list) {
+                if (video && String(video.description || "").trim()) described += 1;
+            }
+        }
+        perSeries[id] = {
+            name: value.name || (value.meta && value.meta.name) || "",
+            videos: count
+        };
     }
-    return { series, videos };
+    return {
+        series,
+        videos,
+        described,
+        jsonBytes: Buffer.byteLength(JSON.stringify(data)),
+        perSeries
+    };
+}
+
+function percentOf(current, previous) {
+    if (!previous) return "n/a";
+    return `${Math.round((current / previous) * 1000) / 10}% of ${previous}`;
+}
+
+/**
+ * One line for the log. Compressed ZIP size is intentionally not included.
+ */
+function formatCatalogComparison(scraperName, counts, previous) {
+    const current = counts || {};
+    const series = current.series || 0;
+    const videos = current.videos || 0;
+    let seriesPart = `${series} series`;
+    if (previous && previous.series) seriesPart += ` (${percentOf(series, previous.series)})`;
+    let videoPart = `${videos} videos`;
+    if (previous && previous.videos) videoPart += ` (${percentOf(videos, previous.videos)})`;
+    const parts = [seriesPart, videoPart];
+    if (current.jsonBytes != null) {
+        let jsonPart = `uncompressed JSON ${current.jsonBytes}B`;
+        if (previous && previous.jsonBytes) jsonPart += ` (${percentOf(current.jsonBytes, previous.jsonBytes)})`;
+        parts.push(jsonPart);
+    }
+    if (current.described != null && videos > 0) {
+        const ratio = Math.round((current.described / videos) * 1000) / 10;
+        let desc = `descriptions ${current.described}/${videos} (${ratio}%)`;
+        if (previous && previous.described != null && previous.videos) {
+            const prevRatio = Math.round((previous.described / previous.videos) * 1000) / 10;
+            desc += ` vs previous ${previous.described}/${previous.videos} (${prevRatio}%)`;
+        }
+        parts.push(desc);
+    }
+    return `${scraperName} catalog: ${parts.join(", ")}`;
+}
+
+function seriesVideoDrops(previous, counts) {
+    if (!previous || !previous.perSeries || !counts || !counts.perSeries) return [];
+    const drops = [];
+    for (const [id, prev] of Object.entries(previous.perSeries)) {
+        const next = counts.perSeries[id];
+        const previousCount = Number(prev && prev.videos) || 0;
+        const currentCount = next ? (Number(next.videos) || 0) : 0;
+        if (currentCount >= previousCount) continue;
+        drops.push({
+            id,
+            name: (next && next.name) || (prev && prev.name) || id,
+            previous: previousCount,
+            current: currentCount
+        });
+    }
+    drops.sort((left, right) => (right.previous - right.current) - (left.previous - left.current));
+    return drops;
+}
+
+function dropIsSevere(drop) {
+    const lost = drop.previous - drop.current;
+    if (drop.previous >= 3 && drop.current <= 1) return true;
+    if (lost >= 3) return true;
+    return false;
 }
 
 function catalogFromZipBuffer(buffer) {
@@ -80,7 +168,7 @@ function recoverCatalogAfterBudget(previousRoot, scrapedRoot) {
         if (!Array.isArray(videos) || videos.length === 0) continue;
         data[id] = series;
     }
-    return { data, counts: countCatalog({ data }) };
+    return { data, counts: measureCatalog({ data }) };
 }
 
 function shouldRecoverAfterBudget({ scrapeError = null, blocked = false, http403 = 0 } = {}) {
@@ -106,7 +194,10 @@ function decidePublish({
     allowEmpty = false,
     catalogComplete = true,
     videoKeepRatio = KAN_SESSION.VIDEO_KEEP_RATIO,
-    seriesRatio = KAN_SESSION.FULL_CATALOG_SERIES_RATIO
+    seriesRatio = KAN_SESSION.FULL_CATALOG_SERIES_RATIO,
+    seriesKeepRatio = KAN_SESSION.SERIES_KEEP_RATIO,
+    jsonKeepRatio = KAN_SESSION.JSON_KEEP_RATIO,
+    descriptionKeepRatio = KAN_SESSION.DESCRIPTION_KEEP_RATIO
 }) {
     const file = exportFilename || scraperName;
     const blockedRun = blocked || http403 > 0 || isKanBlockedError(scrapeError);
@@ -146,16 +237,48 @@ function decidePublish({
         return refusal(scraperName, file, "scrape produced 0 series", false);
     }
 
+    const seriesDrops = seriesVideoDrops(previous, counts);
     if (shouldCheckVideoCount({ catalogComplete, counts, previous, seriesRatio })) {
+        const reasons = [];
         const minimum = previous.videos * videoKeepRatio;
         if (counts.videos < minimum) {
             const pct = Math.round((counts.videos / previous.videos) * 1000) / 10;
-            return refusal(
-                scraperName,
-                file,
-                `video count ${counts.videos} is ${pct}% of the previous ${previous.videos} (minimum ${Math.round(videoKeepRatio * 100)}%)`,
-                false
+            reasons.push(
+                `video count ${counts.videos} is ${pct}% of the previous ${previous.videos} (minimum ${Math.round(videoKeepRatio * 100)}%)`
             );
+        }
+        if (previous.series > 0 && (counts.series || 0) < previous.series * seriesKeepRatio) {
+            const pct = Math.round(((counts.series || 0) / previous.series) * 1000) / 10;
+            reasons.push(
+                `series count ${counts.series || 0} is ${pct}% of the previous ${previous.series} (minimum ${Math.round(seriesKeepRatio * 100)}%)`
+            );
+        }
+        if (previous.jsonBytes > 0 && counts.jsonBytes != null && counts.jsonBytes < previous.jsonBytes * jsonKeepRatio) {
+            const pct = Math.round((counts.jsonBytes / previous.jsonBytes) * 1000) / 10;
+            reasons.push(
+                `uncompressed JSON ${counts.jsonBytes}B is ${pct}% of the previous ${previous.jsonBytes}B (minimum ${Math.round(jsonKeepRatio * 100)}%)`
+            );
+        }
+        if (previous.videos > 0 && previous.described != null && counts.described != null && counts.videos > 0) {
+            const previousRate = previous.described / previous.videos;
+            const currentRate = counts.described / counts.videos;
+            if (previousRate >= 0.5 && currentRate < previousRate * descriptionKeepRatio) {
+                const prevPct = Math.round(previousRate * 1000) / 10;
+                const newPct = Math.round(currentRate * 1000) / 10;
+                reasons.push(
+                    `descriptions ${counts.described}/${counts.videos} (${newPct}%) fell below ${Math.round(descriptionKeepRatio * 100)}% of the previous fill rate ${previous.described}/${previous.videos} (${prevPct}%)`
+                );
+            }
+        }
+        const severe = seriesDrops.filter(dropIsSevere);
+        if (severe.length > 0) {
+            const sample = severe.slice(0, 8).map((drop) => `${drop.name} ${drop.previous}->${drop.current}`).join(", ");
+            reasons.push(`${severe.length} series lost videos (${sample})`);
+        }
+        if (reasons.length > 0) {
+            const refused = refusal(scraperName, file, reasons.join("; "), false);
+            refused.seriesDrops = seriesDrops;
+            return refused;
         }
     }
 
@@ -164,7 +287,8 @@ function decidePublish({
         blocked: false,
         status: "published",
         series: counts.series || 0,
-        videos: counts.videos || 0
+        videos: counts.videos || 0,
+        seriesDrops
     };
 }
 
@@ -298,6 +422,9 @@ module.exports = {
     PARTIAL_INCREMENTAL_SCRAPERS,
     catalogIsComplete,
     countCatalog,
+    measureCatalog,
+    formatCatalogComparison,
+    seriesVideoDrops,
     countZipBuffer,
     shouldCheckVideoCount,
     decidePublish,

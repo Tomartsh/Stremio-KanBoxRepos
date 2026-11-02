@@ -13,13 +13,43 @@ const {
     parseSeriesMeta,
     parseSeriesPage,
     seasonUrlsToFetch,
-    numberDigitalEpisodes
+    numberDigitalEpisodes,
+    pickSeriesTitle,
+    archiveSeriesId,
+    normalizeCatalogUrl
 } = require("./kanDigitalParse.js");
+const { loadPreviousCatalog } = require("./catalogGate.js");
 const BaseScraper = require("./BaseScraper.js");
-const SUB_PREFIX = "archive";
 
 const log4js = require("log4js");
 var logger = log4js.getLogger("KanArchiveScraper");
+
+/**
+ * season:episode is the id. If that pair was already used, append the episode
+ * slug so the id stays unique and stable for the same URL.
+ */
+function uniqueArchiveVideoId(seriesId, season, episodeNo, url, used) {
+    const base = `${seriesId}:${Number(season)}:${Number(episodeNo)}`;
+    if (!used.has(base)) {
+        used.add(base);
+        return base;
+    }
+    let slug = "";
+    try {
+        slug = decodeURIComponent(String(url || "").split("?")[0].replace(/\/+$/, "").split("/").pop() || "");
+    } catch (error) {
+        slug = String(url || "").split("/").filter(Boolean).pop() || "";
+    }
+    const safe = slug.replace(/[^\p{L}\p{N}_-]+/gu, "") || "extra";
+    let alt = `${base}:${safe}`;
+    let n = 2;
+    while (used.has(alt)) {
+        alt = `${base}:${safe}:${n}`;
+        n += 1;
+    }
+    used.add(alt);
+    return alt;
+}
 
 class KanArchiveScraper extends BaseScraper {
 
@@ -58,11 +88,12 @@ class KanArchiveScraper extends BaseScraper {
 
         // Names come from the poster alt. The old crawl stored "" and only
         // filled the name after an episode-button check the new layout fails.
+        await this.loadPreviousArchive();
         const series = parseArchiveIndex(doc);
         logger.info(`crawlVod => ${series.length} archive series on the index`);
         for (const card of series) {
             if (!card.url) continue;
-            const id = utils.generateSeriesId(card.url, SUB_PREFIX);
+            const id = archiveSeriesId(card.url, this._previousByLink);
             this.addToJsonObject(
                 id,
                 card.name || "",
@@ -128,16 +159,34 @@ class KanArchiveScraper extends BaseScraper {
         }
 
         const pageMeta = parseSeriesMeta(seriesPageDoc);
-        const title = utils.getNameFromSeriesPage(pageMeta.title || series.name || "");
+        const previous = this._previousById && this._previousById.get(id);
+        const previousName = previous
+            ? (previous.name || (previous.meta && previous.meta.name) || "")
+            : "";
+        // A page titled "כאן ארכיון", a photo caption, or a poster filename
+        // must not replace a good index name or the name already published.
+        const picked = pickSeriesTitle(seriesPageDoc, {
+            imageAlt: series.name || "",
+            previousName,
+            posterSrc: (series.meta && series.meta.poster) || "",
+            clean: utils.getNameFromSeriesPage
+        });
+        const title = picked.title || "";
         if (title) {
             series.name = title;
             series.meta.name = title;
         }
+        if (picked.rejected.length > 0) {
+            logger.info(
+                `processOneSeries => Rejected title candidate(s) ${JSON.stringify(picked.rejected)}; ` +
+                `using ${JSON.stringify(title)} from ${picked.source || "none"}`
+            );
+        }
         if (pageMeta.description) series.meta.description = pageMeta.description;
         series.meta.genres = this.setGenre(seriesPageDoc.querySelector("div.info-genre"));
 
-        // Same card parser as Kan Digital. Season from the /sN/ path. The
-        // legacy button, card-link, and seasons-item selectors stay inside it.
+        // Same card parser as Kan Digital. Seasons are /sN/ or a Hebrew
+        // season folder such as /עונה-2/. The legacy selectors stay inside it.
         const parsed = parseSeriesPage(seriesPageDoc, pageUrl);
         const seasonUrls = seasonUrlsToFetch(seriesPageDoc, pageUrl, parsed);
         let episodes = [];
@@ -154,6 +203,8 @@ class KanArchiveScraper extends BaseScraper {
         }
 
         const numbered = numberDigitalEpisodes(episodes);
+        const usedVideoIds = new Set();
+        const usedStreamUrls = new Set();
         for (const episode of numbered) {
             let streams;
             try {
@@ -167,21 +218,30 @@ class KanArchiveScraper extends BaseScraper {
                 logger.warn(`processOneSeries => No stream for "${episode.title}" (${episode.url})`);
                 continue;
             }
+            if (usedStreamUrls.has(streams.url)) {
+                logger.warn(
+                    `processOneSeries => Duplicate stream URL for "${episode.title}" (${episode.url}); ` +
+                    `another episode in ${id} already uses it`
+                );
+            }
+            usedStreamUrls.add(streams.url);
+            const videoId = uniqueArchiveVideoId(id, episode.season, episode.episodeNo, episode.url, usedVideoIds);
+            const thumbnail = episode.image || streams.thumbnail || (series.meta && series.meta.poster) || "";
             this.addVideoToMeta(
                 id,
-                `${id}:${episode.season}:${episode.episodeNo}`,
+                videoId,
                 episode.title || `Episode ${episode.episodeNo}`,
-                episode.season,
-                episode.episodeNo,
+                Number(episode.season),
+                Number(episode.episodeNo),
                 episode.description || streams.description || "",
-                episode.image || "",
+                thumbnail,
                 episode.url,
                 streams.released,
                 [{
                     url: streams.url,
                     type: streams.type,
                     name: streams.name,
-                    description: streams.description
+                    description: streams.description || ""
                 }]
             );
         }
@@ -237,10 +297,10 @@ class KanArchiveScraper extends BaseScraper {
             id,
             `${id}:1:1`,
             title,
-            "1",
-            "1",
+            1,
+            1,
             description,
-            poster,
+            poster || streams.thumbnail || "",
             movieUrl,
             streams.released,
             [{
@@ -262,6 +322,35 @@ class KanArchiveScraper extends BaseScraper {
 
         logger.trace("getStreams => Exiting");
         return stream || "";
+    }
+
+    /**
+     * Published catalog, keyed by id and by normalized series link.
+     * Slug series such as /betweenus/ and /קיץ-ביובל/ keep the id they
+     * already have. A percent-encoded Hebrew slug is not a new id.
+     */
+    async loadPreviousArchive() {
+        this._previousById = new Map();
+        this._previousByLink = new Map();
+        try {
+            const loaded = await loadPreviousCatalog(this.getExportFilename(), {
+                logger: this.logger,
+                remote: this.previousCatalogRemote
+            });
+            const data = loaded && loaded.data;
+            if (!data) return;
+            for (const [id, series] of Object.entries(data)) {
+                if (!series || typeof series !== "object" || Array.isArray(series)) continue;
+                const seriesId = series.id || id;
+                this._previousById.set(seriesId, series);
+                const link = series.link || (series.meta && series.meta.link) || "";
+                const normalized = normalizeCatalogUrl(link);
+                if (normalized) this._previousByLink.set(normalized, seriesId);
+            }
+            logger.info(`crawlVod => Previous catalog: ${this._previousById.size} series`);
+        } catch (error) {
+            logger.warn(`crawlVod => Previous catalog unavailable: ${error.message}`);
+        }
     }
 
     setDescription(seriesElems){

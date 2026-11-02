@@ -168,6 +168,112 @@ function extractVideoObjectUrl(scriptContent) {
     return link;
 }
 
+function scriptBody(scriptElem) {
+    if (!scriptElem) return "";
+    if (scriptElem.text != null && String(scriptElem.text).trim()) return String(scriptElem.text);
+    return String(scriptElem.toString() || "")
+        .replace(/^[\s\S]*?<script[^>]*>/i, "")
+        .replace(/<\/script>\s*$/i, "");
+}
+
+function jsonStringField(text, field) {
+    const match = String(text || "").match(new RegExp(`"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`));
+    if (!match) return "";
+    try {
+        return JSON.parse(`"${match[1]}"`);
+    } catch (error) {
+        return match[1];
+    }
+}
+
+/**
+ * VideoObject blocks on an episode page. Archive pages put the playable URL,
+ * the synopsis, and the thumbnail here. div.info-description is often absent.
+ */
+function videoObjectsFromDocument(doc) {
+    const objects = [];
+    if (!doc || typeof doc.querySelectorAll !== "function") return objects;
+    doc.querySelectorAll("script").forEach((script) => {
+        const text = scriptBody(script);
+        if (!text || !text.includes("contentUrl")) return;
+        const trimmed = text.trim();
+        let parsed = null;
+        try {
+            parsed = JSON.parse(trimmed);
+        } catch (error) {
+            parsed = null;
+        }
+        const list = [];
+        if (parsed && typeof parsed === "object") {
+            if (Array.isArray(parsed)) list.push(...parsed);
+            else if (Array.isArray(parsed["@graph"])) list.push(...parsed["@graph"]);
+            else list.push(parsed);
+        }
+        let found = false;
+        for (const item of list) {
+            if (!item || typeof item !== "object") continue;
+            const type = item["@type"];
+            const types = Array.isArray(type) ? type : [type];
+            if (!types.includes("VideoObject") || !item.contentUrl) continue;
+            found = true;
+            objects.push({
+                contentUrl: String(item.contentUrl),
+                name: item.name || "",
+                description: item.description || "",
+                thumbnailUrl: item.thumbnailUrl || ""
+            });
+        }
+        if (found) return;
+        const url = extractVideoObjectUrl(text);
+        if (!url) return;
+        objects.push({
+            contentUrl: url,
+            name: jsonStringField(text, "name"),
+            description: jsonStringField(text, "description"),
+            thumbnailUrl: jsonStringField(text, "thumbnailUrl")
+        });
+    });
+    return objects;
+}
+
+function nameOverlap(left, right) {
+    const a = String(left || "").replace(/\s+/g, " ").trim();
+    const b = String(right || "").replace(/\s+/g, " ").trim();
+    if (!a || !b) return 0;
+    if (a === b) return 3;
+    if (a.includes(b) || b.includes(a)) return 2;
+    return 0;
+}
+
+/**
+ * When a page lists more than one VideoObject, keep the one whose name matches
+ * the episode. A shared promo listed first would otherwise be copied onto
+ * every episode in the series.
+ */
+function chooseVideoObject(objects, pageName) {
+    const withUrl = (objects || []).filter((item) => item && item.contentUrl);
+    if (withUrl.length === 0) return null;
+    if (withUrl.length === 1) return withUrl[0];
+    let best = withUrl[0];
+    let bestScore = nameOverlap(pageName, withUrl[0].name);
+    for (let i = 1; i < withUrl.length; i++) {
+        const score = nameOverlap(pageName, withUrl[i].name);
+        if (score > bestScore) {
+            best = withUrl[i];
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+function absoluteMediaUrl(src) {
+    const text = String(src || "").trim();
+    if (!text) return "";
+    if (text.startsWith("//")) return "https:" + text;
+    if (text.startsWith("/")) return "https://www.kan.org.il" + text;
+    return text;
+}
+
 /**
  * Stream fields from an already-fetched episode document. redge-player on
  * archive pages has no data-hls-url; the playable URL is VideoObject.contentUrl.
@@ -186,29 +292,33 @@ function streamFromKanDocument(doc) {
     const dateElement = doc.querySelector(".date-local");
     released = extractReleaseDate(dateElement);
 
-    const playerElem = doc.querySelector("[id^='redge-player-']");
-    if (playerElem && playerElem.getAttribute("data-hls-url")) {
-        videoUrl = playerElem.getAttribute("data-hls-url");
-        if (videoUrl.startsWith("//")) videoUrl = "https:" + videoUrl;
-    } else {
-        const scriptElems = doc.querySelectorAll("script");
-        for (const scriptElem of scriptElems) {
-            const scriptText = scriptElem.toString();
-            if (!scriptText.includes("VideoObject")) continue;
-            videoUrl = extractVideoObjectUrl(scriptText);
-            if (videoUrl && videoUrl.startsWith("//")) videoUrl = "https:" + videoUrl;
-            if (videoUrl) break;
-        }
-    }
-
     if (doc.querySelectorAll("div.info-title h1.h2").length > 0) {
         nameVideo = cleanVideoName(doc.querySelectorAll("div.info-title h1.h2")[0].text.trim());
     } else if (doc.querySelector("title")) {
         nameVideo = cleanVideoName(doc.querySelector("title").text.trim());
     }
 
-    if (doc.querySelector("div.info-description") != null) {
-        descVideo = doc.querySelector("div.info-description").text.trim();
+    const chosen = chooseVideoObject(videoObjectsFromDocument(doc), nameVideo);
+    let thumbnail = "";
+    const playerElem = doc.querySelector("[id^='redge-player-']");
+    if (playerElem && playerElem.getAttribute("data-hls-url")) {
+        videoUrl = playerElem.getAttribute("data-hls-url");
+        if (videoUrl.startsWith("//")) videoUrl = "https:" + videoUrl;
+    } else if (chosen && chosen.contentUrl) {
+        videoUrl = chosen.contentUrl;
+        if (videoUrl.startsWith("//")) videoUrl = "https:" + videoUrl;
+    }
+    if (chosen) {
+        if (!descVideo) descVideo = String(chosen.description || "").trim();
+        thumbnail = absoluteMediaUrl(chosen.thumbnailUrl);
+    }
+
+    const infoDescription = doc.querySelector("div.info-description");
+    const infoText = infoDescription && infoDescription.text ? infoDescription.text.trim() : "";
+    if (infoText) descVideo = infoText;
+    if (!descVideo) {
+        const meta = doc.querySelector('meta[property="og:description"]') || doc.querySelector('meta[name="description"]');
+        if (meta) descVideo = String(meta.getAttribute("content") || "").trim();
     }
 
     if (!videoUrl) return null;
@@ -219,6 +329,7 @@ function streamFromKanDocument(doc) {
         name: nameVideo,
         description: descVideo
     };
+    if (thumbnail) streamObj.thumbnail = thumbnail;
     if (released) streamObj.released = released;
     return streamObj;
 }
@@ -466,6 +577,7 @@ function wrapProcessor(processor, context, logger) {
 module.exports = {
     extractKanStream,
     streamFromKanDocument,
+    chooseVideoObject,
     extractVideoObjectUrl,
     cleanVideoName,
     parseIsraeliDate,

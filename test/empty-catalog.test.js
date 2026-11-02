@@ -72,7 +72,7 @@ test("a catalog that keeps at least 85% of the videos is published", async () =>
     const scraper = new ProbeScraper(async function () {
         this.addToJsonObject("id1", "ארכיון", "https://www.kan.org.il/show", "", "", [], withVideos(1900), "a", "series");
     });
-    scraper.previousCountsOverride = { series: 40, videos: 2168 };
+    scraper.previousCountsOverride = { series: 1, videos: 2168 };
     const outcome = await scraper.crawl(true, "full");
     assert.equal(outcome.published, true);
     assert.equal(scraper.published, true);

@@ -9,6 +9,8 @@ const { URL_JSON_BASE } = require("../classes/constants");
 const {
     catalogIsComplete,
     countCatalog,
+    measureCatalog,
+    formatCatalogComparison,
     countZipBuffer,
     decidePublish,
     formatRunResult,
@@ -195,7 +197,8 @@ test("a budget stop merges finished series and keeps series this run did not rea
     assert.equal(recovered.data.empty.name, "ישן");
     assert.equal(recovered.data.empty.meta.videos.length, 1);
     assert.equal(recovered.data.fresh.meta.videos.length, 1);
-    assert.deepEqual(recovered.counts, { series: 4, videos: 5 });
+    assert.equal(recovered.counts.series, 4);
+    assert.equal(recovered.counts.videos, 5);
 
     const tooSmall = decidePublish({
         scraperName: "KanDigital",
@@ -237,6 +240,134 @@ test("a local previous catalog is read without the network", async () => {
     });
     assert.equal(loaded.data.show.meta.videos.length, 1);
     assert.equal(await loadPreviousCatalog("missing", { outputDir: dir, remote: false }), null);
+});
+
+test("the publish gate compares series, videos, and uncompressed JSON, not the ZIP", () => {
+    const previous = {
+        series: 171,
+        videos: 1568,
+        jsonBytes: 2343800,
+        described: 1568,
+        perSeries: {
+            keep: { name: "נשאר", videos: 10 },
+            collapse: { name: "צימרים", videos: 26 },
+            small: { name: "יום אחד", videos: 2 }
+        }
+    };
+    const healthy = {
+        series: 175,
+        videos: 2337,
+        jsonBytes: 2664461,
+        described: 2200,
+        zipBytes: 180077,
+        perSeries: {
+            keep: { name: "נשאר", videos: 12 },
+            collapse: { name: "צימרים", videos: 30 },
+            small: { name: "יום אחד", videos: 2 }
+        }
+    };
+    const grown = decidePublish({
+        scraperName: "KanArchive",
+        exportFilename: "stremio-kanarchive",
+        counts: healthy,
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(grown.published, true);
+    assert.match(formatCatalogComparison("KanArchive", healthy, previous), /uncompressed JSON 2664461B/);
+    assert.equal(formatCatalogComparison("KanArchive", healthy, previous).includes("ZIP"), false);
+
+    const wiped = decidePublish({
+        scraperName: "KanArchive",
+        exportFilename: "stremio-kanarchive",
+        counts: {
+            series: 175,
+            videos: 2337,
+            jsonBytes: 2664461,
+            described: 4,
+            perSeries: {
+                keep: { name: "נשאר", videos: 12 },
+                collapse: { name: "צימרים", videos: 1 },
+                small: { name: "יום אחד", videos: 1 }
+            }
+        },
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(wiped.published, false);
+    assert.match(wiped.reason, /descriptions 4\/2337/);
+    assert.match(wiped.reason, /צימרים 26->1/);
+    assert.equal(wiped.reason.includes("ZIP"), false);
+    assert.equal(wiped.seriesDrops.some((drop) => drop.name === "יום אחד" && drop.current === 1), true);
+
+    const tinyJson = decidePublish({
+        scraperName: "KanArchive",
+        exportFilename: "stremio-kanarchive",
+        counts: {
+            series: 175,
+            videos: 2337,
+            jsonBytes: 1000,
+            described: 2337,
+            perSeries: {
+                keep: { name: "נשאר", videos: 12 },
+                collapse: { name: "צימרים", videos: 26 },
+                small: { name: "יום אחד", videos: 2 }
+            }
+        },
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(tinyJson.published, false);
+    assert.match(tinyJson.reason, /uncompressed JSON 1000B/);
+    assert.match(tinyJson.reason, /70%/);
+    assert.equal(tinyJson.reason.includes("ZIP"), false);
+
+    const fewerSeries = decidePublish({
+        scraperName: "KanArchive",
+        exportFilename: "stremio-kanarchive",
+        counts: {
+            series: 100,
+            videos: 2000,
+            jsonBytes: 3000000,
+            described: 2000,
+            perSeries: {}
+        },
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(fewerSeries.published, false);
+    assert.match(fewerSeries.reason, /series count 100/);
+
+    const oneRemoved = decidePublish({
+        scraperName: "KanArchive",
+        exportFilename: "stremio-kanarchive",
+        counts: Object.assign({}, healthy, {
+            perSeries: {
+                keep: { name: "נשאר", videos: 12 },
+                collapse: { name: "צימרים", videos: 30 },
+                small: { name: "יום אחד", videos: 1 }
+            }
+        }),
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(oneRemoved.published, true);
+    assert.equal(oneRemoved.seriesDrops.length, 1);
+    assert.equal(oneRemoved.seriesDrops[0].previous, 2);
+
+    const measured = measureCatalog({
+        data: {
+            show: {
+                id: "show",
+                name: "א",
+                meta: { videos: [{ id: "v", description: "יש" }, { id: "w", description: "" }] }
+            }
+        }
+    });
+    assert.equal(measured.series, 1);
+    assert.equal(measured.videos, 2);
+    assert.equal(measured.described, 1);
+    assert.ok(measured.jsonBytes > 0);
 });
 
 test("local zip counts are read from the output directory", () => {

@@ -36,6 +36,13 @@ function parseHref(href) {
     try {
         const url = new URL(trimmed, KAN_ORIGIN);
         let path = url.pathname || "/";
+        // Archive season folders are Hebrew slugs. The URL parser leaves them
+        // percent-encoded; decode so "/עונה-2/" matches the published links.
+        try {
+            path = decodeURIComponent(path);
+        } catch (error) {
+            // Keep the pathname when it is not valid percent-encoding.
+        }
         if (!path.endsWith("/")) path += "/";
         return { origin: url.origin, path };
     } catch (error) {
@@ -59,11 +66,85 @@ function seriesIdFromUrl(seriesUrl) {
  * /p-12832/s6/ and must not be treated as episodes.
  */
 function cleanCardName(value) {
-    return String(value || "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .replace(/\s*\.כאן(?:\s*(?:11|ארכיון))?\s*$/u, "")
-        .trim();
+    return stripSiteSuffix(stripImageArtifacts(value));
+}
+
+function decodePathname(value) {
+    const text = String(value || "").split("?")[0];
+    try {
+        return decodeURIComponent(text);
+    } catch (error) {
+        return text;
+    }
+}
+
+/**
+ * Hebrew archive seasons are not /sN/. They are folders such as /עונה-2/,
+ * /עונה-1-מסך-אישי/, or /היום-זה-אנחנו-פרקים-מלאים/.
+ */
+function isSeasonFolderSlug(slug) {
+    const text = decodePathname(slug);
+    if (/^s\d+$/i.test(text)) return true;
+    if (/עונה/u.test(text)) return true;
+    if (/פרקים/u.test(text)) return true;
+    if (/^season(?:-|\d)/i.test(text)) return true;
+    return false;
+}
+
+function seasonNumberFromSlug(slug) {
+    const text = decodePathname(slug);
+    const latin = text.match(/^s(\d+)$/i);
+    if (latin) return parseInt(latin[1], 10);
+    const hebrew = text.match(/עונה-(\d+)/);
+    if (hebrew) return parseInt(hebrew[1], 10);
+    const english = text.match(/season-(\d+)/i);
+    if (english) return parseInt(english[1], 10);
+    return null;
+}
+
+/**
+ * Stable key for a season tab and for the episodes that live under it.
+ * /s2/ and /s2/104/ share s:2. /עונה-2/ and /עונה-2/104/ share the folder.
+ */
+function seasonIdentityFromPath(path) {
+    const decoded = decodePathname(path);
+    const withSlash = decoded.endsWith("/") ? decoded : decoded + "/";
+    const season = withSlash.match(/\/s(\d+)\//);
+    if (season) return "s:" + season[1];
+    const folder = withSlash.match(/\/p-\d+\/([^/]+)\//);
+    if (folder && isSeasonFolderSlug(folder[1]) && !/^s\d+$/i.test(folder[1])) {
+        return "f:" + folder[1];
+    }
+    return null;
+}
+
+/**
+ * A few archive series have no /p-N/: /betweenus/s1/673834/ and
+ * /קיץ-ביובל/s1/776101/. The slug is the series, then the usual season.
+ */
+function seriesSlugFromUrl(seriesUrl) {
+    const parsed = parseHref(seriesUrl || "");
+    if (!parsed) return "";
+    const match = parsed.path.match(/\/archive1\/(?:[^/]+\/)([^/]+)\/(?:s\d+\/)?$/);
+    if (!match || /^p-\d+$/.test(match[1]) || /^s\d+$/i.test(match[1])) return "";
+    return match[1];
+}
+
+function archiveSlugSeason(path) {
+    const match = String(path || "").match(/\/archive1\/(?:[^/]+\/)([^/]+)\/s(\d+)\/(?:([^/]+)\/)?$/);
+    if (!match || /^p-\d+$/.test(match[1])) return null;
+    return {
+        slug: match[1],
+        season: parseInt(match[2], 10),
+        episode: match[3] || ""
+    };
+}
+
+/**
+ * "פתיח" is the opening-theme card. "פתיחה" and "פתיחת" are ordinary titles.
+ */
+function isOpenerTitle(title) {
+    return /(?:^|\||\s)פתיח\s*$/u.test(String(title || "").replace(/\s+/g, " ").trim());
 }
 
 function cardImage(card) {
@@ -98,8 +179,30 @@ function episodeFromHref(href, seriesId, options) {
         };
     }
 
+    const slugEpisode = archiveSlugSeason(parsedHref.path);
+    if (slugEpisode && slugEpisode.episode) {
+        if (seriesId) return null;
+        if (options && options.seriesSlug && options.seriesSlug !== slugEpisode.slug) return null;
+        return {
+            url: absoluteUrl(parsedHref),
+            season: slugEpisode.season
+        };
+    }
+
+    // /p-N/עונה-2/1046567/ and /p-N/עונה-1-מסך-אישי/874518/. The folder is the
+    // season; the last segment is the episode. Digital /kan/ paths stay out.
+    const folderMatch = parsedHref.path.match(/\/(p-\d+)\/([^/]+)\/([^/]+)\/$/);
+    if (folderMatch && parsedHref.path.includes("/archive1/") && !/^s\d+$/i.test(folderMatch[2])) {
+        if (seriesId && folderMatch[1] !== seriesId) return null;
+        const seasonNo = seasonNumberFromSlug(folderMatch[2]);
+        return {
+            url: absoluteUrl(parsedHref),
+            season: seasonNo == null ? 1 : seasonNo
+        };
+    }
+
     const archiveMatch = parsedHref.path.match(/\/archive1\/(?:[^/]+\/)*?(p-\d+)\/([^/]+)\/$/);
-    if (archiveMatch && !/^s\d+$/.test(archiveMatch[2])) {
+    if (archiveMatch && !/^s\d+$/i.test(archiveMatch[2]) && !isSeasonFolderSlug(archiveMatch[2])) {
         if (seriesId && archiveMatch[1] !== seriesId) return null;
         return {
             url: absoluteUrl(parsedHref),
@@ -127,15 +230,53 @@ function cardIsFlatEpisode(title) {
     return /פרק\s*\d+/u.test(String(title || ""));
 }
 
-function seasonFromHref(href, seriesId) {
+/**
+ * Episode blurbs. Archive cards no longer use div.card-text; the synopsis is
+ * a description element when the card has one. A subtitle that only says
+ * "עונה N, פרק M" is the episode number, not a description.
+ */
+function cardDescription(card) {
+    if (!card || typeof card.querySelector !== "function") return "";
+    const explicit = elementText(card.querySelector(
+        "div.card-text, p.card-text, .cr-description, p.cr-description, p.episode-description"
+    ));
+    if (explicit) return explicit;
+    const subtitle = elementText(card.querySelector("p.cr-subtitle"));
+    if (!subtitle) return "";
+    if (/^עונה\s*\d+/u.test(subtitle)) return "";
+    if (/^פרק\s*\d+/u.test(subtitle)) return "";
+    return subtitle;
+}
+
+function seasonFromHref(href, seriesId, seriesSlug) {
     const parsedHref = parseHref(href);
     if (!parsedHref) return null;
     const match = parsedHref.path.match(/\/(p-\d+)\/s(\d+)\/$/);
-    if (!match) return null;
-    if (seriesId && match[1] !== seriesId) return null;
+    if (match) {
+        if (seriesId && match[1] !== seriesId) return null;
+        return {
+            url: absoluteUrl(parsedHref),
+            season: parseInt(match[2], 10)
+        };
+    }
+
+    const slugSeason = archiveSlugSeason(parsedHref.path);
+    if (slugSeason && !slugSeason.episode) {
+        if (seriesId) return null;
+        if (seriesSlug && seriesSlug !== slugSeason.slug) return null;
+        return {
+            url: absoluteUrl(parsedHref),
+            season: slugSeason.season
+        };
+    }
+
+    const folder = parsedHref.path.match(/\/(p-\d+)\/([^/]+)\/$/);
+    if (!folder || !parsedHref.path.includes("/archive1/")) return null;
+    if (/^s\d+$/i.test(folder[2]) || !isSeasonFolderSlug(folder[2])) return null;
+    if (seriesId && folder[1] !== seriesId) return null;
     return {
         url: absoluteUrl(parsedHref),
-        season: parseInt(match[2], 10)
+        season: seasonNumberFromSlug(folder[2]) || 1
     };
 }
 
@@ -150,7 +291,8 @@ function seriesRootFromHref(href) {
 function pushEpisode(episodes, seen, href, title, duration, description, seriesId, extras) {
     const extra = extras || {};
     const info = episodeFromHref(href, seriesId, {
-        allowFlatEpisode: cardIsFlatEpisode(title)
+        allowFlatEpisode: cardIsFlatEpisode(title),
+        seriesSlug: extra.seriesSlug || ""
     });
     if (!info || seen.has(info.url)) return;
     seen.add(info.url);
@@ -188,11 +330,17 @@ function parseArchiveIndex(html) {
         seen.add(url);
 
         const img = card.querySelector("img.img-full, img");
-        const alt = img ? cleanCardName(img.getAttribute("alt")) : "";
-        const titleAttr = img ? cleanCardName(img.getAttribute("title")) : "";
+        const rawAlt = img ? (img.getAttribute("alt") || "") : "";
+        const rawTitle = img ? (img.getAttribute("title") || "") : "";
+        const posterName = nameFromPosterFile(img ? (img.getAttribute("src") || img.getAttribute("data-src") || "") : "");
+        let name = cleanCardName(rawAlt) || cleanCardName(rawTitle);
+        if (!isValidSeriesTitle(name)) {
+            const salvaged = titleFromPhotoCaption(rawAlt || rawTitle, posterName);
+            name = isValidSeriesTitle(salvaged) ? salvaged : "";
+        }
         series.push({
             url,
-            name: alt || titleAttr,
+            name,
             image: cardImage(card),
             description: elementText(card.querySelector("h3"))
         });
@@ -284,6 +432,7 @@ function selectLobbySeries(entries, ignoreList) {
 function parseSeriesPage(html, seriesUrl) {
     const doc = ensureDoc(html);
     const seriesId = seriesIdFromUrl(seriesUrl);
+    const seriesSlug = seriesSlugFromUrl(seriesUrl);
     const episodes = [];
     const seenEpisodes = new Set();
 
@@ -292,7 +441,8 @@ function parseSeriesPage(html, seriesUrl) {
         const duration = elementText(card.querySelector(".program-grid-duration"));
         pushEpisode(episodes, seenEpisodes, card.getAttribute("href"), title, duration, "", seriesId, {
             image: cardImage(card),
-            subtitle: elementText(card.querySelector("p.cr-subtitle"))
+            subtitle: elementText(card.querySelector("p.cr-subtitle")),
+            seriesSlug
         });
     });
 
@@ -301,9 +451,10 @@ function parseSeriesPage(html, seriesUrl) {
         if (href.includes("/participants/")) return;
         const title = elementText(card.querySelector("h3.cr-title")) || card.getAttribute("aria-label") || "";
         const subtitle = elementText(card.querySelector("p.cr-subtitle"));
-        pushEpisode(episodes, seenEpisodes, href, title, "", "", seriesId, {
+        pushEpisode(episodes, seenEpisodes, href, title, "", cardDescription(card), seriesId, {
             image: cardImage(card),
-            subtitle
+            subtitle,
+            seriesSlug
         });
     });
 
@@ -312,16 +463,17 @@ function parseSeriesPage(html, seriesUrl) {
             || card.getAttribute("title")
             || card.getAttribute("aria-label")
             || "";
-        const description = elementText(card.querySelector("div.card-text"));
+        const description = cardDescription(card);
         pushEpisode(episodes, seenEpisodes, card.getAttribute("href"), title, "", description, seriesId, {
-            image: cardImage(card)
+            image: cardImage(card),
+            seriesSlug
         });
     });
 
     const seasons = [];
     const seenSeasons = new Set();
     doc.querySelectorAll("a").forEach((anchor) => {
-        const info = seasonFromHref(anchor.getAttribute("href"), seriesId);
+        const info = seasonFromHref(anchor.getAttribute("href"), seriesId, seriesSlug);
         if (!info || seenSeasons.has(info.season)) return;
         seenSeasons.add(info.season);
         seasons.push(info);
@@ -351,7 +503,7 @@ function parseSeriesPage(html, seriesUrl) {
  * @returns {object[]}
  */
 function episodeNumberFrom(episode) {
-    const titleMatch = String(episode.title || "").match(/פרק\s*(\d+)/);
+    const titleMatch = String(episode.title || "").match(/(?:פרק|תוכנית)\s*(\d+)/);
     if (titleMatch) return parseInt(titleMatch[1], 10);
     const subtitleMatch = String(episode.subtitle || "").match(/פרק\s*(\d+)/);
     if (subtitleMatch) return parseInt(subtitleMatch[1], 10);
@@ -390,18 +542,17 @@ function seasonUrlsToFetch(html, pageUrl, parsedSeries) {
     for (const seasonDiv of seasonDivs) {
         const links = seasonDiv.querySelectorAll("a.program-grid-card, a.cr-item, a.card-link");
         for (const link of links) {
-            const match = (link.getAttribute("href") || "").match(/\/s(\d+)\//);
-            if (match) covered.add(parseInt(match[1], 10));
+            const identity = seasonIdentityFromPath(link.getAttribute("href") || "");
+            if (identity) covered.add(identity);
         }
     }
 
     const pageKey = String(pageUrl || "").split("?")[0].replace(/\/+$/, "") + "/";
     const seasonUrls = [];
     for (const seasonUrl of parsed.seasonUrls || []) {
-        const match = String(seasonUrl).match(/\/s(\d+)\/?$/);
-        if (!match) continue;
-        const seasonNo = parseInt(match[1], 10);
-        if (seasonDivs.length > 0 && covered.has(seasonNo)) continue;
+        const identity = seasonIdentityFromPath(seasonUrl);
+        if (!identity) continue;
+        if (seasonDivs.length > 0 && covered.has(identity)) continue;
         const seasonKey = String(seasonUrl).split("?")[0].replace(/\/+$/, "") + "/";
         if (seasonKey === pageKey) continue;
         seasonUrls.push(seasonUrl);
@@ -641,17 +792,18 @@ function numberDigitalEpisodes(episodes) {
     const rest = [];
     for (const episode of episodes || []) {
         if (!episode || !episode.url) continue;
-        // Openers have no /sN/ segment (season 0) or a "פתיח" title. They must
-        // not take an episode number away from the season they sit beside.
-        // "פתיח" is the intro card. "פתיחה" is an ordinary episode title.
-        if (episode.season === 0 || /פתיח(?!ה)/u.test(String(episode.title || ""))) {
+        // Only the opening-theme card is episode 0. Flat /p-N/<id>/ episodes
+        // (documentaries, extras) are real episodes and need their own numbers.
+        // A season of 0 means the link had no /sN/ and no Hebrew season folder.
+        if (isOpenerTitle(episode.title)) {
             jobs.push(Object.assign({}, episode, {
                 season: episode.season > 0 ? episode.season : 1,
                 episodeNo: 0
             }));
             continue;
         }
-        rest.push(episode);
+        const season = episode.season > 0 ? episode.season : 1;
+        rest.push(season === episode.season ? episode : Object.assign({}, episode, { season }));
     }
 
     const groups = new Map();
@@ -699,7 +851,38 @@ function numberDigitalEpisodes(episodes) {
             }));
         });
     }
-    return jobs;
+    return disambiguateEpisodeNumbers(jobs);
+}
+
+/**
+ * The first card that wants a season/episode pair keeps it. Later cards that
+ * would reuse it take the next free positive number, so every video id built
+ * from season and episode is unique. Episode 0 stays the opening theme.
+ */
+function disambiguateEpisodeNumbers(jobs) {
+    const groups = new Map();
+    jobs.forEach((job, index) => {
+        const season = job.season;
+        if (!groups.has(season)) groups.set(season, []);
+        groups.get(season).push({ job, index });
+    });
+    const result = jobs.slice();
+    for (const entries of groups.values()) {
+        const taken = new Set();
+        const dupes = [];
+        for (const entry of entries) {
+            const number = entry.job.episodeNo;
+            if (!taken.has(number)) taken.add(number);
+            else dupes.push(entry);
+        }
+        for (const entry of dupes) {
+            let next = 1;
+            while (taken.has(next)) next += 1;
+            taken.add(next);
+            result[entry.index] = Object.assign({}, entry.job, { episodeNo: next });
+        }
+    }
+    return result;
 }
 
 /**
@@ -719,7 +902,130 @@ function isValidSeriesTitle(name) {
     if (/\d+\s*[xX×]\s*\d+/u.test(text)) return false;
     if (/image[\s_-]*(?:small|big)/iu.test(text)) return false;
     if (/תמונת\s+אורך\s+פרק/u.test(text)) return false;
+    // The site name is not a show. A title that merely contains תמונה / תמונות stays valid.
+    if (/^(?:כאן(?:\s+ארכיון)?|kan(?:\s+archive)?)$/iu.test(text)) return false;
+    if (looksLikePhotoCaption(text)) return false;
     return true;
+}
+
+/**
+ * Poster filenames and alts: "Poster Image Small 239X360", "6 Image Big 1200X1800",
+ * "360 לול 239". The words around the dimensions are the show, when there are any.
+ */
+function stripImageArtifacts(value) {
+    let text = String(value == null ? "" : value);
+    text = text.replace(/poster/ig, " ");
+    text = text.replace(/image[\s_-]*(?:small|big)/ig, " ");
+    text = text.replace(/פוסטר(?:\s*קטן)?/g, " ");
+    text = text.replace(/\d+\s*[-_]?\s*[xX×]\s*[-_]?\s*\d+/g, " ");
+    text = text.replace(/\(\s*\d+\s*\)/g, " ");
+    text = text.replace(/\s+/g, " ").trim();
+    const sandwich = text.match(/^(\d{2,4})\s+(.+?)\s+(\d{2,4})$/u);
+    if (sandwich) text = sandwich[2].trim();
+    return text.trim();
+}
+
+/**
+ * A photo caption names what is in the picture and appends a year:
+ * "המסעדה הגדולה, 1985", "קהל מוחא כפיים, קיץ ביובל 1998".
+ * A real title may contain a year ("היום זה אנחנו 2017") and still be valid.
+ */
+function looksLikePhotoCaption(text) {
+    const value = String(text || "");
+    if (!value.includes(",")) return false;
+    return /(?:19|20)\d{2}/.test(value);
+}
+
+function nameFromPosterFile(src) {
+    if (!src) return "";
+    let file = String(src).split("?")[0].split("/").pop() || "";
+    try {
+        file = decodeURIComponent(file);
+    } catch (error) {
+        // Keep the raw filename.
+    }
+    file = file.replace(/\.(jpe?g|png|webp|gif|svg)$/i, "");
+    file = stripImageArtifacts(file).replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!isValidSeriesTitle(file) || looksLikePhotoCaption(file)) return "";
+    return file;
+}
+
+function titleFromPhotoCaption(caption, posterName) {
+    const text = stripSiteSuffix(stripImageArtifacts(caption));
+    if (!looksLikePhotoCaption(text)) return "";
+    const parts = text.split(",").map((part) => part.replace(/\s+/g, " ").trim()).filter(Boolean);
+    const stripped = parts.map((part) => {
+        return part
+            .replace(/\s*(?:19|20)\d{2}(?:\s*-\s*(?:19|20)\d{2})?\s*$/u, "")
+            .replace(/^(?:19|20)\d{2}\s+/u, "")
+            .trim();
+    }).filter(Boolean);
+    const poster = String(posterName || "").trim();
+    if (poster) {
+        const hit = stripped.find((part) => part === poster || poster.includes(part) || part.includes(poster));
+        if (hit && isValidSeriesTitle(hit) && !looksLikePhotoCaption(hit)) return hit;
+    }
+    if (stripped.length === 1 && isValidSeriesTitle(stripped[0]) && !looksLikePhotoCaption(stripped[0])) {
+        return stripped[0];
+    }
+    return "";
+}
+
+/**
+ * Ids for archive series that are already in the published catalog.
+ * /p-N/ keeps N. A slug with no p-N reuses the published id for that link.
+ * Percent-encoded Hebrew is not turned into a digit string, and a new slug
+ * gets a stable hash instead of a crawl-order counter.
+ *
+ * @param {string} url
+ * @param {Map<string, string>|Object<string, string>|null} previousByUrl normalized link -> series id
+ * @returns {string}
+ */
+function normalizeCatalogUrl(url) {
+    try {
+        const parsed = new URL(url, KAN_ORIGIN);
+        let path = parsed.pathname || "/";
+        try {
+            path = decodeURIComponent(path);
+        } catch (error) {
+            // Keep the pathname.
+        }
+        if (!path.endsWith("/")) path += "/";
+        return "https://www.kan.org.il" + path;
+    } catch (error) {
+        return "";
+    }
+}
+
+function stableSlugToken(slug) {
+    let hash = 5381;
+    const text = String(slug || "");
+    for (let i = 0; i < text.length; i++) {
+        hash = ((hash << 5) + hash + text.charCodeAt(i)) >>> 0;
+    }
+    return hash.toString(36);
+}
+
+function archiveSeriesId(url, previousByUrl) {
+    const normalized = normalizeCatalogUrl(url);
+    let path = "";
+    try {
+        path = new URL(normalized).pathname;
+    } catch (error) {
+        path = "";
+    }
+    const program = path.match(/\/p-(\d+)(?:\/|$)/);
+    if (program) return "il_kan_archive_" + program[1];
+
+    if (previousByUrl && normalized) {
+        const previous = previousByUrl instanceof Map
+            ? previousByUrl.get(normalized)
+            : previousByUrl[normalized];
+        if (previous) return previous;
+    }
+
+    const slug = path.split("/").filter(Boolean).pop() || "series";
+    return "il_kan_archive_slug_" + stableSlugToken(slug);
 }
 
 /**
@@ -727,8 +1033,11 @@ function isValidSeriesTitle(name) {
  */
 function stripSiteSuffix(value) {
     let text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    // "כאן ארכיון | שישי בטברנה" keeps the show. "שישי בטברנה | כאן" keeps the show.
+    text = text.replace(/^(?:כאן\s*ארכיון|כאן\s*11|כאן|kan)\s*[|\-–—]\s*/iu, "");
     text = text.replace(/\s*[|\-–—]\s*(?:כאן|Kan)(?:\s*(?:11|ארכיון|חינוכית|Box|דיגיטל))?\s*$/iu, "");
     text = text.replace(/\s*\.כאן(?:\s*(?:11|ארכיון))?\s*$/u, "");
+    text = text.replace(/\s*\.ארכיון\s*$/u, "");
     return text.trim();
 }
 
@@ -750,6 +1059,8 @@ function pickSeriesTitle(html, options = {}) {
         const node = doc.querySelector(selector);
         return node ? node.getAttribute(name) || "" : "";
     };
+    const posterName = nameFromPosterFile(options.posterSrc);
+    const captionTitle = titleFromPhotoCaption(options.imageAlt, posterName);
     const candidates = [
         ["imageAlt", options.imageAlt],
         ["titleHint", options.titleHint],
@@ -758,14 +1069,15 @@ function pickSeriesTitle(html, options = {}) {
         ["og:title", attr('meta[property="og:title"]', "content")],
         ["h1", elementText(doc.querySelector("h1"))],
         ["title", elementText(doc.querySelector("title"))],
-        ["previous", options.previousName]
+        ["previous", options.previousName],
+        ["caption", captionTitle]
     ];
     const rejected = [];
     let firstNonEmpty = null;
     for (const [source, raw] of candidates) {
         const rawText = String(raw == null ? "" : raw).trim();
         if (!rawText) continue;
-        const value = stripSiteSuffix(clean(stripSiteSuffix(rawText)) || "");
+        const value = stripSiteSuffix(clean(stripSiteSuffix(stripImageArtifacts(rawText))) || "");
         if (isValidSeriesTitle(value)) return { title: value, source, rejected };
         rejected.push(value || rawText);
         if (firstNonEmpty == null && value) firstNonEmpty = { title: value, source };
@@ -814,5 +1126,7 @@ module.exports = {
     isValidSeriesTitle,
     stripSiteSuffix,
     pickSeriesTitle,
-    repairVideoNames
+    repairVideoNames,
+    archiveSeriesId,
+    normalizeCatalogUrl
 };
