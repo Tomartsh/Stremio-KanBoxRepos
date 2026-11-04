@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
+const {extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     PODCASTS,
@@ -45,7 +45,12 @@ class KanPodcastsScraper extends BaseScraper {
 
         try {
             // Fetch first page to get latest episode info
-            const firstPageDoc = await fetchData(pageUrl, false);
+            const loaded = await this.fetchCatalogDocument(pageUrl, false);
+            if (loaded.timeout) {
+                this.noteFailedSeries({ id: seriesId, link: pageUrl, name: title });
+                return false;
+            }
+            const firstPageDoc = loaded.doc;
             if (!firstPageDoc) {
                 logger.warn(`shouldScrapeSeriesQuickCheck => Could not fetch page for ${title}, will scrape`);
                 return true;
@@ -149,8 +154,8 @@ class KanPodcastsScraper extends BaseScraper {
         const title = series.title;
         const description = series.description || "";
 
-        // Generate numerical series ID using the utility function
-        const stremioId = utils.generateSeriesId(pageUrl, PODCASTS.SUBPREFIX, "0");
+        // Reuse the published id when this URL has no numeric id.
+        const stremioId = this.seriesIdFor(pageUrl, PODCASTS.SUBPREFIX, title);
         const podcastImageUrl = series.media_group?.[0]?.media_item?.[0]?.src || "";
 
         logger.debug(`processOneSeries => Processing: ${title} (OriginalID: ${programId}, StremioID: ${stremioId})`);
@@ -165,7 +170,12 @@ class KanPodcastsScraper extends BaseScraper {
         }
 
         try {
-            const episodes = await this.getEpisodes(programId, pageUrl);
+            const episodeResult = await this.getEpisodes(programId, pageUrl);
+            if (episodeResult && episodeResult.failed) {
+                this.noteFailedSeries({ id: stremioId, link: pageUrl, name: title });
+                return null;
+            }
+            const episodes = Array.isArray(episodeResult) ? episodeResult : [];
 
             if (episodes.length > 0) {
                 logger.debug(`processOneSeries => Found ${episodes.length} episodes for ${title}`);
@@ -250,10 +260,17 @@ class KanPodcastsScraper extends BaseScraper {
         while (hasMore) {
             logger.debug(`getAllSeries => Fetching from=${from}`);
 
-            const response = await fetchData(PODCASTS.BASE_MOB_API, true,
+            const loaded = await this.fetchCatalogDocument(
+                PODCASTS.BASE_MOB_API,
+                true,
                 { id: categoryId, from: from },
                 { 'User-Agent': PODCASTS.USER_AGENT }
             );
+            if (loaded.timeout) {
+                this.noteListingIncomplete(PODCASTS.BASE_MOB_API);
+                break;
+            }
+            const response = loaded.doc;
 
             if (!response) {
                 logger.warn("getAllSeries => Null response, stopping pagination");
@@ -312,7 +329,12 @@ class KanPodcastsScraper extends BaseScraper {
             const seenEpisodeLinks = new Set(); // Track unique episodes to detect duplicates
 
             // STEP 1: Fetch first page and detect total pages
-            const firstPageDoc = await fetchData(pageUrl, false);
+            const firstLoaded = await this.fetchCatalogDocument(pageUrl, false);
+            if (firstLoaded.timeout) {
+                logger.error(`getEpisodes => Timed out on the first page: ${pageUrl}`);
+                return { failed: true };
+            }
+            const firstPageDoc = firstLoaded.doc;
             if (!firstPageDoc) {
                 logger.error(`getEpisodes => Could not fetch first page: ${pageUrl}`);
                 return [];
@@ -339,7 +361,12 @@ class KanPodcastsScraper extends BaseScraper {
                     const pageUrl_withParams = `${pageUrl}?page=${pageNum}`;
                     logger.trace(`getEpisodes => Fetching: ${pageUrl_withParams}`);
 
-                    pageDoc = await fetchData(pageUrl_withParams, false);
+                    const pageLoaded = await this.fetchCatalogDocument(pageUrl_withParams, false);
+                    if (pageLoaded.timeout) {
+                        logger.error(`getEpisodes => Timed out on page ${pageNum}: ${pageUrl_withParams}`);
+                        return { failed: true };
+                    }
+                    pageDoc = pageLoaded.doc;
                     if (!pageDoc) {
                         logger.warn(`getEpisodes => Could not fetch page ${pageNum}, skipping`);
                         continue;

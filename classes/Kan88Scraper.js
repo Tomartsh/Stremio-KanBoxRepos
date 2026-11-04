@@ -35,7 +35,6 @@ class Kan88Scraper extends BaseScraper {
 
         // Initialize Kan88-specific properties
         this._kanPodcastsJSONObj = {};
-        this.seriesIdIterator = 11000;
     }
 
     /**
@@ -120,7 +119,7 @@ class Kan88Scraper extends BaseScraper {
         var genres = ["music","מוסיקה"];
 
         //set ID
-        var id = utils.generateSeriesId(podcastLink, SUB_PREFIX);
+        var id = this.seriesIdFor(podcastLink, SUB_PREFIX, parsedSeries.title);
 
         //set thumbnail image
         var podcastImageUrl = parsedSeries.imageSrc

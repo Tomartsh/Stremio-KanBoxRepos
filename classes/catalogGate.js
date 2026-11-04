@@ -12,6 +12,12 @@ const axios = require("axios");
 const AdmZip = require("adm-zip");
 const { KAN_SESSION, URL_JSON_BASE, SAVE_FOLDER } = require("./constants");
 const { isKanBlockedError, isKanBrowserError } = require("./kanSession");
+const {
+    normalizeSeriesLink,
+    normalizeSeriesName,
+    buildSeriesIdentityIndex,
+    matchSeriesIdentity
+} = require("./seriesIdentity");
 
 const PARTIAL_INCREMENTAL_SCRAPERS = new Set(["Kan88", "KanPodcasts"]);
 
@@ -56,6 +62,7 @@ function measureCatalog(root) {
         }
         perSeries[id] = {
             name: value.name || (value.meta && value.meta.name) || "",
+            link: value.link || (value.meta && value.meta.link) || "",
             videos: count
         };
     }
@@ -104,9 +111,44 @@ function formatCatalogComparison(scraperName, counts, previous) {
 
 function seriesVideoDrops(previous, counts) {
     if (!previous || !previous.perSeries || !counts || !counts.perSeries) return [];
+    const byLink = new Map();
+    const byName = new Map();
+    for (const [id, next] of Object.entries(counts.perSeries)) {
+        const link = normalizeSeriesLink(next && next.link);
+        const name = normalizeSeriesName(next && next.name);
+        const record = {
+            id,
+            name: (next && next.name) || "",
+            link,
+            videos: next ? next.videos : 0
+        };
+        if (link && !byLink.has(link)) byLink.set(link, record);
+        if (name && !byName.has(name)) byName.set(name, record);
+    }
+    const consumed = new Set();
     const drops = [];
     for (const [id, prev] of Object.entries(previous.perSeries)) {
-        const next = counts.perSeries[id];
+        let next = null;
+        if (counts.perSeries[id] && !consumed.has(id)) {
+            const same = counts.perSeries[id];
+            next = {
+                id,
+                name: same.name || "",
+                link: normalizeSeriesLink(same.link),
+                videos: same.videos
+            };
+        } else {
+            const link = normalizeSeriesLink(prev && prev.link);
+            const name = normalizeSeriesName(prev && prev.name);
+            let hit = link ? byLink.get(link) : null;
+            if (hit && consumed.has(hit.id)) hit = null;
+            if (!hit && name) {
+                const named = byName.get(name);
+                if (named && !consumed.has(named.id)) hit = named;
+            }
+            if (hit) next = hit;
+        }
+        if (next && next.id) consumed.add(next.id);
         const previousCount = Number(prev && prev.videos) || 0;
         const currentCount = next ? (Number(next.videos) || 0) : 0;
         if (currentCount >= previousCount) continue;
@@ -169,6 +211,56 @@ function recoverCatalogAfterBudget(previousRoot, scrapedRoot) {
         data[id] = series;
     }
     return { data, counts: measureCatalog({ data }) };
+}
+
+/**
+ * Put previous episodes back after a page timeout.
+ *
+ * A listing timeout keeps every published series this run did not finish,
+ * because the run cannot tell a slow page from a series that left the lobby.
+ * The next listing fetch that succeeds drops a series that is really gone.
+ * A series-page timeout keeps that series only. A page that loads and lists
+ * fewer episodes, or a series missing from a listing that did load, is left
+ * as scraped so the video gate can still refuse a real removal.
+ */
+function restoreFailedFetches(previousRoot, scrapedRoot, options = {}) {
+    const listingIncomplete = !!(options && options.listingIncomplete);
+    const failedSeries = (options && options.failedSeries) || [];
+    if (!listingIncomplete && failedSeries.length === 0) return null;
+    const previous = seriesEntries(previousRoot);
+    if (previous.length === 0) return null;
+
+    const data = {};
+    for (const [id, series] of seriesEntries(scrapedRoot)) data[id] = series;
+    const scrapedIndex = buildSeriesIdentityIndex({ data });
+    const previousIndex = buildSeriesIdentityIndex(previousRoot);
+
+    const present = (id, link) => {
+        if (id && Object.prototype.hasOwnProperty.call(data, id)) return true;
+        if (link && scrapedIndex.byLink.has(link)) return true;
+        return false;
+    };
+    let restored = 0;
+    const add = (id, series) => {
+        const canonicalId = String((series && series.id) || id);
+        const link = normalizeSeriesLink(series && (series.link || (series.meta && series.meta.link)));
+        if (present(canonicalId, link)) return;
+        data[canonicalId] = JSON.parse(JSON.stringify(series));
+        scrapedIndex.byId.set(canonicalId, { id: canonicalId, link, series });
+        if (link) scrapedIndex.byLink.set(link, { id: canonicalId, link, series });
+        restored += 1;
+    };
+
+    if (listingIncomplete) {
+        for (const [id, series] of previous) add(id, series);
+    }
+    for (const failure of failedSeries) {
+        const matched = matchSeriesIdentity(previousIndex, failure || {});
+        if (!matched) continue;
+        add(matched.id, matched.series);
+    }
+    if (restored === 0) return null;
+    return { data, counts: measureCatalog({ data }), restored };
 }
 
 function shouldRecoverAfterBudget({ scrapeError = null, blocked = false, http403 = 0 } = {}) {
@@ -434,5 +526,6 @@ module.exports = {
     loadPreviousCatalog,
     loadPreviousCatalogCounts,
     recoverCatalogAfterBudget,
-    shouldRecoverAfterBudget
+    shouldRecoverAfterBudget,
+    restoreFailedFetches
 };

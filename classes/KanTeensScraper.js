@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
+const {extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     HINUKHIT,
@@ -10,6 +10,17 @@ const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
 var logger = log4js.getLogger("KanTeensScraper");
+
+function kidsContentUrl(url) {
+    const value = String(url || "");
+    if (/^https?:\/\//i.test(value)) return value;
+    return HINUKHIT.URL_KIDS_CONTENT_PREFIX + value;
+}
+
+function lobbySeriesName(series) {
+    if (!series) return "";
+    return series.Name || series.Title || series.ImageAlt || series.title || "";
+}
 
 class KanTeensScraper extends BaseScraper {
 
@@ -51,8 +62,15 @@ class KanTeensScraper extends BaseScraper {
         logger.debug("crawlTeens => Starting retrieval of Teens series");
 
         var subType = "n";
-        var doc = await fetchData(HINUKHIT.URL_TEENS);
-        var teensJsonArr = extractLobbySeries(doc);
+        var loaded = await this.fetchCatalogDocument(HINUKHIT.URL_TEENS);
+        if (loaded.timeout) {
+            this.noteListingIncomplete(HINUKHIT.URL_TEENS);
+            return;
+        }
+        if (!loaded.doc) {
+            throw new Error("Lobby page did not load");
+        }
+        var teensJsonArr = extractLobbySeries(loaded.doc);
 
         // Process teens series using batch processor
         logger.info(`crawlTeens => Found ${teensJsonArr.length} teens series to process`);
@@ -71,15 +89,21 @@ class KanTeensScraper extends BaseScraper {
     async processOneTeensSeries(series, subType) {
         var imgUrl = utils.getImageFromUrl(series.Image, subType);
 
-        var seriesPage = HINUKHIT.URL_KIDS_CONTENT_PREFIX + series.Url;
+        var seriesPage = kidsContentUrl(series.Url);
         var genres = utils.setGenreFromString(series.Genres);
-        var id = utils.generateSeriesId(seriesPage, HINUKHIT.SUBPREFIX_TEENS);
+        var seriesName = lobbySeriesName(series);
+        var id = this.seriesIdFor(seriesPage, HINUKHIT.SUBPREFIX_TEENS, seriesName);
         logger.debug(`processOneTeensSeries => seriesPage is ${series.Url}`);
-        var doc2 = await fetchData(seriesPage + "?currentPage=2&itemsToShow=500");
-        if (doc2 == undefined){
-            logger.warn(`processOneTeensSeries => Could not fetch page for ${series.Url}`);
+        var loaded = await this.fetchCatalogDocument(seriesPage + "?currentPage=2&itemsToShow=500");
+        if (!loaded.doc || typeof loaded.doc.querySelector !== "function") {
+            if (loaded.timeout) {
+                this.noteFailedSeries({ id, link: seriesPage, name: seriesName });
+            } else {
+                logger.warn(`processOneTeensSeries => Could not fetch page for ${series.Url}`);
+            }
             return null;
         }
+        var doc2 = loaded.doc;
 
         //set the series name
         var seriesTitle = this.getEducationalTitle(doc2);
@@ -123,15 +147,21 @@ class KanTeensScraper extends BaseScraper {
         logger.trace("crawlKanBox => Entering");
         logger.info("crawlKanBox => Starting Kan-Box scraping for category: ילדים ונוער");
 
-        const { parse } = require('node-html-parser');
         const { KAN_BOX_URL, KAN_DIGITAL_IMAGE_PREFIX } = require("./constants");
 
         try {
             // Fetch Kan-Box lobby page
             logger.info(`crawlKanBox => Fetching: ${KAN_BOX_URL}`);
-            const response = await fetchData(KAN_BOX_URL, false);
-            const html = response;
-            const root = parse(html);
+            const loaded = await this.fetchCatalogDocument(KAN_BOX_URL, false);
+            if (loaded.timeout) {
+                this.noteListingIncomplete(KAN_BOX_URL);
+                return;
+            }
+            if (!loaded.doc || typeof loaded.doc.querySelectorAll !== "function") {
+                logger.warn(`crawlKanBox => Could not fetch ${KAN_BOX_URL}`);
+                return;
+            }
+            const root = loaded.doc;
 
             // Find all block-list items (categories)
             const blockLists = root.querySelectorAll('.block-list');
@@ -188,7 +218,7 @@ class KanTeensScraper extends BaseScraper {
                 }
 
                 // Generate series ID to check for duplicates
-                const seriesId = utils.generateSeriesId(fullSeriesUrl, HINUKHIT.SUBPREFIX_TEENS);
+                const seriesId = this.seriesIdFor(fullSeriesUrl, HINUKHIT.SUBPREFIX_TEENS);
 
                 // Check if this series already exists in our catalog
                 if (this._jsonObj.hasOwnProperty(seriesId)) {
@@ -236,6 +266,7 @@ class KanTeensScraper extends BaseScraper {
      * @returns String of the series title
      */
     getEducationalTitle(doc){
+        if (!doc || typeof doc.querySelector !== "function") return "";
         var seriesTitle = "";
         if (doc.querySelector("title") != undefined){
             seriesTitle = utils.getNameFromSeriesPage(doc.querySelector("title").text.trim());

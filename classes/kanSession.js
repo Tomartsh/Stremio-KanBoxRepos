@@ -108,6 +108,19 @@ function isKanBrowserError(error) {
     return !!(error && (error.code === "BROWSER" || error.name === "KanBrowserError"));
 }
 
+function isTimeoutError(error) {
+    if (!error) return false;
+    const code = String(error.code || "").toUpperCase();
+    const name = String(error.name || "");
+    if (code === "ECONNABORTED" || code === "ETIMEDOUT" || code === "ESOCKETTIMEDOUT" || code === "ERR_CANCELED") {
+        return true;
+    }
+    if (code.startsWith("UND_ERR_") && code.includes("TIMEOUT")) return true;
+    if (name === "TimeoutError") return true;
+    const message = String(error.message || "");
+    return /timeout/i.test(message) && !/time budget/i.test(message);
+}
+
 function isKanHost(hostname) {
     if (!hostname) return false;
     const host = String(hostname).toLowerCase();
@@ -235,16 +248,7 @@ class KanSession {
         if (timing.budgetMs != null) this._throwIfBudgetSpent(timing, "before request");
         await this._pace();
 
-        let first;
-        try {
-            first = await this._attempt(url, options);
-        } catch (error) {
-            if (isKanBlockedError(error) || isKanBudgetError(error) || isKanBrowserError(error)) throw error;
-            if (isBrowserUnavailableError(error)) throw this._failBrowser(url, error);
-            if (error.statusCode && error.statusCode < 500) throw error;
-            await this.sleep(jitterMs([400, 900], this.random));
-            first = await this._attempt(url, options);
-        }
+        const first = await this._attemptResilient(url, options, timing);
 
         if (!first.blocked) {
             await this._afterSuccessfulPage(url, timing);
@@ -286,17 +290,7 @@ class KanSession {
 
         let blockRound = 0;
         while (true) {
-            let outcome;
-            try {
-                outcome = await this._attempt(url, options);
-            } catch (error) {
-                if (isKanBlockedError(error) || isKanBudgetError(error) || isKanBrowserError(error)) throw error;
-                if (isBrowserUnavailableError(error)) throw this._failBrowser(url, error);
-                if (error.statusCode && error.statusCode < 500) throw error;
-                const gap = jitterMs([400, 900], this.random);
-                await this._sleepBudgeted(gap, "transient retry", timing);
-                outcome = await this._attempt(url, options);
-            }
+            const outcome = await this._attemptResilient(url, options, timing);
 
             if (!outcome.blocked) {
                 await this._afterSuccessfulPage(url, timing);
@@ -327,6 +321,54 @@ class KanSession {
             this._pushProgress({ type: "block", url, ms: backoff, retry: blockRound, pages, budgetLeftMs: left });
             await this._sleepBudgeted(backoff, "403 backoff, then resume this page", timing);
             this.transport = "browser";
+        }
+    }
+
+    async _sleepForRetry(ms, reason, timing) {
+        if (ms <= 0) return;
+        if (timing && timing.budgetMs != null) {
+            await this._sleepBudgeted(ms, reason, timing);
+            return;
+        }
+        await this.sleep(ms);
+    }
+
+    /**
+     * Thrown timeouts get three attempts with a growing pause. Other transient
+     * errors keep the old single retry. HTTP 404 is not retried: a missing
+     * page is not a slow page.
+     */
+    async _attemptResilient(url, options, timing) {
+        const timeoutAttempts = Number(this.config.TIMEOUT_ATTEMPTS) || 3;
+        const timeoutBackoff = Array.isArray(this.config.TIMEOUT_BACKOFF_MS) && this.config.TIMEOUT_BACKOFF_MS.length
+            ? this.config.TIMEOUT_BACKOFF_MS
+            : [2000, 4000];
+        const transientAttempts = 2;
+        let timeoutFailures = 0;
+        let transientFailures = 0;
+        while (true) {
+            try {
+                return await this._attempt(url, options);
+            } catch (error) {
+                if (isKanBlockedError(error) || isKanBudgetError(error) || isKanBrowserError(error)) throw error;
+                if (isBrowserUnavailableError(error)) throw this._failBrowser(url, error);
+                if (error.statusCode === 404 || error.statusCode === 410) throw error;
+                if (isTimeoutError(error)) {
+                    timeoutFailures += 1;
+                    if (timeoutFailures >= timeoutAttempts) throw error;
+                    const gap = timeoutBackoff[Math.min(timeoutFailures, timeoutBackoff.length) - 1]
+                        || timeoutBackoff[timeoutBackoff.length - 1];
+                    logger.warn(`kanSession => Timeout on ${url} (attempt ${timeoutFailures} of ${timeoutAttempts}). Retrying in ${gap}ms.`);
+                    await this._sleepForRetry(gap, "timeout retry", timing);
+                    continue;
+                }
+                if (error.statusCode && error.statusCode < 500) throw error;
+                transientFailures += 1;
+                if (transientFailures >= transientAttempts) throw error;
+                const gap = jitterMs([400, 900], this.random);
+                logger.warn(`kanSession => Transient error on ${url} (attempt ${transientFailures} of ${transientAttempts}): ${error.message}`);
+                await this._sleepForRetry(gap, "transient retry", timing);
+            }
         }
     }
 
@@ -878,6 +920,7 @@ module.exports = {
     isKanBlockedError,
     isKanBudgetError,
     isKanBrowserError,
+    isTimeoutError,
     isKanHost,
     isChallengeDocument,
     isHttpBlocked,
