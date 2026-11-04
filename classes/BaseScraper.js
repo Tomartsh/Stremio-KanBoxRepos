@@ -18,8 +18,10 @@ const {
     loadPreviousCatalog,
     loadPreviousCatalogCounts,
     recoverCatalogAfterBudget,
-    shouldRecoverAfterBudget
+    shouldRecoverAfterBudget,
+    restoreFailedFetches
 } = require("./catalogGate.js");
+const { buildSeriesIdentityIndex } = require("./seriesIdentity.js");
 const StateManager = require("./StateManager.js");
 const log4js = require("log4js");
 
@@ -99,6 +101,11 @@ class BaseScraper {
             this.setDatabaseKey(options.databaseKey);
         }
 
+        this._failedSeries = [];
+        this._listingIncomplete = false;
+        this._seriesIndex = null;
+        this._previousCatalogResolved = false;
+
         this.logger.info(`${scraperName} initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
     }
 
@@ -162,6 +169,7 @@ class BaseScraper {
         if (this.incrementalMode) {
             await this.initializeStateManager();
         }
+        await this.loadSeriesIdentityIndex();
 
         let scrapeError = null;
         try {
@@ -175,7 +183,6 @@ class BaseScraper {
         this.logger.info("Done Crawling");
         this.logger.info("Delta Summary:", JSON.stringify(this.deltaTracker.getSummary()));
 
-        let counts = measureCatalog(this._jsonObj);
         const runState = getKanRunState() || {};
         const allowEmpty = process.env.ALLOW_EMPTY_PUBLISH === "true";
         const blocked = !!(runState.blocked || runState.http403 > 0);
@@ -186,14 +193,23 @@ class BaseScraper {
             const recovered = await this.mergeWithPreviousAfterBudget();
             if (recovered) {
                 this._jsonObj = recovered.data;
-                counts = recovered.counts;
                 this.logger.warn(
                     `${this.scraperName} => Time budget exhausted. Merged this run with the previous catalog ` +
-                    `(${counts.series} series, ${counts.videos} videos). The video-count gate still applies.`
+                    `(${recovered.counts.series} series, ${recovered.counts.videos} videos). The video-count gate still applies.`
                 );
                 scrapeError = null;
             }
+        } else if (!scrapeError && !blocked && this._needsFailedFetchRestore()) {
+            const restored = await this.restoreEpisodesAfterFailedFetches();
+            if (restored) {
+                this._jsonObj = restored.data;
+                this.logger.warn(
+                    `${this.scraperName} => Kept ${restored.restored} series from the previous catalog after a page timeout. ` +
+                    `A series that loads with fewer episodes, or that is missing from a listing that did load, is not filled back in.`
+                );
+            }
         }
+        let counts = measureCatalog(this._jsonObj);
         let previous = null;
         if (!scrapeError && !blocked && counts.series > 0) {
             previous = await this.loadPreviousCounts();
@@ -522,16 +538,10 @@ class BaseScraper {
     async loadPreviousCounts() {
         if (this.previousCountsOverride !== undefined) return this.previousCountsOverride;
         try {
-            let catalog = this.previousCatalogCache;
-            if (!catalog || !catalog.root) {
-                catalog = await loadPreviousCatalog(this.getExportFilename(), {
-                    logger: this.logger,
-                    remote: this.previousCatalogRemote
-                });
-                if (catalog) this.previousCatalogCache = catalog;
-            }
-            if (catalog && catalog.root) {
-                const measured = measureCatalog(catalog.root);
+            const catalog = await this._previousCatalog();
+            const root = catalog && (catalog.root || catalog);
+            if (root) {
+                const measured = measureCatalog(root);
                 if (measured.series > 0) return measured;
             }
         } catch (error) {
@@ -539,8 +549,102 @@ class BaseScraper {
         }
         return loadPreviousCatalogCounts(this.getExportFilename(), {
             databaseKey: this.getDatabaseKey(),
-            logger: this.logger
+            logger: this.logger,
+            remote: this.previousCatalogRemote
         });
+    }
+
+    async _previousCatalog() {
+        if (this.previousCatalogOverride !== undefined) return this.previousCatalogOverride;
+        if (this._previousCatalogResolved) return this.previousCatalogCache || null;
+        this._previousCatalogResolved = true;
+        try {
+            const catalog = await loadPreviousCatalog(this.getExportFilename(), {
+                logger: this.logger,
+                remote: this.previousCatalogRemote
+            });
+            this.previousCatalogCache = catalog;
+            return catalog;
+        } catch (error) {
+            this.logger.warn(`${this.scraperName} => Could not read the previous catalog: ${error.message}`);
+            this.previousCatalogCache = null;
+            return null;
+        }
+    }
+
+    /**
+     * Published series ids, indexed by link and name, so a slug URL keeps
+     * the id Stremio already stored.
+     */
+    async loadSeriesIdentityIndex() {
+        this._seriesIndex = null;
+        try {
+            const catalog = await this._previousCatalog();
+            if (!catalog) {
+                this.logger.warn(
+                    `${this.scraperName} => No previous catalog. A series URL with no numeric id will get a new deterministic id.`
+                );
+                return;
+            }
+            const root = catalog.root || catalog;
+            this._seriesIndex = buildSeriesIdentityIndex(root);
+        } catch (error) {
+            this.logger.warn(`${this.scraperName} => Could not index the previous catalog for stable series ids: ${error.message}`);
+        }
+    }
+
+    seriesIdFor(link, subPrefix, name) {
+        const { generateSeriesId } = require("./utilities.js");
+        return generateSeriesId(link, subPrefix, "0", {
+            name: name || "",
+            previousIndex: this._seriesIndex
+        });
+    }
+
+    async fetchCatalogDocument(url, asJson = false, params = {}, headers) {
+        const { fetchDataResult } = require("./utilities.js");
+        if (headers === undefined) return fetchDataResult(url, asJson, params);
+        return fetchDataResult(url, asJson, params, headers);
+    }
+
+    noteFailedSeries(identity) {
+        if (!identity) return;
+        this._failedSeries.push({
+            id: identity.id || "",
+            link: identity.link || "",
+            name: identity.name || ""
+        });
+        this.logger.warn(
+            `${this.scraperName} => Page timed out for ${identity.link || identity.id || identity.name}. ` +
+            "Previous episodes will be kept if this series was already published."
+        );
+    }
+
+    noteListingIncomplete(url) {
+        this._listingIncomplete = true;
+        this.logger.warn(
+            `${this.scraperName} => Listing page timed out (${url}). Series this run did not finish keep their previous episodes.`
+        );
+    }
+
+    _needsFailedFetchRestore() {
+        return this._listingIncomplete || (this._failedSeries && this._failedSeries.length > 0);
+    }
+
+    async restoreEpisodesAfterFailedFetches() {
+        if (!this._needsFailedFetchRestore()) return null;
+        try {
+            const catalog = await this._previousCatalog();
+            if (!catalog) return null;
+            const root = catalog.root || catalog;
+            return restoreFailedFetches(root, this._jsonObj, {
+                listingIncomplete: this._listingIncomplete,
+                failedSeries: this._failedSeries
+            });
+        } catch (error) {
+            this.logger.warn(`${this.scraperName} => Could not keep previous episodes after a timeout: ${error.message}`);
+            return null;
+        }
     }
 
     /**
@@ -551,16 +655,10 @@ class BaseScraper {
      */
     async mergeWithPreviousAfterBudget() {
         try {
-            let catalog = this.previousCatalogCache;
-            if (!catalog || !catalog.data) {
-                catalog = await loadPreviousCatalog(this.getExportFilename(), {
-                    logger: this.logger,
-                    remote: this.previousCatalogRemote
-                });
-                if (catalog) this.previousCatalogCache = catalog;
-            }
+            const catalog = await this._previousCatalog();
             if (!catalog) return null;
-            return recoverCatalogAfterBudget(catalog.root, this._jsonObj);
+            const root = catalog.root || catalog;
+            return recoverCatalogAfterBudget(root, this._jsonObj);
         } catch (error) {
             this.logger.warn(`${this.scraperName} => Could not merge the previous catalog after the time budget: ${error.message}`);
             return null;

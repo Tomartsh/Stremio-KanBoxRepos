@@ -9,8 +9,10 @@ const {
     getKanRunState,
     getKanSession,
     closeKanSession,
-    isKanHost
+    isKanHost,
+    isTimeoutError
 } = require("../classes/kanSession");
+const { KAN_SESSION } = require("../classes/constants");
 
 const PAGE = "https://www.kan.org.il/content/kan/kan-11/p-11766/?page=1&itemsToShow=1000";
 const HTML = "<html><body><h1>כאן 11</h1></body></html>";
@@ -251,6 +253,76 @@ test("a missing browser is not reported as a Cloudflare challenge", async () => 
     assert.doesNotMatch(seen.error.message, /CLOUDFLARE CHALLENGE/);
     assert.notEqual(seen.state.blocked, true);
     await session.close();
+});
+
+function timeoutError() {
+    const error = new Error("timeout of 45000ms exceeded");
+    error.code = "ECONNABORTED";
+    return error;
+}
+
+test("a kan timeout is retried with backoff and then succeeds", async () => {
+    assert.equal(KAN_SESSION.REQUEST_TIMEOUT_MS, 45000);
+    assert.equal(KAN_SESSION.TIMEOUT_ATTEMPTS, 3);
+    assert.equal(isTimeoutError(timeoutError()), true);
+    assert.equal(isTimeoutError(Object.assign(new Error("HTTP 404"), { statusCode: 404 })), false);
+
+    let calls = 0;
+    const seenTimeouts = [];
+    const client = {
+        async get(url, config) {
+            calls += 1;
+            seenTimeouts.push(config.timeout);
+            if (calls < 3) throw timeoutError();
+            return { status: 200, data: HTML };
+        }
+    };
+    const { session, sleeps } = immediateSession({ client });
+    const doc = await session.fetch("https://www.kankids.org.il/lobby-kids/tiny/");
+    assert.equal(typeof doc.querySelector, "function");
+    assert.equal(calls, 3);
+    assert.deepEqual(seenTimeouts, [45000, 45000, 45000]);
+    assert.deepEqual(sleeps, [1000, 2000, 4000]);
+    await session.close();
+});
+
+test("a kan timeout gives up after three attempts", async () => {
+    let calls = 0;
+    const client = {
+        async get() {
+            calls += 1;
+            throw timeoutError();
+        }
+    };
+    const { session, sleeps } = immediateSession({ client });
+    const error = await session.fetch("https://www.kan.org.il/content/kan/podcasts/blockbuster/").catch((caught) => caught);
+    assert.match(error.message, /timeout/);
+    assert.equal(calls, 3);
+    assert.deepEqual(sleeps, [1000, 2000, 4000]);
+    await session.close();
+});
+
+test("HTTP 404 is not retried and HTTP 500 is retried once", async () => {
+    const missing = scriptedClient([
+        { status: 404, data: "missing" },
+        { status: 404, data: "missing" }
+    ]);
+    const missingSession = immediateSession({ client: missing });
+    const missingError = await missingSession.session.fetch("https://www.kankids.org.il/missing").catch((caught) => caught);
+    assert.match(missingError.message, /404/);
+    assert.equal(missing.calls.length, 1);
+    await missingSession.session.close();
+
+    const failed = scriptedClient([
+        { status: 500, data: "down" },
+        { status: 500, data: "down" },
+        { status: 500, data: "down" }
+    ]);
+    const failedSession = immediateSession({ client: failed });
+    const failedError = await failedSession.session.fetch("https://www.kan.org.il/lobby/kan-box/").catch((caught) => caught);
+    assert.match(failedError.message, /500/);
+    assert.equal(failed.calls.length, 2);
+    await failedSession.session.close();
 });
 
 test("the process exposes one shared Kan session", async () => {

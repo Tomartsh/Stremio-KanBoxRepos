@@ -75,7 +75,6 @@ class KanDigitalScraper extends BaseScraper {
 
         // Initialize KanDigital-specific properties
         this._kanDigitalJSONObj = {};
-        this.seriesIdIterator = 1000;
 
         // Source tracking counters (Kan 11 lobby vs Kan-Box)
         this._sourceCounts = {
@@ -151,12 +150,15 @@ class KanDigitalScraper extends BaseScraper {
         if (this.previousCatalogOverride === null) return;
         try {
             let loaded = this.previousCatalogOverride;
-            if (loaded === undefined) {
+            if (loaded === undefined && this._previousCatalogResolved) {
+                loaded = this.previousCatalogCache;
+            } else if (loaded === undefined) {
                 loaded = await loadPreviousCatalog(this.getExportFilename(), {
                     logger: this.logger,
                     remote: this.previousCatalogRemote
                 });
                 this.previousCatalogCache = loaded;
+                this._previousCatalogResolved = true;
             }
             const data = loaded && loaded.data;
             if (!data) return;
@@ -376,7 +378,7 @@ class KanDigitalScraper extends BaseScraper {
                 const fullSeriesUrl = entry.seriesUrl;
                 if (!fullSeriesUrl) continue;
 
-                const seriesId = utils.generateSeriesId(fullSeriesUrl, SUB_PREFIX);
+                const seriesId = this.seriesIdFor(fullSeriesUrl, SUB_PREFIX);
 
                 // Seeded catalog rows are not duplicates. Skip only a series
                 // the Kan 11 lobby already handled in this run.
@@ -450,7 +452,7 @@ class KanDigitalScraper extends BaseScraper {
         }
         if (pageUrl.startsWith("/")) { pageUrl = KAN_URL_ADDRESS + pageUrl; }
 
-        var id = utils.generateSeriesId(pageUrl, SUB_PREFIX);
+        var id = this.seriesIdFor(pageUrl, SUB_PREFIX, item.ImageAlt || item.TitleHint || "");
         var imgUrl = KAN_DIGITAL_IMAGE_PREFIX + item.Image;
         this.noteHandled(id);
 

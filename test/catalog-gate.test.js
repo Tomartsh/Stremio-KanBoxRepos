@@ -17,7 +17,9 @@ const {
     readLocalCatalogCounts,
     loadPreviousCatalog,
     recoverCatalogAfterBudget,
-    shouldRecoverAfterBudget
+    shouldRecoverAfterBudget,
+    seriesVideoDrops,
+    restoreFailedFetches
 } = require("../classes/catalogGate");
 
 const PREVIOUS = { series: 40, videos: 2168 };
@@ -368,6 +370,153 @@ test("the publish gate compares series, videos, and uncompressed JSON, not the Z
     assert.equal(measured.videos, 2);
     assert.equal(measured.described, 1);
     assert.ok(measured.jsonBytes > 0);
+});
+
+test("an id shift is not a drop when the link or the name still matches", () => {
+    const previous = {
+        series: 4,
+        videos: 89,
+        jsonBytes: 500000,
+        described: 89,
+        perSeries: {
+            il_kan_kids_1019: {
+                name: "הגינה של תמרי",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/",
+                videos: 20
+            },
+            il_kan_kids_1020: {
+                name: "בלואי",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/",
+                videos: 13
+            },
+            il_kan_kids_1021: {
+                name: "פרפר נחמד",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad/",
+                videos: 30
+            },
+            il_kan_kids_1022: {
+                name: "צ'רלי ולולה",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/charlie_and_lola/",
+                videos: 26
+            }
+        }
+    };
+    const shifted = {
+        series: 4,
+        videos: 89,
+        jsonBytes: 500000,
+        described: 89,
+        perSeries: {
+            il_kan_kids_1000: {
+                name: "הגינה של תמרי",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden",
+                videos: 20
+            },
+            il_kan_kids_1001: {
+                name: "בלואי",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/bluey",
+                videos: 13
+            },
+            il_kan_kids_1002: {
+                name: "פרפר נחמד",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad/",
+                videos: 30
+            },
+            il_kan_kids_1003: {
+                name: "צ'רלי ולולה",
+                link: "https://www.kankids.org.il/content/kids/somewhere-else/charlie/",
+                videos: 26
+            }
+        }
+    };
+    const kept = decidePublish({
+        scraperName: "KanKids",
+        exportFilename: "stremio-kankids",
+        counts: shifted,
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(kept.published, true);
+    assert.equal(kept.seriesDrops.length, 0);
+
+    const removed = decidePublish({
+        scraperName: "KanKids",
+        exportFilename: "stremio-kankids",
+        counts: {
+            series: 3,
+            videos: 69,
+            jsonBytes: 400000,
+            described: 69,
+            perSeries: {
+                il_kan_kids_1001: shifted.perSeries.il_kan_kids_1001,
+                il_kan_kids_1002: shifted.perSeries.il_kan_kids_1002,
+                il_kan_kids_1003: shifted.perSeries.il_kan_kids_1003
+            }
+        },
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(removed.published, false);
+    assert.equal(removed.seriesDrops.length, 1);
+    assert.equal(removed.seriesDrops[0].id, "il_kan_kids_1019");
+    assert.equal(removed.seriesDrops[0].previous, 20);
+    assert.equal(removed.seriesDrops[0].current, 0);
+    assert.equal(removed.seriesDrops.some((drop) => drop.name === "בלואי"), false);
+
+    const byNameOnly = seriesVideoDrops(
+        { perSeries: { il_kan_kids_1020: { name: "בלואי", videos: 13 } } },
+        { perSeries: { il_kan_kids_1001: { name: "בלואי", videos: 13 } } }
+    );
+    assert.equal(byNameOnly.length, 0);
+});
+
+test("a timed-out series keeps its previous episodes and a removed series does not", () => {
+    const previous = {
+        data: {
+            il_kan_kids_1020: {
+                id: "il_kan_kids_1020",
+                name: "בלואי",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/bluey/",
+                meta: { videos: [{ id: "old-1" }, { id: "old-2" }, { id: "old-3" }] }
+            },
+            il_kan_kids_1021: {
+                id: "il_kan_kids_1021",
+                name: "פרפר נחמד",
+                link: "https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad/",
+                meta: { videos: [{ id: "keep" }] }
+            },
+            il_kan_teens_1000: {
+                id: "il_kan_teens_1000",
+                name: "הסדרתיים",
+                link: "https://www.kankids.org.il/content/kids/hinuchit-main/the_serials/",
+                meta: { videos: [{ id: "gone" }] }
+            }
+        }
+    };
+    const scraped = {
+        il_kan_kids_1021: {
+            id: "il_kan_kids_1021",
+            name: "פרפר נחמד",
+            link: "https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad",
+            meta: { videos: [{ id: "new-1" }, { id: "new-2" }] }
+        }
+    };
+    const restored = restoreFailedFetches(previous, scraped, {
+        failedSeries: [{
+            link: "https://www.kankids.org.il/content/kids/ktantanim-main/bluey",
+            name: "בלואי"
+        }]
+    });
+    assert.equal(restored.restored, 1);
+    assert.equal(restored.data.il_kan_kids_1020.meta.videos.length, 3);
+    assert.equal(restored.data.il_kan_kids_1021.meta.videos.length, 2);
+    assert.equal(restored.data.il_kan_teens_1000, undefined);
+
+    const listing = restoreFailedFetches(previous, scraped, { listingIncomplete: true });
+    assert.equal(listing.data.il_kan_kids_1020.meta.videos.length, 3);
+    assert.equal(listing.data.il_kan_teens_1000.meta.videos.length, 1);
+    assert.equal(listing.data.il_kan_kids_1021.name, "פרפר נחמד");
+    assert.equal(listing.data.il_kan_kids_1021.meta.videos[0].id, "new-1");
 });
 
 test("local zip counts are read from the output directory", () => {

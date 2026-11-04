@@ -69,7 +69,11 @@ module.exports = {
         // The shorter CHALLENGE_WAIT_MS is only the fallback when the page
         // cannot wait on its own.
         CHALLENGE_TIMEOUT_MS: 30000,
-        REQUEST_TIMEOUT_MS: 20000,
+        // Kan pages sometimes take longer than 20s without being a Cloudflare
+        // block. Three attempts, with a pause between them, live in kanSession.
+        REQUEST_TIMEOUT_MS: 45000,
+        TIMEOUT_ATTEMPTS: 3,
+        TIMEOUT_BACKOFF_MS: [2000, 4000],
         VIDEO_KEEP_RATIO: 0.85,
         // An incremental run that still has this fraction of the previous
         // series count is a full catalog, so the video check applies to it.

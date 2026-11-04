@@ -1,5 +1,5 @@
 const utils = require("./utilities.js");
-const {fetchData, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
+const {DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const {
     LOG4JS,
     HINUKHIT,
@@ -10,6 +10,17 @@ const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
 var logger = log4js.getLogger("KanKidsScraper");
+
+function kidsContentUrl(url) {
+    const value = String(url || "");
+    if (/^https?:\/\//i.test(value)) return value;
+    return HINUKHIT.URL_KIDS_CONTENT_PREFIX + value;
+}
+
+function lobbySeriesName(series) {
+    if (!series) return "";
+    return series.Name || series.Title || series.ImageAlt || series.title || "";
+}
 
 class KanKidsScraper extends BaseScraper {
 
@@ -42,8 +53,15 @@ class KanKidsScraper extends BaseScraper {
         logger.debug("crawlKids => Starting retrieval of Tiny series");
 
         var subType = "k";
-        var doc = await fetchData(HINUKHIT.URL_TINY);
-        var kidsJsonArr = extractLobbySeries(doc);
+        var loaded = await this.fetchCatalogDocument(HINUKHIT.URL_TINY);
+        if (loaded.timeout) {
+            this.noteListingIncomplete(HINUKHIT.URL_TINY);
+            return;
+        }
+        if (!loaded.doc) {
+            throw new Error("Lobby page did not load");
+        }
+        var kidsJsonArr = extractLobbySeries(loaded.doc);
 
         // Process kids series using batch processor
         logger.info(`crawlKids => Found ${kidsJsonArr.length} kids series to process`);
@@ -62,10 +80,20 @@ class KanKidsScraper extends BaseScraper {
     async processOneKidsSeries(series, subType) {
         var imgUrl = utils.getImageFromUrl(series.Image, subType);
 
-        var seriesPage = HINUKHIT.URL_KIDS_CONTENT_PREFIX + series.Url;
+        var seriesPage = kidsContentUrl(series.Url);
         var genres = utils.setGenreFromString(series.Genres);
-        var id = utils.generateSeriesId(seriesPage, HINUKHIT.SUBPREFIX_KIDS);
-        var doc2 = await fetchData(seriesPage + "?currentPage=2&itemsToShow=100");
+        var seriesName = lobbySeriesName(series);
+        var id = this.seriesIdFor(seriesPage, HINUKHIT.SUBPREFIX_KIDS, seriesName);
+        var loaded = await this.fetchCatalogDocument(seriesPage + "?currentPage=2&itemsToShow=100");
+        if (!loaded.doc || typeof loaded.doc.querySelector !== "function") {
+            if (loaded.timeout) {
+                this.noteFailedSeries({ id, link: seriesPage, name: seriesName });
+            } else {
+                logger.warn(`processOneKidsSeries => Could not fetch page for ${series.Url}`);
+            }
+            return null;
+        }
+        var doc2 = loaded.doc;
 
         //set the series name
         var seriesTitle = this.getEducationalTitle(doc2);
@@ -106,6 +134,7 @@ class KanKidsScraper extends BaseScraper {
      * @returns String of the series title
      */
     getEducationalTitle(doc){
+        if (!doc || typeof doc.querySelector !== "function") return "";
         var seriesTitle = "";
         if (doc.querySelector("title") != undefined){
             seriesTitle = utils.getNameFromSeriesPage(doc.querySelector("title").text.trim());

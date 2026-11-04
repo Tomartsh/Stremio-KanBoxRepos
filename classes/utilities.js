@@ -15,12 +15,16 @@ const {
     isKanBlockedError,
     isKanBudgetError,
     isKanBrowserError,
+    isTimeoutError,
     getKanRunState,
     KanBudgetError,
     jitterMs
 } = require("./kanSession");
-
-let seriesIterator = 1000;
+const {
+    numericIdFromLink,
+    stableSlugToken,
+    matchSeriesIdentity
+} = require("./seriesIdentity");
 
 const log4js = require("log4js");
 const {
@@ -481,7 +485,8 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
     }
 
     // kan.org.il keeps one cookie jar and, only if Cloudflare challenges,
-    // one browser. The generic retry ladder waits minutes on each 403.
+    // one browser. Timeouts are retried inside that session. This ladder
+    // waits minutes on each 403, so kan hosts do not use it.
     if (isKanHost(hostname)) {
         logger.debug(`fetchWithRetries => kan.org.il shared session ${url}`);
         return getKanSession().fetch(url, { asJson, params, headers });
@@ -652,17 +657,24 @@ async function fetchWithRetries(url, asJson = false, params = {}, headers, prefe
  * @param {string|null} preferredMethod - Preferred fetch method: 'axios', 'got-scraping', or null for auto
  * @returns {Promise} - Parsed HTML document or JSON object
  */
-async function fetchData(url, asJson = false, params = {}, headers = HEADERS, preferredMethod = null) {
+async function fetchDataResult(url, asJson = false, params = {}, headers = HEADERS, preferredMethod = null) {
     try {
         logger.trace(`fetchData => For URL: ${url}`);
-        const enhancedHeaders = getEnhancedHeaders(url, headers);
-        // We pass the URL through to the retry logic
-        return await fetchWithRetries(url, asJson, params, headers, preferredMethod);
+        // Invalid URLs throw here, matching the previous fetchData wrapper.
+        void getEnhancedHeaders(url, headers);
+        const doc = await fetchWithRetries(url, asJson, params, headers, preferredMethod);
+        return { doc: doc == null ? null : doc, timeout: false, error: null };
     } catch (error) {
         if (isKanBlockedError(error) || isKanBudgetError(error) || isKanBrowserError(error)) throw error;
+        const timeout = isTimeoutError(error);
         logger.error(`fetchData => Failed to fetch URL ${url} :`, error.message);
-        return null; 
+        return { doc: null, timeout, error };
     }
+}
+
+async function fetchData(url, asJson = false, params = {}, headers = HEADERS, preferredMethod = null) {
+    const result = await fetchDataResult(url, asJson, params, headers, preferredMethod);
+    return result.doc;
 }
 
 /**
@@ -1318,29 +1330,26 @@ function getVideoNameFromEpisodePage(str){
     return str;
 }
 
-function generateSeriesId(link, subPrefix, seriesId = "0"){
-    var retId = "";
+function generateSeriesId(link, subPrefix, seriesId = "0", options) {
+    const opts = options || {};
+    let retId = "";
 
-    if (seriesId != "0"){
-        retId = seriesId;
+    // "0" means "read the id from the URL". Any other value is an explicit id.
+    if (seriesId != null && String(seriesId) !== "0" && String(seriesId) !== "") {
+        retId = String(seriesId);
     } else {
-    //if the link has a trailing  "/" then omit it
-        if(link) {
-            if (link.substring(link.length -1) == "/"){
-                link = link.substring(0,link.length -1);
-            }
-            retId = link.substring(link.lastIndexOf("/") + 1, link.length);
-            retId = retId.replace(/\D/g,'');
-        }
+        retId = numericIdFromLink(link);
     }
-    if (retId == ""){
-        retId = seriesIterator;
-        seriesIterator++;
+    if (!retId) {
+        const matched = matchSeriesIdentity(opts.previousIndex || opts.index || null, {
+            link,
+            name: opts.name
+        });
+        if (matched && matched.id) return String(matched.id);
+        retId = stableSlugToken(link);
     }
 
-    retId = PREFIX + "kan_" + subPrefix + "_" + retId;
-
-    return retId;
+    return PREFIX + "kan_" + subPrefix + "_" + retId;
 }
 
 /**
@@ -1688,6 +1697,7 @@ async function updateDatabaseFromJSON(scraperName, jsonData, logger) {
 
 module.exports = {
     fetchData,
+    fetchDataResult,
     writeJSONToFile,
     getImageFromUrl,
     setGenreFromString,
