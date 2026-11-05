@@ -260,19 +260,20 @@ class MakoScraper {
             return videos;
         }
 
-        logger.debug(`getEpisodes => Found ${episodes.length} episodes, channelId: ${channelId}`);
+        // The list also holds non-episode items such as {"componentLayout":"ad"}. They must
+        // not count towards the numbering: a newest-first season of 2 episodes and 1 ad would
+        // otherwise be numbered 3, 2.
+        const vods = episodes.filter(episode => episode.componentLayout === "vod");
+
+        logger.debug(`getEpisodes => Found ${vods.length} episodes (${episodes.length} items), channelId: ${channelId}`);
 
         // Mako lists finished seasons oldest-first and ongoing (daily) shows newest-first.
         // Use the air dates to pick the direction so the premiere is always episode 1.
-        const newestFirst = this.isListedNewestFirst(episodes);
+        const newestFirst = this.isListedNewestFirst(vods);
         const step = newestFirst ? -1 : 1;
-        let episodeNumber = newestFirst ? episodes.length : 1;
+        let episodeNumber = newestFirst ? vods.length : 1;
 
-        for (const episode of episodes) {
-            if (episode.componentLayout !== "vod") {
-                continue;
-            }
-
+        for (const episode of vods) {
             try {
                 const episodeData = await this.getEpisode(episode, id, seasonId, episodeNumber, channelId, tmdbSeriesId);
                 
