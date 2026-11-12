@@ -5,7 +5,7 @@ const {
     HINUKHIT,
     SCRAPER_CONFIG
 } = require("./constants.js");
-const { safeExecute, extractLobbySeries } = require("./ScraperHelpers.js");
+const { safeExecute, extractLobbySeries, collectEducationalEpisodes, parseKanBoxCategorySeries } = require("./ScraperHelpers.js");
 const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
@@ -121,10 +121,17 @@ class KanTeensScraper extends BaseScraper {
         seriesDescription = seriesDescription.replace("\r\n","").trim();
         seriesDescription = seriesDescription.trim();
 
-        var seasons = doc2.querySelectorAll("div.seasons-item.kids");
-        // Create a temporary videos array to collect episodes
+        // Create a temporary videos array to collect episodes.
+        // The series URL still carries currentPage/itemsToShow. The new row
+        // ignores those params; collectEducationalEpisodes asks for the next
+        // page only when the row is full and the next page has new episodes.
         const videosCollected = [];
-        await this.getKidsVideos(seasons, id, subType, videosCollected);
+        const episodes = await collectEducationalEpisodes(
+            doc2,
+            seriesPage + "?currentPage=2&itemsToShow=500",
+            (url) => this.fetchEducationalDocument(url)
+        );
+        await this.getKidsVideos(episodes, id, subType, videosCollected);
 
         // Only add series to JSON if it has videos
         if (videosCollected.length === 0) {
@@ -163,52 +170,22 @@ class KanTeensScraper extends BaseScraper {
             }
             const root = loaded.doc;
 
-            // Find all block-list items (categories)
-            const blockLists = root.querySelectorAll('.block-list');
-            logger.info(`crawlKanBox => Found ${blockLists.length} block-list sections`);
-
-            let targetCategory = null;
-
-            // Find the "ילדים ונוער" category
-            blockLists.forEach((blockList, index) => {
-                const items = blockList.querySelectorAll('.block-list-item');
-                logger.debug(`crawlKanBox => Section ${index + 1}: ${items.length} categories`);
-
-                items.forEach((item) => {
-                    const titleElem = item.querySelector('.h3.title-elem');
-                    const linkElem = item.querySelector('a.unstyled-link');
-
-                    if (titleElem && linkElem) {
-                        const categoryName = titleElem.text.trim();
-
-                        // Check if this is our target category
-                        if (categoryName === HINUKHIT.KAN_BOX_CATEGORY) {
-                            const categoryLink = linkElem.getAttribute('href');
-                            const seriesLinks = item.querySelectorAll('a.card-link');
-
-                            targetCategory = {
-                                name: categoryName,
-                                link: categoryLink,
-                                seriesLinks: Array.from(seriesLinks).map(link => link.getAttribute('href')).filter(url => url)
-                            };
-                        }
-                    }
-                });
-            });
-
-            if (!targetCategory) {
+            // New Kan-Box lobby is content rows (h2 + a.cr-item). The old
+            // block-list / card-link markup is the fallback inside the helper.
+            const seriesLinks = parseKanBoxCategorySeries(root, HINUKHIT.KAN_BOX_CATEGORY);
+            if (!seriesLinks.length) {
                 logger.warn(`crawlKanBox => Category "${HINUKHIT.KAN_BOX_CATEGORY}" not found on Kan-Box page`);
                 return;
             }
 
-            logger.info(`crawlKanBox => Found category: ${targetCategory.name} (${targetCategory.seriesLinks.length} series)`);
+            logger.info(`crawlKanBox => Found category: ${HINUKHIT.KAN_BOX_CATEGORY} (${seriesLinks.length} series)`);
 
             // Scrape series directly from Kan-Box page
             let totalSeriesFound = 0;
             let duplicateCount = 0;
 
             // Process each series link found in this category
-            for (const seriesUrl of targetCategory.seriesLinks) {
+            for (const seriesUrl of seriesLinks) {
                 if (!seriesUrl) continue;
 
                 // Build full URL if relative
@@ -233,7 +210,7 @@ class KanTeensScraper extends BaseScraper {
                     Url: fullSeriesUrl,
                     Image: '',
                     ImageAlt: '',
-                    Description: `From Kan-Box category: ${targetCategory.name}`
+                    Description: `From Kan-Box category: ${HINUKHIT.KAN_BOX_CATEGORY}`
                 };
 
                 // Process the series using existing method
@@ -241,7 +218,7 @@ class KanTeensScraper extends BaseScraper {
                     const result = await this.processOneTeensSeries(item, "n");
                     if (result) {
                         totalSeriesFound++;
-                        logger.info(`crawlKanBox => Added series from ${targetCategory.name}: ${result.seriesTitle}`);
+                        logger.info(`crawlKanBox => Added series from ${HINUKHIT.KAN_BOX_CATEGORY}: ${result.seriesTitle}`);
                     }
                 } catch (error) {
                     logger.error(`crawlKanBox => Error processing series ${fullSeriesUrl}: ${error.message}`);
@@ -295,34 +272,32 @@ class KanTeensScraper extends BaseScraper {
      * @param {*} videosCollected - Array to collect videos into
      * @returns JSON object
      *****************************************************************************/
-    async getKidsVideos(seasons, id, subType, videosCollected = []){
-        var noOfSeasons = seasons.length;
-        logger.info(`getKidsVideos => Processing ${noOfSeasons} season(s) for series ID: ${id}`);
-
-        for (var iter = 0; iter< noOfSeasons; iter++){ //iterate over seasons (descending)
-            var season = seasons[iter];
-            var seasonNo = noOfSeasons - iter;
-            var episodes = season.querySelectorAll("li.border-item");
-            var numEpisodes = episodes.length;
-
-            logger.info(`getKidsVideos => Season ${seasonNo} has ${numEpisodes} episode(s) - processing in descending order`);
-
-            // Prepare episode data for batch processing (descending order)
-            const episodeData = [];
-            for (let n = 0; n < numEpisodes; n++) {
-                // Process from last to first (highest episode number first)
-                const actualEpisodeNo = numEpisodes - n;  // Keep correct episode number
-                episodeData.push({
-                    elem: episodes[numEpisodes - 1 - n],  // Access in reverse
-                    seasonNo: seasonNo,
-                    episodeNo: actualEpisodeNo  // Keep correct episode number
-                });
+    async fetchEducationalDocument(url) {
+        const loaded = await this.fetchCatalogDocument(url);
+        if (!loaded || !loaded.doc || typeof loaded.doc.querySelector !== "function") {
+            if (loaded && loaded.timeout) {
+                logger.warn(`fetchEducationalDocument => Timed out: ${url}`);
             }
+            return null;
+        }
+        return loaded.doc;
+    }
 
-            // Process episodes in batches
-            const episodeResults = await this.processBatch(
+    async getKidsVideos(episodes, id, subType, videosCollected = []){
+        const bySeason = new Map();
+        for (const episode of episodes || []) {
+            if (!bySeason.has(episode.season)) bySeason.set(episode.season, []);
+            bySeason.get(episode.season).push(episode);
+        }
+        const seasonNumbers = [...bySeason.keys()].sort((a, b) => b - a);
+        logger.info(`getKidsVideos => Processing ${seasonNumbers.length} season(s) for series ID: ${id}`);
+
+        for (const seasonNo of seasonNumbers) {
+            const episodeData = bySeason.get(seasonNo).slice().sort((a, b) => b.episodeNo - a.episodeNo);
+            logger.info(`getKidsVideos => Season ${seasonNo} has ${episodeData.length} episode(s) - processing in descending order`);
+            await this.processBatch(
                 episodeData,
-                async (epData, index) => {
+                async (epData) => {
                     return await this.processOneTeensEpisode(epData, id, subType, videosCollected);
                 },
                 `teens-episodes (Season ${seasonNo})`
@@ -334,29 +309,23 @@ class KanTeensScraper extends BaseScraper {
      * Process a single teens episode (extracted from getKidsVideos for batch processing)
      */
     async processOneTeensEpisode(epData, id, subType, videosCollected = []) {
-        const { elem: episode, seasonNo, episodeNo } = epData;
+        const seasonNo = epData.season;
+        const episodeNo = epData.episodeNo;
 
-        var episodeLink = episode.querySelector("a.card-link").getAttribute("href");
+        var episodeLink = epData.url || "";
         if (episodeLink.startsWith("/")){
             episodeLink = HINUKHIT.URL_KIDS_CONTENT_PREFIX + episodeLink;
         }
-        var episodeTitle = episode.querySelector("a.card-link").getAttribute("title");
-        if (episodeTitle.indexOf("|") > 0){
-            episodeTitle = episodeTitle.substring(episodeTitle.indexOf("|") + 1).trim();
-        }
-        if (episodeTitle.startsWith("עונה")){
-            episodeTitle = episodeTitle.substring(episodeTitle.indexOf("|") + 1).trim();
-        }
+        var episodeTitle = epData.title || "";
 
         var episodeImgUrl = "";
-        if ((episode.querySelector("img.img-full") != undefined) &&
-            (episode.querySelector("img.img-full").getAttribute("src").indexOf("?") > 0)){
-            episodeImgUrl = utils.getImageFromUrl(episode.querySelector("img.img-full").getAttribute("src"), subType);
+        if (epData.image) {
+            episodeImgUrl = utils.getImageFromUrl(epData.image, subType);
         }
         logger.trace("processOneTeensEpisode => episodeImgUrl: " + episodeImgUrl + " Name: " + episodeTitle);
 
-        var episodeDescription = episode.querySelector("div.card-text").text;
-        episodeDescription = episodeDescription.replace(/[\r\n]+/gm, "").trim();;
+        var episodeDescription = String(epData.description || "");
+        episodeDescription = episodeDescription.replace(/[\r\n]+/gm, "").trim();
 
         var streams = await utils.getStreams(episodeLink);
         var streamsArr = [];
