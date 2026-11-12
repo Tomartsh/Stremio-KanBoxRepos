@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A second sitemap file. The long series is present and must not be fetched
+     unless that series is the one being scraped. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://www.kankids.org.il/content/kids/hinuchit-main/p-11917/s10/500010/</loc>
+    <lastmod>2025-01-01</lastmod>
+  </url>
+  <url>
+    <loc>https://www.kankids.org.il/content/kids/hinuchit-main/p-11917/s9/500009/</loc>
+    <lastmod>2025-01-02</lastmod>
+  </url>
+  <url>
+    <loc>https://www.kankids.org.il/content/kids/hinuchit-main/p-11917/862347/</loc>
+    <lastmod>2025-01-03</lastmod>
+  </url>
+  <url>
+    <loc>https://www.kankids.org.il/content/kids/kids-podcasts/p-432148/1/</loc>
+    <lastmod>2024-01-01</lastmod>
+  </url>
+  <url>
+    <loc>https://www.kankids.org.il/content/kids/kids-podcasts/p-432148/2/</loc>
+    <lastmod>2024-01-02</lastmod>
+  </url>
+  <url>
+    <loc>https://www.kankids.org.il/content/kids/kids-podcasts/p-432148/3/</loc>
+    <lastmod>2024-01-03</lastmod>
+  </url>
+</urlset>

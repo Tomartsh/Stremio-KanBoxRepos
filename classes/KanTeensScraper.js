@@ -6,6 +6,7 @@ const {
     SCRAPER_CONFIG
 } = require("./constants.js");
 const { safeExecute, extractLobbySeries, collectEducationalEpisodes, parseKanBoxCategorySeries } = require("./ScraperHelpers.js");
+const { supplementEducationalEpisodes } = require("./KanSitemap.js");
 const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
@@ -121,16 +122,19 @@ class KanTeensScraper extends BaseScraper {
         seriesDescription = seriesDescription.replace("\r\n","").trim();
         seriesDescription = seriesDescription.trim();
 
-        // Create a temporary videos array to collect episodes.
-        // The series URL still carries currentPage/itemsToShow. The new row
-        // ignores those params; collectEducationalEpisodes asks for the next
-        // page only when the row is full and the next page has new episodes.
+        // The series URL still carries currentPage/itemsToShow. That row caps
+        // at about 50 cards. collectEducationalEpisodes reads the page, then
+        // the kids sitemap adds episode URLs the row did not show.
         const videosCollected = [];
-        const episodes = await collectEducationalEpisodes(
+        const pageEpisodes = await collectEducationalEpisodes(
             doc2,
             seriesPage + "?currentPage=2&itemsToShow=500",
             (url) => this.fetchEducationalDocument(url)
         );
+        const episodes = await supplementEducationalEpisodes(pageEpisodes, seriesPage, {
+            fetchDocument: (url) => this.fetchEducationalDocument(url),
+            logger
+        });
         await this.getKidsVideos(episodes, id, subType, videosCollected);
 
         // Only add series to JSON if it has videos
@@ -327,7 +331,12 @@ class KanTeensScraper extends BaseScraper {
         var episodeDescription = String(epData.description || "");
         episodeDescription = episodeDescription.replace(/[\r\n]+/gm, "").trim();
 
-        var streams = await utils.getStreams(episodeLink);
+        var streams;
+        if (Object.prototype.hasOwnProperty.call(epData, "stream")) {
+            streams = epData.stream && epData.stream.url ? epData.stream : "";
+        } else {
+            streams = await utils.getStreams(episodeLink);
+        }
         var streamsArr = [];
         var released = "";
         if (streams == "-1"){
