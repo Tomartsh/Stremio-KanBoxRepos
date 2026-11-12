@@ -1,0 +1,8 @@
+# robots.txt for https://www.kankids.org.il
+
+User-agent: *
+
+Sitemap: https://www.kan.org.il/media/sitemap/kids/sitemap.xml
+Sitemap: https://www.kan.org.il/media/sitemap/kids/siteindex.xml
+
+# end of file
