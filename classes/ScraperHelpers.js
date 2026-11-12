@@ -9,10 +9,20 @@
  * - URL processing
  */
 
+const { parse } = require("node-html-parser");
 const { fetchData, extractReleaseDate } = require("./utilities.js");
 const { rethrowIfKanBlocked, isKanBlockedError } = require("./kanSession.js");
 const log4js = require("log4js");
 const logger = log4js.getLogger("ScraperHelpers");
+
+const KIDS_ORIGIN = "https://www.kankids.org.il";
+const KAN_ORIGIN = "https://www.kan.org.il";
+// The redesigned episode row renders 50 cards. currentPage / itemsToShow /
+// page do not add the rest on the series checked (p-11732 still omits episodes
+// 51-60, which exist as their own pages but are not linked). Ask for the next
+// page anyway when a row is full, and keep going only when new episode URLs appear.
+const EDUCATIONAL_EPISODE_PAGE_CAP = 50;
+const EDUCATIONAL_EXTRA_PAGES = 4;
 
 /**
  * Circuit Breaker - Prevents cascading failures when a service is down
@@ -563,6 +573,383 @@ function extractLobbySeries(doc) {
     throw new Error("Lobby page did not contain a series list");
 }
 
+function asDoc(value) {
+    if (!value) return null;
+    if (typeof value === "string") return parse(value);
+    if (typeof value.querySelectorAll === "function") return value;
+    return null;
+}
+
+function emptyEducationalParse() {
+    return { mode: "empty", seasonTabs: [], episodes: [], seasonUrlsToFetch: [] };
+}
+
+function toAbsolute(href, base) {
+    const raw = String(href || "").trim();
+    if (!raw || raw.startsWith("#") || /^javascript:/i.test(raw)) return "";
+    try {
+        const url = new URL(raw, base || KIDS_ORIGIN);
+        if (url.protocol === "http:" && (url.hostname.endsWith("kankids.org.il") || url.hostname.endsWith("kan.org.il"))) {
+            url.protocol = "https:";
+        }
+        return url.toString();
+    } catch (error) {
+        return "";
+    }
+}
+
+function episodeKey(url) {
+    try {
+        const parsed = new URL(url, KIDS_ORIGIN);
+        parsed.hash = "";
+        parsed.search = "";
+        if (!parsed.pathname.endsWith("/")) parsed.pathname += "/";
+        return parsed.toString();
+    } catch (error) {
+        return String(url || "");
+    }
+}
+
+function seasonFromPath(href) {
+    const match = String(href || "").match(/\/s(\d+)(?:\/|$)/);
+    if (!match) return null;
+    return parseInt(match[1], 10);
+}
+
+function flatText(node) {
+    if (!node || node.text == null) return "";
+    return String(node.text).replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function legacyEpisodeTitle(raw) {
+    let episodeTitle = String(raw || "");
+    if (episodeTitle.indexOf("|") > 0) {
+        episodeTitle = episodeTitle.substring(episodeTitle.indexOf("|") + 1).trim();
+    }
+    if (episodeTitle.startsWith("עונה")) {
+        const pipe = episodeTitle.indexOf("|");
+        episodeTitle = episodeTitle.substring(pipe + 1).trim();
+    }
+    return episodeTitle.trim();
+}
+
+function programCardTitle(card) {
+    const aria = String(card.getAttribute("aria-label") || "").trim();
+    if (aria) return aria;
+    const heading = card.querySelector("h3.cr-title, h2.cr-title, .cr-title");
+    const text = flatText(heading);
+    if (text) return text;
+    return String(card.getAttribute("title") || "").trim();
+}
+
+function programCardDescription(card) {
+    const node = card.querySelector("p.cr-subtitle, div.card-text, p.card-text");
+    return flatText(node);
+}
+
+function programCardImage(card) {
+    const img = card.querySelector("img");
+    if (!img) return "";
+    return img.getAttribute("src") || img.getAttribute("data-src") || "";
+}
+
+function readSeasonTabs(doc, base) {
+    const pageKey = episodeKey(base);
+    const tabs = [];
+    const seen = new Set();
+    doc.querySelectorAll("section.program-seasons a.program-season-tab, a.program-season-tab").forEach((tab) => {
+        const href = tab.getAttribute("href") || "";
+        const url = toAbsolute(href, base);
+        const key = episodeKey(url);
+        if (!url || !key || seen.has(key)) return;
+        seen.add(key);
+        const className = String(tab.getAttribute("class") || "");
+        const marked = className.split(/\s+/).includes("is-active") || tab.getAttribute("aria-current") === "page";
+        tabs.push({
+            url: url.split("#")[0],
+            season: seasonFromPath(href),
+            label: flatText(tab),
+            active: marked || key === pageKey
+        });
+    });
+    if (tabs.length && !tabs.some((tab) => tab.active)) tabs[0].active = true;
+    return tabs;
+}
+
+function parseLegacyEducationalSeasons(doc, base) {
+    const seasonDivs = doc.querySelectorAll("div.seasons-item.kids");
+    const episodes = [];
+    const seasonCount = seasonDivs.length;
+    seasonDivs.forEach((seasonDiv, iter) => {
+        const seasonNo = seasonCount - iter;
+        seasonDiv.querySelectorAll("li.border-item").forEach((item) => {
+            const link = item.querySelector("a.card-link");
+            if (!link) return;
+            const href = link.getAttribute("href") || "";
+            const url = toAbsolute(href, base);
+            if (!url) return;
+            const img = item.querySelector("img.img-full");
+            const src = img ? (img.getAttribute("src") || "") : "";
+            episodes.push({
+                url,
+                title: legacyEpisodeTitle(link.getAttribute("title") || ""),
+                description: flatText(item.querySelector("div.card-text")),
+                image: src.indexOf("?") > 0 ? src : "",
+                season: seasonNo
+            });
+        });
+    });
+    return episodes;
+}
+
+/**
+ * Kids/teens series page.
+ * Current markup: section.program-seasons a.program-season-tab, and the
+ * episode row div#program-episodes a.cr-item (aria-label is the title).
+ * No season tabs means one season. li.border-item outside that row is the
+ * editor's-picks list and is not a season.
+ * Fallback: div.seasons-item.kids li.border-item a.card-link, numbered the
+ * way the previous scraper did (first season block is the highest season,
+ * first card in a block is episode 1).
+ *
+ * @param {string|object} html
+ * @param {string} pageUrl
+ * @returns {{mode: string, seasonTabs: object[], episodes: object[], seasonUrlsToFetch: string[]}}
+ */
+function parseEducationalSeriesPage(html, pageUrl) {
+    const doc = asDoc(html);
+    if (!doc) return emptyEducationalParse();
+    const base = pageUrl || KIDS_ORIGIN + "/";
+    const episodeRoot = doc.querySelector("#program-episodes");
+    const cards = episodeRoot ? episodeRoot.querySelectorAll("a.cr-item") : [];
+    if (cards.length) {
+        const tabs = readSeasonTabs(doc, base);
+        const active = tabs.find((tab) => tab.active);
+        const episodes = [];
+        cards.forEach((card) => {
+            const href = card.getAttribute("href") || "";
+            if (!href || href.includes("/participants/")) return;
+            const url = toAbsolute(href, base);
+            if (!url) return;
+            let season = seasonFromPath(href);
+            if (season == null) season = (active && active.season) || 1;
+            episodes.push({
+                url,
+                title: programCardTitle(card),
+                description: programCardDescription(card),
+                image: programCardImage(card),
+                season
+            });
+        });
+        return {
+            mode: "program",
+            seasonTabs: tabs,
+            episodes,
+            seasonUrlsToFetch: tabs.filter((tab) => !tab.active).map((tab) => tab.url)
+        };
+    }
+
+    const legacy = parseLegacyEducationalSeasons(doc, base);
+    if (legacy.length) {
+        return { mode: "legacy", seasonTabs: [], episodes: legacy, seasonUrlsToFetch: [] };
+    }
+    return emptyEducationalParse();
+}
+
+/**
+ * Episode numbers follow card order. The redesigned rows list episode 1
+ * first, which is also how the previous seasons-item scraper numbered a block.
+ *
+ * @param {object[]} episodes
+ * @returns {object[]}
+ */
+function assignEducationalEpisodeNumbers(episodes) {
+    const groups = new Map();
+    for (const episode of episodes || []) {
+        if (!episode || !episode.url) continue;
+        const season = Number.isFinite(episode.season) && episode.season > 0 ? episode.season : 1;
+        if (!groups.has(season)) groups.set(season, []);
+        groups.get(season).push(episode);
+    }
+    const numbered = [];
+    for (const [season, list] of groups) {
+        list.forEach((episode, index) => {
+            numbered.push(Object.assign({}, episode, { season, episodeNo: index + 1 }));
+        });
+    }
+    return numbered;
+}
+
+function nextEducationalListUrl(pageUrl) {
+    let url;
+    try {
+        url = new URL(pageUrl);
+    } catch (error) {
+        return "";
+    }
+    const current = parseInt(url.searchParams.get("currentPage") || "1", 10);
+    const next = Number.isFinite(current) && current > 0 ? current + 1 : 2;
+    url.searchParams.set("currentPage", String(next));
+    if (!url.searchParams.get("itemsToShow")) url.searchParams.set("itemsToShow", "100");
+    return url.toString();
+}
+
+function pageParamListUrl(pageUrl) {
+    let url;
+    try {
+        url = new URL(pageUrl);
+    } catch (error) {
+        return "";
+    }
+    if (url.searchParams.has("page")) return "";
+    url.searchParams.set("page", "2");
+    if (!url.searchParams.get("itemsToShow")) url.searchParams.set("itemsToShow", "100");
+    return url.toString();
+}
+
+async function pullNewEducationalEpisodes(url, seen, fetchDocument) {
+    if (!url) return [];
+    let doc;
+    try {
+        doc = asDoc(await fetchDocument(url));
+    } catch (error) {
+        if (isKanBlockedError(error)) throw error;
+        rethrowIfKanBlocked(error);
+        logger.warn(`collectEducationalEpisodes => Could not fetch ${url}: ${error.message}`);
+        return [];
+    }
+    if (!doc) return [];
+    const parsed = parseEducationalSeriesPage(doc, url);
+    const fresh = [];
+    for (const episode of parsed.episodes) {
+        const key = episodeKey(episode.url);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        fresh.push(episode);
+    }
+    return fresh;
+}
+
+async function readFurtherEpisodePages(sourceUrl, seen, fetchDocument) {
+    const extra = [];
+    let addedByCurrentPage = false;
+    let url = sourceUrl;
+    for (let i = 0; i < EDUCATIONAL_EXTRA_PAGES; i++) {
+        url = nextEducationalListUrl(url);
+        const found = await pullNewEducationalEpisodes(url, seen, fetchDocument);
+        if (!found.length) break;
+        addedByCurrentPage = true;
+        extra.push(...found);
+        if (found.length < EDUCATIONAL_EPISODE_PAGE_CAP) break;
+    }
+    if (!addedByCurrentPage) {
+        const found = await pullNewEducationalEpisodes(pageParamListUrl(sourceUrl), seen, fetchDocument);
+        extra.push(...found);
+    }
+    return extra;
+}
+
+/**
+ * Episodes on this document, plus each other season tab (/sN/ is fetched
+ * directly; the page script's $.ajax seasonId call returns the same row).
+ * A full 50-card row is asked for the next page. Further pages are kept
+ * only when they contain episode URLs the previous page did not.
+ *
+ * @param {string|object} html
+ * @param {string} pageUrl
+ * @param {(url: string) => Promise<string|object|null>} [fetchDocument]
+ * @returns {Promise<object[]>}
+ */
+async function collectEducationalEpisodes(html, pageUrl, fetchDocument) {
+    const parsed = parseEducationalSeriesPage(html, pageUrl);
+    const seen = new Set();
+    const episodes = [];
+    const add = (list) => {
+        for (const episode of list || []) {
+            const key = episodeKey(episode && episode.url);
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            episodes.push(episode);
+        }
+    };
+    add(parsed.episodes);
+
+    if (parsed.mode === "program" && typeof fetchDocument === "function") {
+        for (const seasonUrl of parsed.seasonUrlsToFetch) {
+            const found = await pullNewEducationalEpisodes(seasonUrl, seen, fetchDocument);
+            episodes.push(...found);
+            if (found.length >= EDUCATIONAL_EPISODE_PAGE_CAP) {
+                const more = await readFurtherEpisodePages(seasonUrl, seen, fetchDocument);
+                episodes.push(...more);
+            }
+        }
+        if (parsed.episodes.length >= EDUCATIONAL_EPISODE_PAGE_CAP) {
+            const more = await readFurtherEpisodePages(pageUrl, seen, fetchDocument);
+            episodes.push(...more);
+        }
+    }
+    return assignEducationalEpisodeNumbers(episodes);
+}
+
+function seriesRootFromCardHref(href) {
+    const absolute = toAbsolute(href, KAN_ORIGIN + "/");
+    if (!absolute) return "";
+    let url;
+    try {
+        url = new URL(absolute);
+    } catch (error) {
+        return "";
+    }
+    if (url.pathname.includes("/participants/")) return "";
+    url.hash = "";
+    url.search = "";
+    const program = url.pathname.match(/^(.*\/p-\d+)(?:\/|$)/);
+    if (program) url.pathname = program[1] + "/";
+    else if (!url.pathname.endsWith("/")) url.pathname += "/";
+    return url.toString();
+}
+
+/**
+ * Series links for one Kan-Box category.
+ * Current lobby: section.content-row-section, heading in h2, cards a.cr-item.
+ * Episode hrefs are trimmed to the /p-N/ series root. A slug series with no
+ * p-N id keeps its own path.
+ * Fallback: .block-list .block-list-item .h3.title-elem and a.card-link.
+ *
+ * @param {string|object} html
+ * @param {string} categoryName
+ * @returns {string[]}
+ */
+function parseKanBoxCategorySeries(html, categoryName) {
+    const doc = asDoc(html);
+    if (!doc) return [];
+    const wanted = String(categoryName || "").replace(/\s+/g, " ").trim();
+    if (!wanted) return [];
+
+    const fromRows = [];
+    const seen = new Set();
+    const push = (href, trimToSeries) => {
+        const seriesUrl = trimToSeries ? seriesRootFromCardHref(href) : toAbsolute(href, KAN_ORIGIN + "/");
+        if (!seriesUrl || seen.has(seriesUrl)) return;
+        seen.add(seriesUrl);
+        fromRows.push(seriesUrl);
+    };
+
+    doc.querySelectorAll("section.content-row-section").forEach((section) => {
+        const heading = flatText(section.querySelector(".component-header h2, h2"));
+        if (heading !== wanted) return;
+        section.querySelectorAll("a.cr-item").forEach((card) => push(card.getAttribute("href"), true));
+    });
+    if (fromRows.length) return fromRows;
+
+    doc.querySelectorAll(".block-list .block-list-item").forEach((item) => {
+        const heading = flatText(item.querySelector(".h3.title-elem"));
+        if (heading !== wanted) return;
+        item.querySelectorAll("a.card-link").forEach((link) => push(link.getAttribute("href"), false));
+    });
+    return fromRows;
+}
+
 function wrapProcessor(processor, context, logger) {
     return async (...args) => {
         try {
@@ -587,6 +974,10 @@ module.exports = {
     safeExecute,
     safeFetch,
     extractLobbySeries,
+    parseEducationalSeriesPage,
+    assignEducationalEpisodeNumbers,
+    collectEducationalEpisodes,
+    parseKanBoxCategorySeries,
     wrapProcessor,
     CircuitBreaker,
     RateLimiter
