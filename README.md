@@ -217,7 +217,7 @@ node scripts/run-scraper.js kanDigital --slow --budget-hours 20
 
 ### Cloudflare on the Windows scraper machine
 
-kan.org.il and kankids.org.il answer plain HTTP, and Playwright's default headless shell, with a Cloudflare challenge. The scrapers open the installed Google Chrome instead, keep one persistent profile, and log `CLOUDFLARE CHALLENGE` when the interstitial is still up. A browser that cannot start is logged as `KAN BROWSER UNAVAILABLE` and is not called a Cloudflare block. Mako and Reshet do not use this browser.
+kan.org.il and kankids.org.il answer plain HTTP, and Playwright's default headless shell, with a Cloudflare challenge. The scrapers open the installed Google Chrome instead, keep one persistent profile, and log `CLOUDFLARE CHALLENGE` when the interstitial is still up. A browser that cannot start is logged as `KAN BROWSER UNAVAILABLE` and is not called a Cloudflare block. A launch that exits before the debugging pipe opens (a pending Chrome update does this) is retried on the same profile first: `KAN_BROWSER_LAUNCH_RETRIES` defaults to 2 and `KAN_BROWSER_LAUNCH_RETRY_DELAY_MS` defaults to 5000. Mako and Reshet do not use this browser.
 
 Set these on the scheduled task (Machine or the task itself, not only the interactive user). The profile has to stay off C: and off the interactive Chrome profile:
 

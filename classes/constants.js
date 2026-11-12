@@ -59,7 +59,8 @@ module.exports = {
     // Requests are serial, paced, and reuse the same cookies. A browser is
     // launched only after a Cloudflare challenge, and only one of them.
     // KAN_BROWSER_CHANNEL, KAN_BROWSER_EXECUTABLE, KAN_BROWSER_HEADLESS,
-    // KAN_BROWSER_USER_DATA_DIR, and KAN_CHALLENGE_TIMEOUT_MS configure it.
+    // KAN_BROWSER_USER_DATA_DIR, KAN_BROWSER_LAUNCH_RETRIES,
+    // KAN_BROWSER_LAUNCH_RETRY_DELAY_MS, and KAN_CHALLENGE_TIMEOUT_MS configure it.
     KAN_SESSION: {
         MIN_INTERVAL_MS: 2000,
         JITTER_MS: [1000, 4000],
