@@ -14,6 +14,17 @@
  * headless Chrome sends a HeadlessChrome user agent and kan.org.il keeps
  * the interstitial up. A persistent user-data dir keeps cf_clearance
  * between nightly runs.
+ *
+ * A pending Google Chrome auto-update makes the first chrome.exe exit
+ * within a few seconds (setup.exe --rename-chrome-exe) before the
+ * remote-debugging pipe opens. Playwright then throws "Target page,
+ * context or browser has been closed" and the scrape would otherwise
+ * stop as KAN BROWSER UNAVAILABLE. That launch is retried on the same
+ * profile. KAN_BROWSER_LAUNCH_RETRIES (default 2) is how many extra
+ * attempts follow the first failure. KAN_BROWSER_LAUNCH_RETRY_DELAY_MS
+ * (default 5000) is the wait between them. A profile that is already in
+ * use still falls back to a per-process directory and is not retried on
+ * the same directory.
  */
 
 const fs = require("fs");
@@ -54,6 +65,61 @@ function isBrowserUnavailableError(error) {
 function isProfileInUseError(error) {
     const message = String((error && error.message) || error || "");
     return /profile.*in use|ProcessSingleton|SingletonLock|Opening in existing browser session/i.test(message);
+}
+
+function isClosedBrowserLaunchError(error) {
+    const message = String((error && error.message) || error || "");
+    return /Target page, context or browser has been closed/i.test(message);
+}
+
+// Chrome's updater and a missing binary both surface as an unavailable
+// launch. A profile lock is a different failure and is not retried here.
+function isRetryableLaunchError(error) {
+    if (isProfileInUseError(error)) return false;
+    return isBrowserUnavailableError(error) || isClosedBrowserLaunchError(error);
+}
+
+function readNonNegativeInt(value, fallback) {
+    if (value == null || String(value).trim() === "") return fallback;
+    const parsed = Number(String(value).trim());
+    if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+    return Math.floor(parsed);
+}
+
+function resolveLaunchRetry(env = process.env) {
+    return {
+        retries: readNonNegativeInt(env.KAN_BROWSER_LAUNCH_RETRIES, 2),
+        delayMs: readNonNegativeInt(env.KAN_BROWSER_LAUNCH_RETRY_DELAY_MS, 5000)
+    };
+}
+
+function errorText(error) {
+    if (error && error.message) return error.message;
+    return String(error);
+}
+
+async function closeLaunchAttempt(context) {
+    if (!context) return;
+    let browser = null;
+    try {
+        if (typeof context.browser === "function") browser = context.browser();
+    } catch (error) {
+        browser = null;
+    }
+    if (typeof context.close === "function") {
+        try {
+            await context.close();
+        } catch (error) {
+            // The browser may already have exited.
+        }
+    }
+    if (browser && typeof browser.close === "function") {
+        try {
+            await browser.close();
+        } catch (error) {
+            // Closing the persistent context already stops the process.
+        }
+    }
 }
 
 function absoluteDir(input, cwd) {
@@ -187,10 +253,15 @@ function cookieUrl(cookie) {
 async function launchKanBrowser(deps = {}) {
     const log4js = require("log4js");
     const logger = deps.logger || log4js.getLogger("kanSession");
-    const resolved = deps.launchOptions || resolveKanBrowserOptions(deps.env);
+    const env = deps.env || process.env;
+    const resolved = deps.launchOptions || resolveKanBrowserOptions(env);
     const playwright = deps.playwright || require("playwright");
     const fileSystem = deps.fs || fs;
     const pid = deps.pid || process.pid;
+    const sleep = typeof deps.sleep === "function"
+        ? deps.sleep
+        : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const retry = resolveLaunchRetry(env);
 
     const open = async (userDataDir) => {
         fileSystem.mkdirSync(userDataDir, { recursive: true });
@@ -198,25 +269,50 @@ async function launchKanBrowser(deps = {}) {
             `kanSession => Launching one shared browser for kan.org.il ` +
             `(channel=${resolved.channel || "default"}, headless=${resolved.headlessRaw}, profile=${userDataDir})`
         );
-        const context = await playwright.chromium.launchPersistentContext(
-            userDataDir,
-            persistentContextOptions(resolved)
-        );
-        if (typeof context.addInitScript === "function") {
-            await context.addInitScript(HIDE_WEBDRIVER_SOURCE);
+        let context = null;
+        try {
+            context = await playwright.chromium.launchPersistentContext(
+                userDataDir,
+                persistentContextOptions(resolved)
+            );
+            if (typeof context.addInitScript === "function") {
+                await context.addInitScript(HIDE_WEBDRIVER_SOURCE);
+            }
+            let page = null;
+            if (typeof context.pages === "function") {
+                const openPages = context.pages();
+                page = openPages && openPages[0];
+            }
+            if (!page) page = await context.newPage();
+            const browser = typeof context.browser === "function" ? context.browser() : null;
+            return { browser, context, page, persistent: true, userDataDir };
+        } catch (error) {
+            await closeLaunchAttempt(context);
+            throw error;
         }
-        let page = null;
-        if (typeof context.pages === "function") {
-            const openPages = context.pages();
-            page = openPages && openPages[0];
+    };
+
+    // Retries stay on this profile. The caller (the scraper that asked for
+    // the browser) waits here, so a dead first chrome.exe does not fail the
+    // scrape and hand the run to the next scraper.
+    const openRetrying = async (userDataDir) => {
+        const attempts = retry.retries + 1;
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                return await open(userDataDir);
+            } catch (error) {
+                if (!isRetryableLaunchError(error) || attempt >= attempts) throw error;
+                logger.warn(
+                    `kanSession => Browser launch failed (attempt ${attempt}/${attempts}): ${errorText(error)}. ` +
+                    `Waiting ${retry.delayMs}ms and retrying the same profile (${userDataDir}).`
+                );
+                await sleep(retry.delayMs);
+            }
         }
-        if (!page) page = await context.newPage();
-        const browser = typeof context.browser === "function" ? context.browser() : null;
-        return { browser, context, page, persistent: true, userDataDir };
     };
 
     try {
-        return await open(resolved.userDataDir);
+        return await openRetrying(resolved.userDataDir);
     } catch (error) {
         if (!isProfileInUseError(error)) throw error;
         const fallback = path.join(resolved.userDataDir, `pid-${pid}`);
@@ -224,7 +320,7 @@ async function launchKanBrowser(deps = {}) {
             `kanSession => Browser profile is already in use (${resolved.userDataDir}). ` +
             `Launching a separate profile at ${fallback}. cf_clearance from the other run is not shared.`
         );
-        return await open(fallback);
+        return await openRetrying(fallback);
     }
 }
 
