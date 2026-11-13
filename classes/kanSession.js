@@ -12,7 +12,8 @@
  * - sends one stable Windows Chrome header set, replaced by the real browser UA
  *   once a browser has solved a challenge
  * - waits a polite interval plus jitter between requests
- * - runs a single request at a time
+ * - runs one request at a time, unless the run sets httpConcurrency (Kan kids
+ *   and Kan teens use a small batch). The browser page stays one at a time
  * - keeps one cookie jar, and reloads cookies saved by the previous run
  * - opens one real Chrome (or full Chromium) persistent context after a
  *   challenge, and reuses that page
@@ -222,6 +223,8 @@ class KanSession {
         this.page = null;
         this.launching = null;
         this.browserLaunches = 0;
+        this._browserLock = Promise.resolve();
+        this._lanes = null;
         if (this.snapshotPath) this._applySnapshot(readHttpSnapshot(this.snapshotPath));
     }
 
@@ -231,9 +234,24 @@ class KanSession {
             if (state) return runStore.run(state, () => this._fetch(url, options));
             return this._fetch(url, options);
         };
-        const queued = this.tail.then(run, run);
-        this.tail = queued.then(() => undefined, () => undefined);
+        const lane = this._laneFor(state);
+        const queued = lane.tail.then(run, run);
+        lane.tail = queued.then(() => undefined, () => undefined);
         return queued;
+    }
+
+    _laneFor(state) {
+        const n = state && Number(state.httpConcurrency);
+        if (!Number.isInteger(n) || n <= 1) return this;
+        if (!this._lanes || this._lanes.count !== n) {
+            const extras = [];
+            for (let i = 1; i < n; i++) extras.push({ tail: Promise.resolve() });
+            this._lanes = { count: n, extras, cursor: 0 };
+        }
+        const lanes = [this, ...this._lanes.extras];
+        const lane = lanes[this._lanes.cursor % lanes.length];
+        this._lanes.cursor += 1;
+        return lane;
     }
 
     async _fetch(url, options) {
@@ -514,6 +532,15 @@ class KanSession {
     }
 
     async _browserAttempt(url, options) {
+        const run = this._browserLock.then(
+            () => this._browserAttemptBody(url, options),
+            () => this._browserAttemptBody(url, options)
+        );
+        this._browserLock = run.then(() => undefined, () => undefined);
+        return run;
+    }
+
+    async _browserAttemptBody(url, options) {
         const page = await this._getPage();
         const target = withParams(url, options.params);
         await this._noteLaunchUa();

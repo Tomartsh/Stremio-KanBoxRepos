@@ -4,6 +4,14 @@ function envFlag(name, defaultValue) {
     return !["0", "false", "no", "off"].includes(String(raw).toLowerCase());
 }
 
+function readBatchSize(name, fallback) {
+    const raw = process.env[name];
+    if (raw == null || String(raw).trim() === "") return fallback;
+    const n = Number(String(raw).trim());
+    if (!Number.isInteger(n) || n < 1) return fallback;
+    return n;
+}
+
 module.exports = {
     // Rate Limiting Configuration (per domain)
     RATE_LIMITING: {
@@ -139,17 +147,17 @@ module.exports = {
         },
 
         'KanKidsScraper': {
-            parallelFetching: false,       // Sequential - moderate protection
-            batchSize: 10,                 // Medium batch size
-            delayBetweenBatches: 500,      // 0.5s delay between requests
+            parallelFetching: true,        // Small parallel batches of episode pages
+            get batchSize() { return readBatchSize("KAN_KIDS_BATCH_SIZE", 4); },
+            delayBetweenBatches: 500,      // Pause between batches
             requestsPerSecond: 2,
             circuitBreakerThreshold: 5
         },
 
         'KanTeensScraper': {
-            parallelFetching: false,       // Sequential - moderate protection
-            batchSize: 10,                 // Medium batch size
-            delayBetweenBatches: 500,      // 0.5s delay between requests
+            parallelFetching: true,        // Small parallel batches of episode pages
+            get batchSize() { return readBatchSize("KAN_TEENS_BATCH_SIZE", 4); },
+            delayBetweenBatches: 500,      // Pause between batches
             requestsPerSecond: 2,
             circuitBreakerThreshold: 5
         },

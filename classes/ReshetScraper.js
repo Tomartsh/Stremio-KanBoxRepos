@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const utils = require("./utilities.js");
 const {
     LOG4JS,
@@ -7,9 +8,18 @@ const {
 } = require ("./constants");
 const {fetchData, writeLog, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const { parseIsraeliDate } = require("./ScraperHelpers.js");
+const { normalizeSeriesLink, stableSlugToken } = require("./seriesIdentity.js");
 const log4js = require("log4js");
 const BaseScraper = require("./BaseScraper.js");
 const TmdbHelper = require("./TmdbHelper.js");
+
+/**
+ * Series id from the show URL slug. The same path always yields the same id,
+ * including when 13tv inserts a show and shifts the list.
+ */
+function reshetSeriesId(pageLink) {
+    return PREFIX + "reshet_" + stableSlugToken(pageLink);
+}
 
 var logger = log4js.getLogger("ReshetScraper");
 
@@ -44,14 +54,13 @@ class ReshetScraper extends BaseScraper {
         this._buildId = seriesListJson["buildId"];
         const shows = seriesListJson["props"]["pageProps"]["page"]["Content"]["PageGrid"][0]["shows"];
 
-        // Process series using batch processor
+        // Process series using batch processor. The id comes from the show
+        // URL, not from this list position.
         logger.info(`crawlVOD => Found ${shows.length} Reshet series to process`);
-        var reshetId = 1;
         await this.processBatch(
             shows,
-            async (series, index) => {
-                const result = await this.processOneReshetSeries(series, reshetId + index);
-                return result;
+            async (series) => {
+                return await this.processOneReshetSeries(series);
             },
             "reshet-series"
         );
@@ -63,7 +72,7 @@ class ReshetScraper extends BaseScraper {
     /**
      * Process a single Reshet series (extracted from crawlVOD for batch processing)
      */
-    async processOneReshetSeries(series, reshetId) {
+    async processOneReshetSeries(series) {
         var seriesUrl = series["url"];
         //if no URL we skip
         if ((seriesUrl == undefined) || (seriesUrl.startsWith("/?"))) {
@@ -71,14 +80,15 @@ class ReshetScraper extends BaseScraper {
             return null;
         }
 
-        var id = PREFIX + "reshet_" + reshetId;
         var picUrl = series["poster"];
         var title = series["title"];
         var seriesReshetId = series["id"];
         logger.debug(`processOneReshetSeries => seriesReshetId: ${seriesReshetId} seriesUrl: ${seriesUrl} `);
-        seriesUrl = seriesUrl.substring(0,seriesUrl.length -1);
+        if (seriesUrl.endsWith("/")) seriesUrl = seriesUrl.slice(0, -1);
         var seriesReshetName = seriesUrl.substring(seriesUrl.lastIndexOf("/") + 1);
-        logger.debug(`processOneReshetSeries => seriesReshetName: ${seriesReshetName}`);
+        const pageLink = RESHET.URL_BASE + seriesUrl;
+        var id = this._reshetSeriesId(pageLink);
+        logger.debug(`processOneReshetSeries => seriesReshetName: ${seriesReshetName} id: ${id}`);
 
         var videos = await this.getEpisodes(seriesReshetName, id)
         if (videos == "-1"){
@@ -95,7 +105,7 @@ class ReshetScraper extends BaseScraper {
         }
 
         const extraFields = tmdbSeriesId ? { tmdbId: tmdbSeriesId } : {};
-        this.addToJsonObject(id, title, RESHET.URL_BASE + seriesUrl, picUrl, "",  "", videos, "r", "series", extraFields)
+        this.addToJsonObject(id, title, pageLink, picUrl, "",  "", videos, "r", "series", extraFields)
         logger.debug(`processOneReshetSeries => Added series ${title}`);
         return { id, title, tmdbSeriesId };
     }
@@ -296,6 +306,21 @@ class ReshetScraper extends BaseScraper {
         return retJson;
     }
 
+    _reshetSeriesId(pageLink) {
+        if (!this._reshetIdClaims) this._reshetIdClaims = new Map();
+        const link = normalizeSeriesLink(pageLink);
+        const base = reshetSeriesId(pageLink);
+        const claimed = this._reshetIdClaims.get(base);
+        if (!claimed || claimed === link) {
+            this._reshetIdClaims.set(base, link);
+            return base;
+        }
+        const suffix = crypto.createHash("sha1").update(link || String(pageLink)).digest("hex").slice(0, 8);
+        const id = `${base}_${suffix}`;
+        this._reshetIdClaims.set(id, link);
+        return id;
+    }
+
     setSeasonId(seasonName, seasonKey){
         if ((seasonName != undefined) &&(seasonName.startsWith("עונה "))){
             seasonName = seasonName.replace("עונה ","");
@@ -311,3 +336,4 @@ class ReshetScraper extends BaseScraper {
  * Module Exports
  **********************************************************/
 module.exports = ReshetScraper;
+module.exports.reshetSeriesId = reshetSeriesId;

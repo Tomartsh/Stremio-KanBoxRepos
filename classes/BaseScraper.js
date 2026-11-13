@@ -22,6 +22,11 @@ const {
     restoreFailedFetches
 } = require("./catalogGate.js");
 const { buildSeriesIdentityIndex } = require("./seriesIdentity.js");
+const {
+    fullCatalogRefresh,
+    streamUrlIsReusable,
+    indexPublishedStreams
+} = require("./publishedStreams.js");
 const StateManager = require("./StateManager.js");
 const log4js = require("log4js");
 
@@ -104,6 +109,7 @@ class BaseScraper {
         this._failedSeries = [];
         this._listingIncomplete = false;
         this._seriesIndex = null;
+        this._publishedStreams = null;
         this._previousCatalogResolved = false;
 
         this.logger.info(`${scraperName} initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
@@ -578,6 +584,7 @@ class BaseScraper {
      */
     async loadSeriesIdentityIndex() {
         this._seriesIndex = null;
+        this._publishedStreams = null;
         try {
             const catalog = await this._previousCatalog();
             if (!catalog) {
@@ -588,9 +595,73 @@ class BaseScraper {
             }
             const root = catalog.root || catalog;
             this._seriesIndex = buildSeriesIdentityIndex(root);
+            this._publishedStreams = indexPublishedStreams(root);
         } catch (error) {
             this.logger.warn(`${this.scraperName} => Could not index the previous catalog for stable series ids: ${error.message}`);
         }
+    }
+
+    /**
+     * Kids and teens episode fetches share the Kan session. A batch size
+     * above 1 lets that many HTTP requests run at once. The browser page
+     * stays one at a time.
+     */
+    allowParallelKanHttp() {
+        const n = Number(this.config.batchSize);
+        if (!Number.isInteger(n) || n <= 1) return;
+        const state = getKanRunState();
+        if (state) state.httpConcurrency = n;
+    }
+
+    /**
+     * A stream already published for this episode id. Signed or expiring
+     * URLs are left for a fresh fetch. KAN_FULL_REFRESH=1 skips the reuse.
+     */
+    reusablePublishedStream(episodeId) {
+        if (fullCatalogRefresh()) return null;
+        if (!this._publishedStreams || episodeId == null) return null;
+        const streams = this._publishedStreams.get(String(episodeId));
+        if (!streams || streams.length === 0) return null;
+        if (streams.some((item) => !streamUrlIsReusable(item.url))) {
+            this.logger.debug(`reusablePublishedStream => ${episodeId} has a signed or expiring URL; refetching`);
+            return null;
+        }
+        this.logger.debug(`reusablePublishedStream => reusing published stream for ${episodeId}`);
+        return Object.assign({}, streams[0]);
+    }
+
+    /**
+     * Sitemap episodes already carry the stream from the page just fetched.
+     * Otherwise reuse a published stream, then fetch.
+     */
+    async resolveEpisodeStreams(episodeId, episode, fetchStream) {
+        if (episode && Object.prototype.hasOwnProperty.call(episode, "stream")) {
+            return episode.stream && episode.stream.url ? episode.stream : "";
+        }
+        const reused = this.reusablePublishedStream(episodeId);
+        if (reused) return reused;
+        return fetchStream();
+    }
+
+    /**
+     * Parallel series fetches insert catalog keys in completion order.
+     * Put these ids back in list order and leave every other key where it was.
+     */
+    orderJsonByIds(ids) {
+        const wanted = [];
+        const seen = new Set();
+        for (const id of ids || []) {
+            if (!id || seen.has(id) || !this._jsonObj[id]) continue;
+            seen.add(id);
+            wanted.push(id);
+        }
+        if (wanted.length === 0) return;
+        const ordered = {};
+        for (const key of Object.keys(this._jsonObj)) {
+            if (!seen.has(key)) ordered[key] = this._jsonObj[key];
+        }
+        for (const id of wanted) ordered[id] = this._jsonObj[id];
+        this._jsonObj = ordered;
     }
 
     seriesIdFor(link, subPrefix, name) {

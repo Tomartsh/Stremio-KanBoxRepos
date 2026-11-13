@@ -14,7 +14,6 @@ const { KAN_SESSION, URL_JSON_BASE, SAVE_FOLDER } = require("./constants");
 const { isKanBlockedError, isKanBrowserError } = require("./kanSession");
 const {
     normalizeSeriesLink,
-    normalizeSeriesName,
     buildSeriesIdentityIndex,
     matchSeriesIdentity
 } = require("./seriesIdentity");
@@ -109,46 +108,35 @@ function formatCatalogComparison(scraperName, counts, previous) {
     return `${scraperName} catalog: ${parts.join(", ")}`;
 }
 
+function perSeriesCatalog(perSeries) {
+    const data = {};
+    for (const [id, row] of Object.entries(perSeries || {})) {
+        const name = (row && row.name) || "";
+        const link = (row && row.link) || "";
+        data[id] = { id, name, link, meta: { id, name, link } };
+    }
+    return { data };
+}
+
+/**
+ * Pair each published series with this run. The shared identity helper
+ * accepts an id only when the link or the name also matches, then falls
+ * back to the link and then the name. A Reshet list shift, or the one-time
+ * move from positional ids to slug ids, therefore compares the same show.
+ */
 function seriesVideoDrops(previous, counts) {
     if (!previous || !previous.perSeries || !counts || !counts.perSeries) return [];
-    const byLink = new Map();
-    const byName = new Map();
-    for (const [id, next] of Object.entries(counts.perSeries)) {
-        const link = normalizeSeriesLink(next && next.link);
-        const name = normalizeSeriesName(next && next.name);
-        const record = {
-            id,
-            name: (next && next.name) || "",
-            link,
-            videos: next ? next.videos : 0
-        };
-        if (link && !byLink.has(link)) byLink.set(link, record);
-        if (name && !byName.has(name)) byName.set(name, record);
-    }
+    const index = buildSeriesIdentityIndex(perSeriesCatalog(counts.perSeries));
     const consumed = new Set();
     const drops = [];
     for (const [id, prev] of Object.entries(previous.perSeries)) {
-        let next = null;
-        if (counts.perSeries[id] && !consumed.has(id)) {
-            const same = counts.perSeries[id];
-            next = {
-                id,
-                name: same.name || "",
-                link: normalizeSeriesLink(same.link),
-                videos: same.videos
-            };
-        } else {
-            const link = normalizeSeriesLink(prev && prev.link);
-            const name = normalizeSeriesName(prev && prev.name);
-            let hit = link ? byLink.get(link) : null;
-            if (hit && consumed.has(hit.id)) hit = null;
-            if (!hit && name) {
-                const named = byName.get(name);
-                if (named && !consumed.has(named.id)) hit = named;
-            }
-            if (hit) next = hit;
-        }
-        if (next && next.id) consumed.add(next.id);
+        const matched = matchSeriesIdentity(index, {
+            id,
+            link: prev && prev.link,
+            name: prev && prev.name
+        }, { consumed });
+        if (matched && matched.id) consumed.add(matched.id);
+        const next = matched ? counts.perSeries[matched.id] : null;
         const previousCount = Number(prev && prev.videos) || 0;
         const currentCount = next ? (Number(next.videos) || 0) : 0;
         if (currentCount >= previousCount) continue;

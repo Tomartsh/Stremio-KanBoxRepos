@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { generateSeriesId } = require("../classes/utilities");
-const { buildSeriesIdentityIndex } = require("../classes/seriesIdentity");
+const { buildSeriesIdentityIndex, matchSeriesIdentity } = require("../classes/seriesIdentity");
 
 const SLUGS = [
     ["https://www.kankids.org.il/content/kids/ktantanim-main/tamaris_garden/", "il_kan_kids_tamaris_garden"],
@@ -80,6 +80,27 @@ test("series already in the published catalog keep that id", () => {
         generateSeriesId("https://www.kankids.org.il/content/kids/ktantanim-main/brand_new_show/", "kids", "0", options),
         "il_kan_kids_brand_new_show"
     );
+});
+
+test("an id match is kept only when the link or the name agrees", () => {
+    const index = buildSeriesIdentityIndex({
+        data: {
+            il_reshet_255: row("il_reshet_255", 'שיחות מהממ"ד', "https://13tv.co.il/all-shows/mamad-talk"),
+            il_reshet_todays_talk: row("il_reshet_todays_talk", "שיחת היום עם לוסי אהריש", "https://13tv.co.il/all-shows/todays-talk")
+        }
+    });
+    const moved = matchSeriesIdentity(index, {
+        id: "il_reshet_255",
+        name: "שיחת היום עם לוסי אהריש",
+        link: "https://13tv.co.il/all-shows/todays-talk/"
+    });
+    assert.equal(moved.id, "il_reshet_todays_talk");
+    const same = matchSeriesIdentity(index, {
+        id: "il_reshet_255",
+        name: 'שיחות מהממ"ד',
+        link: "https://13tv.co.il/all-shows/mamad-talk"
+    });
+    assert.equal(same.id, "il_reshet_255");
 });
 
 function prefixFor(id) {

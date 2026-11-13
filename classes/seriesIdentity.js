@@ -4,7 +4,8 @@
  * Those series used to take the next value from a process-wide counter, so
  * the id depended on scrape order. Published ids stay as they are: match the
  * previous catalog by link, then by name. A series that is not in that
- * catalog gets a deterministic id from its URL slug.
+ * catalog gets a deterministic id from its URL slug. An id match is kept
+ * only when the link or the name also agrees.
  */
 
 const crypto = require("crypto");
@@ -101,19 +102,37 @@ function buildSeriesIdentityIndex(root) {
 }
 
 /**
- * Match a scraped series to a published one. Id, then link, then name.
- * These catalogs do not reuse a title across series, so a renamed URL still
- * keeps the published id.
+ * An id match is the same series only when the link or the name agrees.
+ * A positional id that now points at a different show falls through to the
+ * link, then the name. `options.consumed` is a set of ids already paired.
  */
-function matchSeriesIdentity(index, query) {
+function idMatchAgrees(query, hit) {
+    const link = normalizeSeriesLink(query && query.link);
+    const name = normalizeSeriesName(query && query.name);
+    if (link && hit.link && link === hit.link) return true;
+    if (name && hit.name && name === hit.name) return true;
+    return false;
+}
+
+function matchSeriesIdentity(index, query, options) {
     if (!index || !query) return null;
+    const consumed = options && options.consumed;
+    const free = (hit) => !!(hit && hit.id) && !(consumed && consumed.has(hit.id));
     const id = query.id ? String(query.id) : "";
-    if (id && index.byId && index.byId.has(id)) return index.byId.get(id);
+    if (id && index.byId && index.byId.has(id)) {
+        const hit = index.byId.get(id);
+        if (free(hit) && idMatchAgrees(query, hit)) return hit;
+    }
     const link = normalizeSeriesLink(query.link);
-    if (link && index.byLink && index.byLink.has(link)) return index.byLink.get(link);
+    if (link && index.byLink && index.byLink.has(link)) {
+        const hit = index.byLink.get(link);
+        if (free(hit)) return hit;
+    }
     const name = normalizeSeriesName(query.name);
     if (!name || !index.byName || !index.byName.has(name)) return null;
-    return index.byName.get(name);
+    const hit = index.byName.get(name);
+    if (!free(hit)) return null;
+    return hit;
 }
 
 module.exports = {

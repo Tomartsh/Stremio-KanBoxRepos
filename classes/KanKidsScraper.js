@@ -40,6 +40,7 @@ class KanKidsScraper extends BaseScraper {
      * Main scraping logic - required by BaseScraper
      */
     async crawlContent() {
+        this.allowParallelKanHttp();
         await this.crawlKids();
     }
 
@@ -66,13 +67,14 @@ class KanKidsScraper extends BaseScraper {
 
         // Process kids series using batch processor
         logger.info(`crawlKids => Found ${kidsJsonArr.length} kids series to process`);
-        await this.processBatch(
+        const results = await this.processBatch(
             kidsJsonArr,
             async (series, index) => {
                 return await this.processOneKidsSeries(series, subType);
             },
             "kids-series"
         );
+        this.orderJsonByIds(results.map((result) => result && result.id));
     }
 
     /**
@@ -197,6 +199,7 @@ class KanKidsScraper extends BaseScraper {
         for (const seasonNo of seasonNumbers) {
             const episodeData = bySeason.get(seasonNo).slice().sort((a, b) => b.episodeNo - a.episodeNo);
             logger.info(`getKidsVideos => Season ${seasonNo} has ${episodeData.length} episode(s) - processing in descending order`);
+            const start = videosCollected.length;
             await this.processBatch(
                 episodeData,
                 async (epData) => {
@@ -204,6 +207,11 @@ class KanKidsScraper extends BaseScraper {
                 },
                 `kids-episodes (Season ${seasonNo})`
             );
+            // Parallel completion order is not episode order. Restore the
+            // descending episode order the sequential path used to push.
+            const added = videosCollected.splice(start);
+            added.sort((a, b) => Number(b.episode) - Number(a.episode));
+            videosCollected.push(...added);
         }
     }
 
@@ -229,12 +237,12 @@ class KanKidsScraper extends BaseScraper {
         var episodeDescription = String(epData.description || "");
         episodeDescription = episodeDescription.replace(/[\r\n]+/gm, "").trim();
 
-        var streams;
-        if (Object.prototype.hasOwnProperty.call(epData, "stream")) {
-            streams = epData.stream && epData.stream.url ? epData.stream : "";
-        } else {
-            streams = await this.getStreams(episodeLink);
-        }
+        var videoId = id + ":" + seasonNo + ":" + episodeNo;
+        var streams = await this.resolveEpisodeStreams(
+            videoId,
+            epData,
+            () => this.getStreams(episodeLink)
+        );
         var streamsArr = [];
         var released = "";
         if (streams == "-1"){
@@ -243,8 +251,6 @@ class KanKidsScraper extends BaseScraper {
             streamsArr.push(streams);
             released = streams.released;
         }
-
-        var videoId = id + ":" + seasonNo + ":" + episodeNo;
 
         // Create video object and add to collected array
         const video = {
