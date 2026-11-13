@@ -519,6 +519,106 @@ test("a timed-out series keeps its previous episodes and a removed series does n
     assert.equal(listing.data.il_kan_kids_1021.meta.videos[0].id, "new-1");
 });
 
+test("a reshet id change is compared by link, and a shifted id is not a different show's videos", () => {
+    const previous = {
+        series: 2,
+        videos: 720,
+        jsonBytes: 1000000,
+        described: 720,
+        perSeries: {
+            il_reshet_254: {
+                name: 'שיחות מהממ"ד',
+                link: "https://13tv.co.il/all-shows/mamad-talk",
+                videos: 0
+            },
+            il_reshet_255: {
+                name: "שיחת היום עם לוסי אהריש",
+                link: "https://13tv.co.il/all-shows/todays-talk",
+                videos: 720
+            }
+        }
+    };
+    const slugIds = {
+        series: 2,
+        videos: 720,
+        jsonBytes: 1000000,
+        described: 720,
+        perSeries: {
+            il_reshet_mamad_talk: {
+                name: 'שיחות מהממ"ד',
+                link: "https://13tv.co.il/all-shows/mamad-talk",
+                videos: 0
+            },
+            il_reshet_todays_talk: {
+                name: "שיחת היום עם לוסי אהריש",
+                link: "https://13tv.co.il/all-shows/todays-talk/",
+                videos: 720
+            }
+        }
+    };
+    const kept = decidePublish({
+        scraperName: "Reshet",
+        exportFilename: "stremio-reshet",
+        counts: slugIds,
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(kept.published, true);
+    assert.equal(kept.seriesDrops.length, 0);
+
+    const shifted = decidePublish({
+        scraperName: "Reshet",
+        exportFilename: "stremio-reshet",
+        counts: {
+            series: 2,
+            videos: 720,
+            jsonBytes: 1000000,
+            described: 720,
+            perSeries: {
+                il_reshet_255: {
+                    name: 'שיחות מהממ"ד',
+                    link: "https://13tv.co.il/all-shows/mamad-talk",
+                    videos: 0
+                },
+                il_reshet_256: {
+                    name: "שיחת היום עם לוסי אהריש",
+                    link: "https://13tv.co.il/all-shows/todays-talk",
+                    videos: 720
+                }
+            }
+        },
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(shifted.published, true);
+    assert.equal(shifted.seriesDrops.some((drop) => drop.previous === 720 && drop.current === 0), false);
+
+    const lost = decidePublish({
+        scraperName: "Reshet",
+        exportFilename: "stremio-reshet",
+        counts: {
+            series: 1,
+            videos: 0,
+            jsonBytes: 1000000,
+            described: 0,
+            perSeries: {
+                il_reshet_255: {
+                    name: 'שיחות מהממ"ד',
+                    link: "https://13tv.co.il/all-shows/mamad-talk",
+                    videos: 0
+                }
+            }
+        },
+        previous,
+        catalogComplete: true
+    });
+    assert.equal(lost.published, false);
+    assert.equal(lost.seriesDrops.length, 1);
+    assert.equal(lost.seriesDrops[0].name, "שיחת היום עם לוסי אהריש");
+    assert.equal(lost.seriesDrops[0].previous, 720);
+    assert.equal(lost.seriesDrops[0].current, 0);
+});
+
 test("local zip counts are read from the output directory", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kan-gate-"));
     const zip = new AdmZip();
