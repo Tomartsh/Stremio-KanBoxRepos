@@ -5,7 +5,7 @@ const {
     HINUKHIT,
     SCRAPER_CONFIG
 } = require("./constants.js");
-const { extractKanStream, extractLobbySeries, collectEducationalEpisodes } = require("./ScraperHelpers.js");
+const { extractKanStream, extractLobbySeries, collectEducationalEpisodes, applySeriesPoster } = require("./ScraperHelpers.js");
 const { supplementEducationalEpisodes } = require("./KanSitemap.js");
 const BaseScraper = require("./BaseScraper.js");
 
@@ -63,7 +63,7 @@ class KanKidsScraper extends BaseScraper {
         if (!loaded.doc) {
             throw new Error("Lobby page did not load");
         }
-        var kidsJsonArr = extractLobbySeries(loaded.doc);
+        var kidsJsonArr = await extractLobbySeries(loaded.doc, { sectionPrefix: HINUKHIT.SECTION_KIDS });
 
         // Process kids series using batch processor
         logger.info(`crawlKids => Found ${kidsJsonArr.length} kids series to process`);
@@ -81,8 +81,6 @@ class KanKidsScraper extends BaseScraper {
      * Process a single kids series (extracted from crawlKids for batch processing)
      */
     async processOneKidsSeries(series, subType) {
-        var imgUrl = utils.getImageFromUrl(series.Image, subType);
-
         var seriesPage = kidsContentUrl(series.Url);
         var genres = utils.setGenreFromString(series.Genres);
         var seriesName = lobbySeriesName(series);
@@ -97,6 +95,7 @@ class KanKidsScraper extends BaseScraper {
             return null;
         }
         var doc2 = loaded.doc;
+        var imgUrl = applySeriesPoster(series.Image, doc2, subType);
 
         //set the series name
         var seriesTitle = this.getEducationalTitle(doc2);

@@ -17,6 +17,7 @@ const {
     episodeFieldsFromDocument,
     assignAddedEpisodeNumbers,
     loadKidsSitemap,
+    listSeriesUrls,
     supplementEducationalEpisodes,
     siblingSitemapUrl,
     ROBOTS_URL,
@@ -351,5 +352,46 @@ describe("Kan kids sitemap", { concurrency: false }, () => {
         assert.equal(onPage.some((item) => item.episodeId === "100698"), false);
         assert.equal(onPage.some((item) => item.episodeId === "100800"), false);
         assert.equal(onPage.some((item) => item.episodeId === "100901"), false);
+    });
+
+    test("listSeriesUrls returns distinct series pages for one section", async () => {
+        resetKanSitemapCache();
+        const files = sitemapFiles();
+        files[PART_0] = files[PART_0].replace(
+            "</urlset>",
+            "<url><loc>https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad/s1/135116/</loc></url></urlset>"
+        );
+        files[PART_1] = files[PART_1].replace(
+            "</urlset>",
+            "<url><loc>https://www.kan.org.il/content/kids/hinuchit-main/saving_the_pets/</loc></url></urlset>"
+        );
+        const calls = [];
+        const fetchText = async (url) => {
+            calls.push(url);
+            if (!files[url]) throw new Error("missing " + url);
+            return files[url];
+        };
+        const kids = await listSeriesUrls("ktantanim-main", quietLoad({ fetchText }));
+        const callsAfterLoad = calls.length;
+        const teens = await listSeriesUrls("hinuchit-main");
+        const podcasts = await listSeriesUrls("kids-podcasts");
+        const slashWrapped = await listSeriesUrls("/ktantanim-main/");
+        assert.deepEqual(kids, [
+            "https://www.kankids.org.il/content/kids/ktantanim-main/p-11732/",
+            "https://www.kankids.org.il/content/kids/ktantanim-main/p-762163/",
+            "https://www.kankids.org.il/content/kids/ktantanim-main/parpar_nehmad/"
+        ]);
+        assert.deepEqual(teens, [
+            "https://www.kankids.org.il/content/kids/hinuchit-main/p-11917/",
+            "https://www.kankids.org.il/content/kids/hinuchit-main/saving_the_pets/"
+        ]);
+        assert.deepEqual(podcasts, [
+            "https://www.kankids.org.il/content/kids/kids-podcasts/p-432148/"
+        ]);
+        assert.deepEqual(slashWrapped, kids);
+        assert.equal(kids.includes("https://www.kankids.org.il/content/kids/ktantanim-main/"), false);
+        assert.equal(teens.includes("https://www.kankids.org.il/content/kids/hinuchit-main/p-11917/s10/500010/"), false);
+        assert.equal(calls.filter((url) => url === ROBOTS_URL).length, 1);
+        assert.equal(calls.length, callsAfterLoad);
     });
 });
