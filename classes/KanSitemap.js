@@ -25,13 +25,20 @@
  * A sitemap miss logs a warning and the scraper keeps the page episodes.
  * Other series in the sitemap, including the very long ones, are ignored
  * until a scraper actually processes that series.
+ *
+ * listSeriesUrls(sectionPrefix) uses this same cache. It returns the
+ * distinct series page https://www.kankids.org.il/content/kids/<section>/<slug>/
+ * for one section (hinuchit-main for teens, ktantanim-main for kids).
+ * Episode and season URLs collapse to that page. The section index is not
+ * a series.
  */
 
 const { parse } = require("node-html-parser");
 const log4js = require("log4js");
 const {
     streamFromKanDocument,
-    cleanVideoName
+    cleanVideoName,
+    seriesPageUrl: toSeriesPageUrl
 } = require("./ScraperHelpers.js");
 const {
     isKanBlockedError,
@@ -556,7 +563,48 @@ async function readSitemapGroups(options) {
     if (index.isIndex && !pageLocs.length) {
         throw errors[0] || new Error("Kids sitemap files were empty");
     }
-    return groupSitemapEpisodes(pageLocs);
+    return {
+        groups: groupSitemapEpisodes(pageLocs),
+        seriesBySection: seriesUrlsBySection(pageLocs)
+    };
+}
+
+/**
+ * First path segment after /content/kids/<section>/ is the series slug.
+ * Later segments are a season or an episode and are not separate series.
+ * @param {string[]} locs
+ * @returns {Map<string, string[]>}
+ */
+function seriesUrlsBySection(locs) {
+    const bySection = new Map();
+    const seen = new Set();
+    for (const loc of locs || []) {
+        const series = toSeriesPageUrl(loc);
+        if (!series || seen.has(series)) continue;
+        const section = series.slice(KIDS_ORIGIN.length).match(/^\/content\/kids\/([^/]+)\//);
+        if (!section) continue;
+        seen.add(series);
+        const name = section[1];
+        if (!bySection.has(name)) bySection.set(name, []);
+        bySection.get(name).push(series);
+    }
+    return bySection;
+}
+
+/**
+ * Distinct series-page URLs for one kids section. The sitemap is fetched
+ * once per process; a later call reads the cache.
+ * @param {string} sectionPrefix hinuchit-main or ktantanim-main
+ * @param {object} [options] forwarded to loadKidsSitemap on a cache miss
+ * @returns {Promise<string[]>}
+ */
+async function listSeriesUrls(sectionPrefix, options) {
+    await loadKidsSitemap(options);
+    if (!cache || cache.failed || !cache.seriesBySection) return [];
+    const section = String(sectionPrefix || "").replace(/^\/+|\/+$/g, "");
+    if (!section) return [];
+    const list = cache.seriesBySection.get(section);
+    return list ? list.slice() : [];
 }
 
 function sitemapOptions(options) {
@@ -580,8 +628,10 @@ async function loadKidsSitemap(options) {
     if (!inflight) {
         const resolved = sitemapOptions(options);
         inflight = readSitemapGroups(resolved)
-            .then((groups) => {
-                cache = { failed: false, groups };
+            .then((loaded) => {
+                const groups = loaded && loaded.groups ? loaded.groups : new Map();
+                const seriesBySection = loaded && loaded.seriesBySection ? loaded.seriesBySection : new Map();
+                cache = { failed: false, groups, seriesBySection };
                 resolved.logger.info(`KanSitemap => Loaded ${groups.size} series from the kids sitemap.`);
                 return groups;
             })
@@ -706,6 +756,7 @@ module.exports = {
     episodeFieldsFromDocument,
     assignAddedEpisodeNumbers,
     loadKidsSitemap,
+    listSeriesUrls,
     supplementEducationalEpisodes,
     siblingSitemapUrl,
     ROBOTS_URL,

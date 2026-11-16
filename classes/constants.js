@@ -262,6 +262,10 @@ module.exports = {
         URL_TINY: "https://www.kankids.org.il/lobby-kids/tiny/",
         URL_TEENS: "https://www.kankids.org.il/lobby-kids/kids-teens",
         URL_KIDS_CONTENT_PREFIX: "https://www.kankids.org.il",
+        // Sitemap section for each redesigned lobby. The pages themselves
+        // only render about 20 cards and do not page.
+        SECTION_KIDS: "ktantanim-main",
+        SECTION_TEENS: "hinuchit-main",
         SUBPREFIX_KIDS: "kids",
         SUBPREFIX_TEENS: "teens",
         // Kan-Box category for teens (single category to scrape)

@@ -5,7 +5,7 @@ const {
     HINUKHIT,
     SCRAPER_CONFIG
 } = require("./constants.js");
-const { safeExecute, extractLobbySeries, collectEducationalEpisodes, parseKanBoxCategorySeries } = require("./ScraperHelpers.js");
+const { safeExecute, extractLobbySeries, collectEducationalEpisodes, parseKanBoxCategorySeries, applySeriesPoster } = require("./ScraperHelpers.js");
 const { supplementEducationalEpisodes } = require("./KanSitemap.js");
 const BaseScraper = require("./BaseScraper.js");
 
@@ -72,7 +72,7 @@ class KanTeensScraper extends BaseScraper {
         if (!loaded.doc) {
             throw new Error("Lobby page did not load");
         }
-        var teensJsonArr = extractLobbySeries(loaded.doc);
+        var teensJsonArr = await extractLobbySeries(loaded.doc, { sectionPrefix: HINUKHIT.SECTION_TEENS });
 
         // Process teens series using batch processor
         logger.info(`crawlTeens => Found ${teensJsonArr.length} teens series to process`);
@@ -90,8 +90,6 @@ class KanTeensScraper extends BaseScraper {
      * Process a single teens series (extracted from crawlTeens for batch processing)
      */
     async processOneTeensSeries(series, subType) {
-        var imgUrl = utils.getImageFromUrl(series.Image, subType);
-
         var seriesPage = kidsContentUrl(series.Url);
         var genres = utils.setGenreFromString(series.Genres);
         var seriesName = lobbySeriesName(series);
@@ -107,6 +105,7 @@ class KanTeensScraper extends BaseScraper {
             return null;
         }
         var doc2 = loaded.doc;
+        var imgUrl = applySeriesPoster(series.Image, doc2, subType);
 
         //set the series name
         var seriesTitle = this.getEducationalTitle(doc2);
@@ -216,7 +215,8 @@ class KanTeensScraper extends BaseScraper {
                     Url: fullSeriesUrl,
                     Image: '',
                     ImageAlt: '',
-                    Description: `From Kan-Box category: ${HINUKHIT.KAN_BOX_CATEGORY}`
+                    Description: `From Kan-Box category: ${HINUKHIT.KAN_BOX_CATEGORY}`,
+                    Genres: []
                 };
 
                 // Process the series using existing method

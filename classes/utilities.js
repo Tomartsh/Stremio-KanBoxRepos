@@ -1034,6 +1034,10 @@ function getDateString(format = 'YYYYmmdd_HHmm') {
 }
 
 function getImageFromUrl(url, subType){
+    if (typeof url !== "string") {
+        if (url == null) return "";
+        url = String(url);
+    }
     var retVal = url;
     if (retVal.includes("?")){
         retVal = retVal.substring(0,retVal.indexOf("?"));
@@ -1060,12 +1064,21 @@ function getImageFromUrl(url, subType){
  * @returns array of genres of series
  */
 function setGenreFromString(str) {
-    if (str == "") { return "Kan";}
-    
+    if (str == null || str === "") { return "Kan"; }
+
+    var parts;
+    if (Array.isArray(str)) {
+        parts = str;
+    } else if (typeof str === "string") {
+        parts = str.split(/[,|]/);
+    } else {
+        return "Kan";
+    }
+
     var genres = [];
     //for (var check of genresArr){
-    for (var check of str){
-        check = check.trim();
+    for (var check of parts){
+        check = String(check == null ? "" : check).trim();
 
         switch(check) {
             case "דרמה":

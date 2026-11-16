@@ -10,7 +10,7 @@
  */
 
 const { parse } = require("node-html-parser");
-const { fetchData, extractReleaseDate } = require("./utilities.js");
+const { fetchData, extractReleaseDate, getImageFromUrl } = require("./utilities.js");
 const { rethrowIfKanBlocked, isKanBlockedError } = require("./kanSession.js");
 const log4js = require("log4js");
 const logger = log4js.getLogger("ScraperHelpers");
@@ -531,20 +531,38 @@ async function safeFetch(url, context, logger, options = {}, retries = 1) {
 }
 
 /**
- * Kan Kids / Kan Teens lobby pages embed the series list as a JSON array
- * inside a script tag. The old scraper always read script index 4. When
- * Cloudflare (or a layout change) returned a different document, that index
- * threw and the empty result was published.
- *
- * Prefer the historical index when it parses, then scan every script.
- * @param {*} doc parsed HTML document
- * @returns {Array<object>}
+ * Series page for a kids or teens content URL.
+ * Episode and season URLs collapse to
+ * https://www.kankids.org.il/content/kids/<section>/<slug>/.
+ * The section index itself (/content/kids/<section>/) is not a series.
+ * @param {string} value
+ * @returns {string}
  */
-function extractLobbySeries(doc) {
-    if (!doc || typeof doc.querySelectorAll !== "function") {
-        throw new Error("Lobby page did not load");
+function seriesPageUrl(value) {
+    const absolute = toAbsolute(value, KIDS_ORIGIN + "/");
+    if (!absolute) return "";
+    let url;
+    try {
+        url = new URL(absolute);
+    } catch (error) {
+        return "";
     }
+    let path = url.pathname || "/";
+    path = path.replace(/^\/kids(?=\/content\/)/, "");
+    if (!path.endsWith("/")) path += "/";
+    const match = path.match(/^\/content\/kids\/([^/]+)\/([^/]+)\//);
+    if (!match) return "";
+    return KIDS_ORIGIN + "/content/kids/" + match[1] + "/" + match[2] + "/";
+}
 
+/**
+ * Historical lobby pages embed the series list as a JSON array inside a
+ * script tag. The old scraper always read script index 4. Prefer that slot
+ * when it parses, then scan every script.
+ * @param {*} doc
+ * @returns {Array<object>|null}
+ */
+function readLobbyJsonSeries(doc) {
     const ordered = [];
     const blocks = doc.querySelectorAll("div.umb-block-list div script");
     if (blocks[4]) ordered.push(blocks[4]);
@@ -569,8 +587,161 @@ function extractLobbySeries(doc) {
             continue;
         }
     }
+    return null;
+}
 
-    throw new Error("Lobby page did not contain a series list");
+function lobbyCardName(card) {
+    const aria = String(card.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim();
+    if (aria) return aria;
+    return flatText(card.querySelector("h3.cr-title"));
+}
+
+function lobbyCardImage(card) {
+    const img = card.querySelector("img");
+    if (!img) return "";
+    return String(img.getAttribute("src") || "").trim();
+}
+
+/**
+ * Cards on the redesigned lobby:
+ * section.content-grid-section a.cr-item.
+ * @param {*} doc
+ * @returns {Array<{href: string, name: string, image: string}>}
+ */
+function extractLobbyGridCards(doc) {
+    const cards = [];
+    const seen = new Set();
+    doc.querySelectorAll("section.content-grid-section a.cr-item").forEach((card) => {
+        const key = seriesPageUrl(card.getAttribute("href") || "");
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        cards.push({
+            href: key,
+            name: lobbyCardName(card),
+            image: lobbyCardImage(card)
+        });
+    });
+    return cards;
+}
+
+/**
+ * Sitemap URLs are the series list. Grid cards with the same series URL
+ * supply Name and Image. A card the sitemap did not list is kept.
+ * @param {string[]} sitemapUrls
+ * @param {Array<{href: string, name: string, image: string}>} cards
+ * @returns {Array<{Url: string, Name: string, Image: string, Genres: Array}>}
+ */
+function mergeLobbySeries(sitemapUrls, cards) {
+    const byKey = new Map();
+    const rows = [];
+    const add = (url) => {
+        const key = seriesPageUrl(url);
+        if (!key) return null;
+        const existing = byKey.get(key);
+        if (existing) return existing;
+        const row = { Url: key, Name: "", Image: "", Genres: [] };
+        byKey.set(key, row);
+        rows.push(row);
+        return row;
+    };
+    for (const url of sitemapUrls || []) add(url);
+    for (const card of cards || []) {
+        const row = add(card.href);
+        if (!row) continue;
+        if (!row.Name && card.name) row.Name = card.name;
+        if (!row.Image && card.image) row.Image = card.image;
+    }
+    return rows;
+}
+
+function lobbyLog(options) {
+    if (options && options.logger && typeof options.logger.info === "function") return options.logger;
+    return logger;
+}
+
+async function lobbySeriesFromSitemap(cards, sectionPrefix, options) {
+    const log = lobbyLog(options);
+    let sitemapUrls = [];
+    try {
+        const { listSeriesUrls } = require("./KanSitemap.js");
+        const listed = await listSeriesUrls(sectionPrefix, options);
+        sitemapUrls = Array.isArray(listed) ? listed : [];
+    } catch (error) {
+        log.warn(`extractLobbySeries => Kids sitemap unavailable (${error.message}). Using lobby cards only.`);
+        sitemapUrls = [];
+    }
+    const merged = mergeLobbySeries(sitemapUrls, cards);
+    if (!merged.length) {
+        throw new Error("Lobby page did not contain a series list");
+    }
+    log.info(
+        `extractLobbySeries => ${sectionPrefix}: ${sitemapUrls.length} sitemap series, ${cards.length} lobby cards, ${merged.length} merged.`
+    );
+    return merged;
+}
+
+/**
+ * Kan Kids / Kan Teens lobby series.
+ *
+ * The historical page embeds a JSON array with Url inside a script. That
+ * path is still preferred, and it returns the parsed objects unchanged.
+ * The redesigned /lobby-kids/kids-teens and /lobby-kids/tiny/ pages are
+ * server-rendered: section.content-grid-section holds about 20 cards and
+ * does not page. The kids sitemap is the series list (hinuchit-main for
+ * teens, ktantanim-main for kids). Grid cards merge in by series URL to
+ * supply Name and Image. Both sources empty is an error, so an empty
+ * catalog is not published.
+ *
+ * With a sectionPrefix the return value is a Promise. Without one, a JSON
+ * hit or a card-only result is returned directly.
+ *
+ * @param {*} doc parsed HTML document
+ * @param {{sectionPrefix?: string, fetchText?: Function, logger?: object}} [options]
+ * @returns {Array<object>|Promise<Array<object>>}
+ */
+function extractLobbySeries(doc, options) {
+    if (!doc || typeof doc.querySelectorAll !== "function") {
+        throw new Error("Lobby page did not load");
+    }
+
+    const json = readLobbyJsonSeries(doc);
+    if (json) return json;
+
+    const cards = extractLobbyGridCards(doc);
+    const sectionPrefix = options && options.sectionPrefix ? String(options.sectionPrefix).trim() : "";
+    if (!sectionPrefix) {
+        const fromCards = mergeLobbySeries([], cards);
+        if (!fromCards.length) throw new Error("Lobby page did not contain a series list");
+        return fromCards;
+    }
+    return lobbySeriesFromSitemap(cards, sectionPrefix, options);
+}
+
+/**
+ * Poster URL from a series page that was already fetched.
+ * A lobby image wins. Otherwise og:image is used when it is not the
+ * channel logo. A missing image stays blank.
+ * @param {string} image lobby image, possibly empty
+ * @param {*} doc parsed series page
+ * @param {string} subType image host prefix used by getImageFromUrl
+ * @returns {string}
+ */
+function openGraphImage(doc) {
+    if (!doc || typeof doc.querySelector !== "function") return "";
+    const node = doc.querySelector('meta[property="og:image"]');
+    let content = node ? String(node.getAttribute("content") || "").trim() : "";
+    if (!content) return "";
+    if (content.startsWith("//")) content = "https:" + content;
+    if (/brandlogo/i.test(content) || /\.svg(?:$|\?)/i.test(content)) return "";
+    return content;
+}
+
+function applySeriesPoster(image, doc, subType) {
+    const current = getImageFromUrl(image, subType);
+    if (current) return current;
+    const ogImage = openGraphImage(doc);
+    if (!ogImage) return "";
+    return getImageFromUrl(ogImage, subType);
 }
 
 function asDoc(value) {
@@ -973,7 +1144,10 @@ module.exports = {
     extractReleaseDateGeneric,
     safeExecute,
     safeFetch,
+    seriesPageUrl,
     extractLobbySeries,
+    openGraphImage,
+    applySeriesPoster,
     parseEducationalSeriesPage,
     assignEducationalEpisodeNumbers,
     collectEducationalEpisodes,
