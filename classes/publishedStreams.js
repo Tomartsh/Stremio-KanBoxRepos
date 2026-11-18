@@ -68,6 +68,32 @@ function streamList(video) {
     return list.filter((item) => item && typeof item === "object" && item.url);
 }
 
+function isoOrEmpty(value) {
+    if (value == null || value === "") return "";
+    const time = Date.parse(value);
+    if (Number.isNaN(time)) return "";
+    return new Date(time).toISOString();
+}
+
+function indexPublishedEpisodeDates(root) {
+    const byId = new Map();
+    for (const series of Object.values(unwrapCatalog(root))) {
+        if (!series || typeof series !== "object" || Array.isArray(series)) continue;
+        const videos = (series.meta && series.meta.videos) || series.videos;
+        if (!Array.isArray(videos)) continue;
+        for (const video of videos) {
+            if (!video || video.id == null) continue;
+            const id = String(video.id);
+            if (byId.has(id)) continue;
+            byId.set(id, {
+                released: isoOrEmpty(video.released),
+                firstSeen: isoOrEmpty(video.firstSeen)
+            });
+        }
+    }
+    return byId;
+}
+
 function indexPublishedStreams(root) {
     const byEpisode = new Map();
     for (const series of Object.values(unwrapCatalog(root))) {
@@ -89,5 +115,6 @@ function indexPublishedStreams(root) {
 module.exports = {
     fullCatalogRefresh,
     streamUrlIsReusable,
-    indexPublishedStreams
+    indexPublishedStreams,
+    indexPublishedEpisodeDates
 };

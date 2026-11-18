@@ -11,6 +11,7 @@
 
 const { parse } = require("node-html-parser");
 const { fetchData, extractReleaseDate, getImageFromUrl } = require("./utilities.js");
+const { releaseDateFromEducationalDocument } = require("./educationalRelease.js");
 const { rethrowIfKanBlocked, isKanBlockedError } = require("./kanSession.js");
 const log4js = require("log4js");
 const logger = log4js.getLogger("ScraperHelpers");
@@ -341,6 +342,38 @@ function streamFromKanDocument(doc) {
     };
     if (thumbnail) streamObj.thumbnail = thumbnail;
     if (released) streamObj.released = released;
+    return streamObj;
+}
+
+/**
+ * Kids and teens stream plus the air/publish date from the same document.
+ * Archive pages keep streamFromKanDocument, whose date follows the server zone.
+ * @param {object} doc
+ * @returns {object|null}
+ */
+function educationalStreamFromDocument(doc) {
+    const stream = streamFromKanDocument(doc);
+    if (!stream) return null;
+    const released = releaseDateFromEducationalDocument(doc);
+    if (released) stream.released = released;
+    return stream;
+}
+
+async function extractEducationalStream(link, siteName = "Kan") {
+    logger.trace(`extractEducationalStream => Entering for ${siteName}: ${link}`);
+    const doc = await fetchData(link);
+    if (!doc) {
+        logger.debug(`extractEducationalStream => Error retrieving doc from ${link}`);
+        return null;
+    }
+    const streamObj = educationalStreamFromDocument(doc);
+    if (!streamObj) {
+        logger.warn(`extractEducationalStream => No stream URL found for ${link}`);
+        return null;
+    }
+    if (streamObj.released) {
+        logger.debug(`extractEducationalStream => Extracted release date: ${streamObj.released}`);
+    }
     return streamObj;
 }
 
@@ -1134,7 +1167,9 @@ function wrapProcessor(processor, context, logger) {
 
 module.exports = {
     extractKanStream,
+    extractEducationalStream,
     streamFromKanDocument,
+    educationalStreamFromDocument,
     chooseVideoObject,
     extractVideoObjectUrl,
     cleanVideoName,

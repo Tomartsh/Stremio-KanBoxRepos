@@ -5,8 +5,9 @@ const {
     HINUKHIT,
     SCRAPER_CONFIG
 } = require("./constants.js");
-const { extractKanStream, extractLobbySeries, collectEducationalEpisodes, applySeriesPoster } = require("./ScraperHelpers.js");
-const { supplementEducationalEpisodes } = require("./KanSitemap.js");
+const { extractEducationalStream, extractLobbySeries, collectEducationalEpisodes, applySeriesPoster } = require("./ScraperHelpers.js");
+const { supplementEducationalEpisodes, loadKidsSitemap, lastmodForEpisodeUrl } = require("./KanSitemap.js");
+const { finalizeEducationalEpisode, educationalRunStamp } = require("./educationalRelease.js");
 const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
@@ -41,6 +42,7 @@ class KanKidsScraper extends BaseScraper {
      */
     async crawlContent() {
         this.allowParallelKanHttp();
+        await loadKidsSitemap({ logger });
         await this.crawlKids();
     }
 
@@ -242,15 +244,11 @@ class KanKidsScraper extends BaseScraper {
             epData,
             () => this.getStreams(episodeLink)
         );
-        var streamsArr = [];
-        var released = "";
-        if (streams == "-1"){
+        if (streams == "-1" || !streams || !streams.url) {
             logger.debug("processOneKidsEpisode => Stream is empty. Leaving it empty");
-        } else {
-            streamsArr.push(streams);
-            released = streams.released;
         }
 
+        const previousDates = this.publishedEpisodeDates(videoId);
         // Create video object and add to collected array
         const video = {
             id: videoId,
@@ -259,10 +257,15 @@ class KanKidsScraper extends BaseScraper {
             episode: episodeNo,
             description: episodeDescription,
             thumbnail: episodeImgUrl,
-            episodeLink: episodeLink,
-            streams: streamsArr
+            episodeLink: episodeLink
         };
-        if (released != "") {video["released"] = released;}
+        finalizeEducationalEpisode(video, streams, {
+            episodeDate: epData.datePublished || "",
+            publishedReleased: previousDates.released,
+            firstSeen: previousDates.firstSeen,
+            sitemapLastmod: lastmodForEpisodeUrl(episodeLink),
+            now: educationalRunStamp(this)
+        });
 
         videosCollected.push(video);
         logger.info(`Added: S${seasonNo} E${episodeNo} - ${episodeTitle}`);
@@ -274,7 +277,7 @@ class KanKidsScraper extends BaseScraper {
         logger.trace("getStreams => Entering");
         logger.trace("getStreams => Link: " + link);
 
-        const stream = await extractKanStream(link, "KanKids");
+        const stream = await extractEducationalStream(link, "KanKids");
 
         logger.trace("getStreams => Exiting");
         return stream || "";

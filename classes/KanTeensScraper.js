@@ -5,8 +5,9 @@ const {
     HINUKHIT,
     SCRAPER_CONFIG
 } = require("./constants.js");
-const { safeExecute, extractLobbySeries, collectEducationalEpisodes, parseKanBoxCategorySeries, applySeriesPoster } = require("./ScraperHelpers.js");
-const { supplementEducationalEpisodes } = require("./KanSitemap.js");
+const { safeExecute, extractEducationalStream, extractLobbySeries, collectEducationalEpisodes, parseKanBoxCategorySeries, applySeriesPoster } = require("./ScraperHelpers.js");
+const { supplementEducationalEpisodes, loadKidsSitemap, lastmodForEpisodeUrl } = require("./KanSitemap.js");
+const { finalizeEducationalEpisode, educationalRunStamp } = require("./educationalRelease.js");
 const BaseScraper = require("./BaseScraper.js");
 
 const log4js = require("log4js");
@@ -41,6 +42,7 @@ class KanTeensScraper extends BaseScraper {
      */
     async crawlContent() {
         this.allowParallelKanHttp();
+        await loadKidsSitemap({ logger });
         await safeExecute(
             () => this.crawlTeens(),
             "crawlContent.crawlTeens",
@@ -343,17 +345,13 @@ class KanTeensScraper extends BaseScraper {
         var streams = await this.resolveEpisodeStreams(
             videoId,
             epData,
-            () => utils.getStreams(episodeLink)
+            () => this.getStreams(episodeLink)
         );
-        var streamsArr = [];
-        var released = "";
-        if (streams == "-1"){
+        if (streams == "-1" || !streams || !streams.url) {
             logger.debug("processOneTeensEpisode => Stream is empty. Leaving it empty");
-        } else {
-            streamsArr.push(streams);
-            released = streams.released;
         }
 
+        const previousDates = this.publishedEpisodeDates(videoId);
         // Create video object and add to collected array
         const video = {
             id: videoId,
@@ -362,15 +360,28 @@ class KanTeensScraper extends BaseScraper {
             episode: episodeNo,
             description: episodeDescription,
             thumbnail: episodeImgUrl,
-            episodeLink: episodeLink,
-            streams: streamsArr
+            episodeLink: episodeLink
         };
-        if (released != "") {video["released"] = released;}
+        finalizeEducationalEpisode(video, streams, {
+            episodeDate: epData.datePublished || "",
+            publishedReleased: previousDates.released,
+            firstSeen: previousDates.firstSeen,
+            sitemapLastmod: lastmodForEpisodeUrl(episodeLink),
+            now: educationalRunStamp(this)
+        });
 
         videosCollected.push(video);
         logger.info(`Added: S${seasonNo} E${episodeNo} - ${episodeTitle}`);
         logger.debug("processOneTeensEpisode => ✓ Added episode : " + episodeTitle + " " + videoId);
         return { videoId, episodeTitle };
+    }
+
+    async getStreams(link){
+        logger.trace("getStreams => Entering");
+        logger.trace("getStreams => Link: " + link);
+        const stream = await extractEducationalStream(link, "KanTeens");
+        logger.trace("getStreams => Exiting");
+        return stream || "";
     }
 
     setDescription(seriesElems){
