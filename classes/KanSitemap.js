@@ -26,6 +26,11 @@
  * Other series in the sitemap, including the very long ones, are ignored
  * until a scraper actually processes that series.
  *
+ * The same fetch also keeps each URL's <lastmod>. That value is a page
+ * modified date (bulk edits share one day), not the air date. Kids and
+ * teens use it only when an episode was not fetched and the published
+ * catalog has no released value.
+ *
  * listSeriesUrls(sectionPrefix) uses this same cache. It returns the
  * distinct series page https://www.kankids.org.il/content/kids/<section>/<slug>/
  * for one section (hinuchit-main for teens, ktantanim-main for kids).
@@ -36,7 +41,7 @@
 const { parse } = require("node-html-parser");
 const log4js = require("log4js");
 const {
-    streamFromKanDocument,
+    educationalStreamFromDocument,
     cleanVideoName,
     seriesPageUrl: toSeriesPageUrl
 } = require("./ScraperHelpers.js");
@@ -138,6 +143,64 @@ function parseKidsEpisodeUrl(value) {
 
 function isBlockedDocument(text) {
     return /Attention Required|Sorry, you have been blocked|cf-error-details|Just a moment\.\.\./i.test(String(text || ""));
+}
+
+function sitemapLastmodToIso(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text + "T00:00:00.000Z";
+    const time = Date.parse(text);
+    if (Number.isNaN(time)) return "";
+    return new Date(time).toISOString();
+}
+
+/**
+ * <lastmod> values keyed by canonical kids path. Date-only values become
+ * UTC midnight so the calendar day does not move on later runs.
+ * @param {string} xml
+ * @returns {Map<string, string>}
+ */
+function lastmodByPathFromXml(xml) {
+    const map = new Map();
+    const text = String(xml || "").replace(/^\uFEFF/, "");
+    const pattern = /<loc>\s*(?:<!\[CDATA\[)?\s*([^<\s][^<]*?)\s*(?:\]\]>)?\s*<\/loc>\s*<lastmod>\s*([^<\s]+)\s*<\/lastmod>/gi;
+    let match;
+    while ((match = pattern.exec(text))) {
+        const path = canonicalKidsPath(match[1].trim().replace(/&amp;/g, "&"));
+        const iso = sitemapLastmodToIso(match[2]);
+        if (path && iso) map.set(path, iso);
+    }
+    return map;
+}
+
+function absorbLastmods(xml, into) {
+    for (const [path, iso] of lastmodByPathFromXml(xml)) into.set(path, iso);
+}
+
+function lastmodForEpisodeUrl(url) {
+    if (!cache || cache.failed || !cache.lastmodByPath) return "";
+    const path = canonicalKidsPath(url);
+    if (!path) return "";
+    return cache.lastmodByPath.get(path) || "";
+}
+
+/**
+ * Test helper. A primed map is what lastmodForEpisodeUrl reads. Pass an
+ * empty list after resetKanSitemapCache when a test must not keep it.
+ * @param {Array<[string, string]>} pairs url and lastmod or ISO
+ */
+function primeKanSitemapLastmods(pairs) {
+    const lastmodByPath = new Map();
+    for (const pair of pairs || []) {
+        const path = canonicalKidsPath(pair[0]);
+        const iso = sitemapLastmodToIso(pair[1]);
+        if (path && iso) lastmodByPath.set(path, iso);
+    }
+    if (!cache || cache.failed) {
+        cache = { failed: false, groups: new Map(), seriesBySection: new Map(), lastmodByPath };
+    } else {
+        cache.lastmodByPath = lastmodByPath;
+    }
 }
 
 function locsFromXml(xml) {
@@ -297,7 +360,7 @@ function absoluteImage(src) {
 function episodeFieldsFromDocument(html) {
     const doc = asDocument(html);
     if (!doc) return null;
-    const stream = streamFromKanDocument(doc);
+    const stream = educationalStreamFromDocument(doc);
     let rawTitle = "";
     const titleNode = doc.querySelector("title");
     if (titleNode && titleNode.text) rawTitle = String(titleNode.text).trim();
@@ -539,15 +602,19 @@ async function readSitemapGroups(options) {
     if (!index.locs.length) throw new Error(`Sitemap index ${indexUrl} had no locations`);
     const childUrls = index.isIndex ? index.locs : [indexUrl];
     const pageLocs = index.isIndex ? [] : index.locs.slice();
+    const lastmodByPath = new Map();
+    absorbLastmods(indexBody, lastmodByPath);
     const errors = [];
     for (let i = 0; i < childUrls.length; i++) {
         if (index.isIndex) {
             try {
                 const body = await fetchSitemapText(childUrls[i], options);
+                absorbLastmods(body, lastmodByPath);
                 const parsed = locsFromXml(body);
                 if (parsed.isIndex) {
                     for (const nested of parsed.locs) {
                         const nestedBody = await fetchSitemapText(nested, options);
+                        absorbLastmods(nestedBody, lastmodByPath);
                         pageLocs.push(...locsFromXml(nestedBody).locs);
                     }
                 } else {
@@ -565,7 +632,8 @@ async function readSitemapGroups(options) {
     }
     return {
         groups: groupSitemapEpisodes(pageLocs),
-        seriesBySection: seriesUrlsBySection(pageLocs)
+        seriesBySection: seriesUrlsBySection(pageLocs),
+        lastmodByPath
     };
 }
 
@@ -631,8 +699,11 @@ async function loadKidsSitemap(options) {
             .then((loaded) => {
                 const groups = loaded && loaded.groups ? loaded.groups : new Map();
                 const seriesBySection = loaded && loaded.seriesBySection ? loaded.seriesBySection : new Map();
-                cache = { failed: false, groups, seriesBySection };
-                resolved.logger.info(`KanSitemap => Loaded ${groups.size} series from the kids sitemap.`);
+                const lastmodByPath = loaded && loaded.lastmodByPath ? loaded.lastmodByPath : new Map();
+                cache = { failed: false, groups, seriesBySection, lastmodByPath };
+                resolved.logger.info(
+                    `KanSitemap => Loaded ${groups.size} series and ${lastmodByPath.size} lastmod dates from the kids sitemap.`
+                );
                 return groups;
             })
             .catch((error) => {
@@ -758,6 +829,9 @@ module.exports = {
     loadKidsSitemap,
     listSeriesUrls,
     supplementEducationalEpisodes,
+    lastmodByPathFromXml,
+    lastmodForEpisodeUrl,
+    primeKanSitemapLastmods,
     siblingSitemapUrl,
     ROBOTS_URL,
     DEFAULT_INDEX_URL

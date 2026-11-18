@@ -3,6 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const log4js = require('log4js');
 const { LOG4JS } = require('./constants');
 const DeltaUpdater = require('./DeltaUpdater.js');
+const { seriesLatestEpisodeDate } = require('./educationalRelease.js');
 
 log4js.configure({
     appenders: {
@@ -64,6 +65,10 @@ class DatabaseUpdater {
                     tmdb_id: series.meta?.tmdbId,
                     video_count: videoCount  // ✅ Added video_count
                 };
+                const latestEpisodeDate = seriesLatestEpisodeDate(scraper, videos);
+                if (latestEpisodeDate !== undefined) {
+                    seriesData.latest_episode_date = latestEpisodeDate;
+                }
                 seriesToInsert.push(seriesData);
 
                 // Extract videos (reusing variable from line 48)

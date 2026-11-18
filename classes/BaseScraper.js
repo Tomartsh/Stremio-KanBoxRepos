@@ -25,8 +25,13 @@ const { buildSeriesIdentityIndex } = require("./seriesIdentity.js");
 const {
     fullCatalogRefresh,
     streamUrlIsReusable,
-    indexPublishedStreams
+    indexPublishedStreams,
+    indexPublishedEpisodeDates
 } = require("./publishedStreams.js");
+const {
+    tagEducationalStream,
+    missingReleasedReport
+} = require("./educationalRelease.js");
 const StateManager = require("./StateManager.js");
 const log4js = require("log4js");
 
@@ -110,6 +115,7 @@ class BaseScraper {
         this._listingIncomplete = false;
         this._seriesIndex = null;
         this._publishedStreams = null;
+        this._publishedEpisodeDates = null;
         this._previousCatalogResolved = false;
 
         this.logger.info(`${scraperName} initialized - Parallel: ${this.config.parallelFetching}, Batch size: ${this.config.batchSize}`);
@@ -255,6 +261,8 @@ class BaseScraper {
             this.lastResult = decision;
             return decision;
         }
+
+        this.logMissingReleased();
 
         // Handle output
         if (WRITE_TO_GITHUB || UPDATE_DATABASE) {
@@ -585,6 +593,7 @@ class BaseScraper {
     async loadSeriesIdentityIndex() {
         this._seriesIndex = null;
         this._publishedStreams = null;
+        this._publishedEpisodeDates = null;
         try {
             const catalog = await this._previousCatalog();
             if (!catalog) {
@@ -596,6 +605,7 @@ class BaseScraper {
             const root = catalog.root || catalog;
             this._seriesIndex = buildSeriesIdentityIndex(root);
             this._publishedStreams = indexPublishedStreams(root);
+            this._publishedEpisodeDates = indexPublishedEpisodeDates(root);
         } catch (error) {
             this.logger.warn(`${this.scraperName} => Could not index the previous catalog for stable series ids: ${error.message}`);
         }
@@ -631,16 +641,44 @@ class BaseScraper {
     }
 
     /**
+     * Released and first-seen values already stored for this episode id.
+     */
+    publishedEpisodeDates(episodeId) {
+        const empty = { released: "", firstSeen: "" };
+        if (!this._publishedEpisodeDates || episodeId == null) return empty;
+        return this._publishedEpisodeDates.get(String(episodeId)) || empty;
+    }
+
+    /**
+     * Warn when a kids or teens catalog still has a video with no released
+     * date. The count does not block publish. Other scrapers are unchanged.
+     */
+    logMissingReleased() {
+        let key = "";
+        try {
+            key = this.getDatabaseKey();
+        } catch (error) {
+            return;
+        }
+        if (key !== "kankids" && key !== "kanteens") return;
+        const report = missingReleasedReport(this.scraperName, this._jsonObj);
+        if (report.warn) this.logger.warn(report.line);
+        else this.logger.info(report.line);
+    }
+
+    /**
      * Sitemap episodes already carry the stream from the page just fetched.
-     * Otherwise reuse a published stream, then fetch.
+     * Otherwise reuse a published stream, then fetch. The tag tells the
+     * kids and teens date fallback whether this object came from the page.
      */
     async resolveEpisodeStreams(episodeId, episode, fetchStream) {
         if (episode && Object.prototype.hasOwnProperty.call(episode, "stream")) {
-            return episode.stream && episode.stream.url ? episode.stream : "";
+            const pageStream = episode.stream && episode.stream.url ? episode.stream : "";
+            return tagEducationalStream(pageStream, true);
         }
         const reused = this.reusablePublishedStream(episodeId);
-        if (reused) return reused;
-        return fetchStream();
+        if (reused) return tagEducationalStream(reused, false);
+        return tagEducationalStream(await fetchStream(), true);
     }
 
     /**
