@@ -1,0 +1,341 @@
+{
+  "drama": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_drama",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "url",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_drama/format/url/a.mp4",
+          "objectType": "KalturaPlaybackSource"
+        },
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_drama/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_drama",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><metadata><STRINGSeriesID>255</STRINGSeriesID><OTTTAGGenre>דרמה</OTTTAGGenre></metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ],
+  "comedy": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_comedy",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_comedy/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_comedy",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><metadata><STRINGSeriesID>255</STRINGSeriesID><OTTTAGGenre>קומדיה</OTTTAGGenre></metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ],
+  "pipeSeparated": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_pipe",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "mpegdash",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_pipe/protocol/https/format/mpegdash/a.mpd",
+          "objectType": "KalturaPlaybackSource"
+        },
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_pipe/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_pipe",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><metadata><STRINGSeriesID>902985960</STRINGSeriesID><OTTTAGGenre>ריאליטי|בידור</OTTTAGGenre><STRINGEpisodeID>44</STRINGEpisodeID></metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ],
+  "noGenre": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_none",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_none/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_none",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><metadata><STRINGSeriesID>255</STRINGSeriesID><OTTTAGGenre>ללא ז'אנר</OTTTAGGenre></metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ],
+  "noGenreGeresh": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_geresh",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_geresh/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_geresh",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><metadata><STRINGSeriesID>255</STRINGSeriesID><OTTTAGGenre>ללא ז׳אנר</OTTTAGGenre></metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ],
+  "blankTokens": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_blank",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_blank/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_blank",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><metadata><STRINGSeriesID>255</STRINGSeriesID><OTTTAGGenre> דרמה | | ללא ז'אנר | קומדיה </OTTTAGGenre></metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ],
+  "multiline": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_multi",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_multi/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_multi",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<metadata>\n  <STRINGSeriesID>255</STRINGSeriesID>\n  <OTTTAGGenre>\nדוקו-ריאליטי\n  </OTTTAGGenre>\n</metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ],
+  "missingMetadata": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_missing",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "sources": [
+        {
+          "format": "applehttp",
+          "url": "https://cdnapisec.kaltura.com/p/2748741/sp/274874100/playManifest/entryId/1_missing/protocol/https/format/applehttp/a.m3u8",
+          "objectType": "KalturaPlaybackSource"
+        }
+      ],
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "objectType": "KalturaAPIException",
+      "code": "INVALID_KS",
+      "message": "Missing metadata"
+    }
+  ],
+  "sourcesMissing": [
+    {
+      "ks": "widget-session",
+      "partnerId": 2748741,
+      "objectType": "KalturaStartWidgetSessionResponse"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "id": "1_entry_nosrc",
+          "objectType": "KalturaMediaEntry"
+        }
+      ],
+      "objectType": "KalturaBaseEntryListResponse"
+    },
+    {
+      "objectType": "KalturaPlaybackContext"
+    },
+    {
+      "totalCount": 1,
+      "objects": [
+        {
+          "objectId": "1_nosrc",
+          "objectType": "KalturaMetadata",
+          "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><metadata><STRINGSeriesID>255</STRINGSeriesID><OTTTAGGenre>בידור</OTTTAGGenre></metadata>"
+        }
+      ],
+      "objectType": "KalturaMetadataListResponse"
+    }
+  ]
+}
