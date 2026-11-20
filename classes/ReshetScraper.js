@@ -6,7 +6,7 @@ const {
     PREFIX,
     SCRAPER_CONFIG
 } = require ("./constants");
-const {fetchData, writeLog, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
+const {writeLog, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const { parseIsraeliDate } = require("./ScraperHelpers.js");
 const { normalizeSeriesLink, stableSlugToken } = require("./seriesIdentity.js");
 const log4js = require("log4js");
@@ -19,6 +19,80 @@ const TmdbHelper = require("./TmdbHelper.js");
  */
 function reshetSeriesId(pageLink) {
     return PREFIX + "reshet_" + stableSlugToken(pageLink);
+}
+
+// Kaltura writes "no genre" with an ASCII apostrophe or a Hebrew geresh.
+const NO_GENRE = "ללא ז'אנר";
+const GENRE_TAG = /<OTTTAGGenre>(.*?)<\/OTTTAGGenre>/s;
+
+function normalizeGenreLabel(value) {
+    return String(value == null ? "" : value).replace(/[\u05F3\u2018\u2019]/g, "'").trim();
+}
+
+/**
+ * Labels inside one metadata xml blob. The multirequest already asked for
+ * this (call "4", response index 3). Missing xml yields no genres.
+ */
+function parseReshetGenreXml(xml) {
+    if (typeof xml !== "string" || xml === "") return [];
+    const match = xml.match(GENRE_TAG);
+    if (!match) return [];
+    const genres = [];
+    const seen = new Set();
+    for (const part of match[1].split("|")) {
+        const genre = part.trim();
+        if (!genre || normalizeGenreLabel(genre) === NO_GENRE || seen.has(genre)) continue;
+        seen.add(genre);
+        genres.push(genre);
+    }
+    return genres;
+}
+
+function genresFromKalturaResponse(streamJsonObj) {
+    try {
+        const xml = streamJsonObj?.[3]?.objects?.[0]?.xml;
+        return parseReshetGenreXml(xml);
+    } catch (error) {
+        return [];
+    }
+}
+
+/**
+ * Distinct labels ordered by how many episodes carried them.
+ * A tie keeps the order the labels were first seen.
+ * Each episode counts a label once.
+ */
+function rankSeriesGenres(episodeGenreLists) {
+    const counts = new Map();
+    const order = [];
+    for (const list of episodeGenreLists || []) {
+        if (!Array.isArray(list)) continue;
+        const seen = new Set();
+        for (const raw of list) {
+            const genre = String(raw == null ? "" : raw).trim();
+            if (!genre || normalizeGenreLabel(genre) === NO_GENRE || seen.has(genre)) continue;
+            seen.add(genre);
+            if (!counts.has(genre)) {
+                counts.set(genre, 0);
+                order.push(genre);
+            }
+            counts.set(genre, counts.get(genre) + 1);
+        }
+    }
+    return order.slice().sort((a, b) => counts.get(b) - counts.get(a));
+}
+
+function genreListFromSeries(series) {
+    if (!series || typeof series !== "object") return [];
+    const raw = (series.meta && series.meta.genres) || series.genres;
+    if (!Array.isArray(raw)) return [];
+    const genres = [];
+    for (const item of raw) {
+        const genre = String(item == null ? "" : item).trim();
+        if (!genre || normalizeGenreLabel(genre) === NO_GENRE) continue;
+        genres.push(genre);
+    }
+    return genres;
 }
 
 var logger = log4js.getLogger("ReshetScraper");
@@ -105,7 +179,8 @@ class ReshetScraper extends BaseScraper {
         }
 
         const extraFields = tmdbSeriesId ? { tmdbId: tmdbSeriesId } : {};
-        this.addToJsonObject(id, title, pageLink, picUrl, "",  "", videos, "r", "series", extraFields)
+        const genres = this.seriesGenresFor(id, pageLink);
+        this.addToJsonObject(id, title, pageLink, picUrl, "", genres, videos, "r", "series", extraFields)
         logger.debug(`processOneReshetSeries => Added series ${title}`);
         return { id, title, tmdbSeriesId };
     }
@@ -115,13 +190,16 @@ class ReshetScraper extends BaseScraper {
         //writeLog("TRACE","ReshetScraper-getEpisodes() => Entering");
         var link = RESHET.URL_BASE + "/_next/data/" + this._buildId + "/he/all-shows/" + seriesReshetName + ".json?all=all-shows&all=" + seriesReshetName;
         logger.debug("getEpisodes() => link used " + link);
-        var seriesJson =  await fetchData(link, true);
+        var seriesJson =  await utils.fetchData(link, true);
         if (seriesJson == undefined){
             logger.error(`getEpisodes() => page not found at ${link}`);
             return "-1";
         }
         var grids = seriesJson["pageProps"]["page"]["Content"]["PageGrid"];
         var videos = [];
+        var genreSamples = [];
+        var anyFetched = false;
+        var episodeCount = 0;
 
         for (var grid of grids){
             if (grid["grid_type"] == "VodPlaylist" ){
@@ -174,6 +252,12 @@ class ReshetScraper extends BaseScraper {
                     for (const result of episodeResults) {
                         if (result && result.video) {
                             seasonVideos.push(result.video);
+                            episodeCount++;
+                            // A reused stream skipped getStream, so it has no
+                            // OTTTAGGenre sample and does not vote.
+                            if (result.streamReused) continue;
+                            anyFetched = true;
+                            genreSamples.push(Array.isArray(result.genres) ? result.genres : []);
                         }
                     }
 
@@ -194,7 +278,45 @@ class ReshetScraper extends BaseScraper {
                 }
             }
         }
+        if (!this._seriesGenreChoices) this._seriesGenreChoices = new Map();
+        this._seriesGenreChoices.set(id, {
+            samples: genreSamples,
+            anyFetched: anyFetched,
+            episodeCount: episodeCount
+        });
         return videos;
+    }
+
+    /**
+     * Genres for one series. Fresh OTTTAGGenre samples win, most common first.
+     * When every episode reused a published stream and getStream did not run,
+     * keep the genres already published for this series. Otherwise leave empty.
+     * meta.genres is an array, the same field Kan and Mako fill.
+     */
+    seriesGenresFor(id, pageLink) {
+        const pending = this._seriesGenreChoices && this._seriesGenreChoices.get(id);
+        if (!pending || !pending.anyFetched) {
+            if (pending && pending.episodeCount > 0) {
+                return this.publishedSeriesGenres(id, pageLink);
+            }
+            return [];
+        }
+        return rankSeriesGenres(pending.samples);
+    }
+
+    publishedSeriesGenres(seriesId, pageLink) {
+        const index = this._seriesIndex;
+        if (!index) return [];
+        const link = normalizeSeriesLink(pageLink);
+        const byId = seriesId != null ? index.byId.get(String(seriesId)) : null;
+        if (byId) {
+            const idLinkOk = !link || !byId.link || byId.link === link;
+            if (idLinkOk) return genreListFromSeries(byId.series);
+        }
+        if (link && index.byLink.has(link)) {
+            return genreListFromSeries(index.byLink.get(link).series);
+        }
+        return [];
     }
 
     /**
@@ -208,7 +330,19 @@ class ReshetScraper extends BaseScraper {
             logger.warn("processOneReshetEpisode => No kalturaId found");
             return null;
         }
-        var streams = await this.getStream(kalturaId, episode["title"]);
+        var fetched = await this.getStream(kalturaId, episode["title"]);
+        var streams = [];
+        var genres = [];
+        var streamReused = false;
+        if (Array.isArray(fetched)) {
+            streams = fetched;
+            if (Array.isArray(fetched.genres)) genres = fetched.genres;
+            streamReused = fetched.streamReused === true;
+        } else if (fetched && typeof fetched === "object") {
+            if (Array.isArray(fetched.streams)) streams = fetched.streams;
+            if (Array.isArray(fetched.genres)) genres = fetched.genres;
+            streamReused = fetched.streamReused === true;
+        }
 
         // Parse Israeli date format
         var released = parseIsraeliDate(episode["air_date"]);
@@ -227,12 +361,13 @@ class ReshetScraper extends BaseScraper {
         if (released != "") {video["released"] = released;}
 
         logger.debug("processOneReshetEpisode => ✓ processed episode  " + episode["title"] + " of season " + seasonId);
-        return { video };
+        return { video: video, genres: genres, streamReused: streamReused };
     }
 
     async getStream(kalturaId, streamName){
         logger.trace("getStream() => Entering");
         var streams = [];
+        var genres = [];
         var user_data = {
             "1":{
                 "service":"session",
@@ -277,29 +412,29 @@ class ReshetScraper extends BaseScraper {
             "partnerId": RESHET.PARTNER_ID
         }
         logger.trace("getStream() => Kaltura ID: " + kalturaId);
-        var streamJsonObj = await fetchData(RESHET.URL_STREAM, true, user_data, RESHET.HEADERS);
+        var streamJsonObj = await utils.fetchData(RESHET.URL_STREAM, true, user_data, RESHET.HEADERS);
         if (streamJsonObj != undefined) {
+            genres = genresFromKalturaResponse(streamJsonObj);
             var sources = streamJsonObj[2]["sources"];
-            if (sources == undefined){
-                return streams;
-            }
-            for (var source of sources){
-                if ((source["url"]) && (source["format"] == "applehttp")){
-                    var stream = {
-                        url: source["url"],
-                        name: streamName
+            if (sources != undefined){
+                for (var source of sources){
+                    if ((source["url"]) && (source["format"] == "applehttp")){
+                        var stream = {
+                            url: source["url"],
+                            name: streamName
+                        }
+                        streams.push(stream);
                     }
-                    streams.push(stream);
                 }
             }
         }
-        return streams
+        return { streams: streams, genres: genres };
     }
 
     async getJson(link){
         logger.trace("getJson() => Entering");
         logger.debug("getJson() => link: " + link);
-        var retPage = await fetchData(link);
+        var retPage = await utils.fetchData(link);
         var jsonElem = retPage.querySelector("script#__NEXT_DATA__").text;
         var retJson = JSON.parse(jsonElem);
         logger.trace("getJson() => JSON: " + retJson);
@@ -337,3 +472,6 @@ class ReshetScraper extends BaseScraper {
  **********************************************************/
 module.exports = ReshetScraper;
 module.exports.reshetSeriesId = reshetSeriesId;
+module.exports.parseReshetGenreXml = parseReshetGenreXml;
+module.exports.genresFromKalturaResponse = genresFromKalturaResponse;
+module.exports.rankSeriesGenres = rankSeriesGenres;
