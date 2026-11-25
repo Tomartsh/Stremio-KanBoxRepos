@@ -204,7 +204,10 @@ class KanDigitalScraper extends BaseScraper {
     }
 
     shouldReuseCachedSeries(seriesId) {
-        if (!this.incrementalMode || this.scrapeMode === "full") return false;
+        // mode=full stays incremental (the nightly runner's historical flag).
+        // --mode force-full and KAN_DIGITAL_FORCE_FULL=1 set incrementalMode
+        // to false, which still bypasses the cache.
+        if (!this.incrementalMode) return false;
         const previous = this.previousVideosFor(seriesId);
         if (!previous || !previous.length) return false;
         if (!this._jsonObj[seriesId]) return false;
