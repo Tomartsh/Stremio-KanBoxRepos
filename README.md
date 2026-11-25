@@ -157,7 +157,7 @@ The file is checked when the process starts. A missing scraper, an unknown field
 
 `kanDigital` is slow by default, sized for a 20-hour window:
 
-- 8–15 seconds between `kan.org.il` requests
+- 2–3 minutes between `kan.org.il` requests
 - no periodic pause (`pauseEveryPages` is 0)
 - 5–10 minute wait on a 403, then resume that same page (the scrape does not start over)
 - 20-hour budget. When the budget is spent the run stops and does not publish
@@ -171,8 +171,8 @@ Environment (only the variables you set are applied):
 KAN_SLOW=1
 KAN_BUDGET_HOURS=20
 KAN_BUDGET_MS=72000000
-KAN_REQUEST_DELAY_MIN_MS=8000
-KAN_REQUEST_DELAY_MAX_MS=15000
+KAN_REQUEST_DELAY_MIN_MS=120000
+KAN_REQUEST_DELAY_MAX_MS=180000
 KAN_MIN_INTERVAL_MS=0
 KAN_PAUSE_EVERY_PAGES=0
 KAN_PAUSE_MIN_MS=600000
@@ -193,11 +193,11 @@ curl "http://localhost:49999/run?scraper=kanTeens&slow=1&budgetHours=20"
 Slow-mode logs look like this:
 
 ```text
-KanDigital pacing: slow=true minInterval=0s requestDelay=8s-15s pauseEvery=0 pages pause=10m-20m blockBackoff=5m-10m budget=20h maxRetries=unlimited governHttp=false maxPerMinute=domain-default
-kan slow: page 40 done (https://www.kan.org.il/...). elapsed 8m. budget left 19h 52m. ETA 2026-10-17T05:00:00.000Z.
+KanDigital pacing: slow=true minInterval=0s requestDelay=2m-3m pauseEvery=0 pages pause=10m-20m blockBackoff=5m-10m budget=20h maxRetries=unlimited governHttp=false maxPerMinute=domain-default
+kan slow: page 40 done (https://www.kan.org.il/...). elapsed 1h 40m. budget left 18h 20m. ETA 2026-10-17T05:00:00.000Z.
 CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... Opening the browser before any long backoff.
 CLOUDFLARE CHALLENGE cleared for https://www.kan.org.il/.... Reusing this browser for the rest of the scrape.
-CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... kan slow: sleeping 7m then resuming this page (not restarting). retry 1. pages 41. budget left 19h 44m.
+CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... kan slow: sleeping 7m then resuming this page (not restarting). retry 1. pages 41. budget left 18h 12m.
 ```
 
 ### Standalone kanDigital on the Windows station

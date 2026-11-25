@@ -100,7 +100,7 @@ test("kanDigital's configured delay is the gap between requests", { timeout: 500
     await drain(t);
     const doc = await pending;
     assert.equal(typeof doc.querySelector, "function");
-    assert.equal(sleeps[0], 8000);
+    assert.equal(sleeps[0], 120000);
     assert.equal(sleeps.length, 1);
     const state = getKanRunState();
     assert.equal(state, null);

@@ -18,8 +18,8 @@
     "kanDigital": {
       "slow": true,
       "minIntervalMs": 0,
-      "requestDelayMinMs": 8000,
-      "requestDelayMaxMs": 15000,
+      "requestDelayMinMs": 120000,
+      "requestDelayMaxMs": 180000,
       "pauseEveryPages": 0,
       "pauseMinMs": 600000,
       "pauseMaxMs": 1200000,
