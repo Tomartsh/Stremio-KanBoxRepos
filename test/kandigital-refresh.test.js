@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("path");
+const AdmZip = require("adm-zip");
 const KanDigitalScraper = require("../classes/KanDigitalScraper");
 const { countCatalog, decidePublish } = require("../classes/catalogGate");
 const { mergeSeededVideos } = require("../classes/kanDigitalParse");
@@ -63,7 +65,7 @@ test("a kanDigital run starts from the previous catalog and keeps series it does
     assert.equal(decision.published, true);
 });
 
-test("unchanged series stay cached except for one rotating slice, and full mode refreshes all", () => {
+test("unchanged series stay cached except for one rotating slice; force-full refreshes all", () => {
     const days = 3;
     const ids = ["il_kan_digital_13779", "il_kan_digital_13871", "il_kan_digital_100", "il_kan_digital_200"];
     const start = new Date(Date.UTC(2026, 0, 1));
@@ -109,8 +111,13 @@ test("unchanged series stay cached except for one rotating slice, and full mode 
         scraper.refreshClock = due;
         assert.equal(scraper.shouldReuseCachedSeries(id), false);
 
-        scraper.incrementalMode = false;
+        scraper.incrementalMode = true;
         scraper.scrapeMode = "full";
+        scraper.refreshClock = quiet;
+        assert.equal(scraper.shouldReuseCachedSeries(id), true);
+
+        scraper.incrementalMode = false;
+        scraper.scrapeMode = "force-full";
         scraper.refreshClock = quiet;
         assert.equal(scraper.shouldReuseCachedSeries(id), false);
     });
@@ -182,4 +189,84 @@ test("kanDigital keeps incremental mode without a scrape-state database", async 
     scraper.incrementalMode = true;
     await scraper.initializeStateManager();
     assert.equal(scraper.incrementalMode, true);
+});
+
+function loadPublishedDigitalCatalog() {
+    const zipPath = path.join(__dirname, "..", "output", "stremio-kandigital.zip");
+    const zip = new AdmZip(zipPath);
+    const entry = zip.getEntries().find((item) => item.entryName.endsWith(".json"));
+    assert.ok(entry, "published kandigital zip should contain a json catalog");
+    const catalog = JSON.parse(zip.readAsText(entry));
+    const data = catalog.data && typeof catalog.data === "object" ? catalog.data : catalog;
+    assert.ok(Object.keys(data).length > 0, "published kandigital zip should contain series");
+    return data;
+}
+
+function pickPublishedSeries(data) {
+    for (const [id, series] of Object.entries(data)) {
+        const videos = series && series.meta && series.meta.videos;
+        if (id && series && series.link && Array.isArray(videos) && videos.length > 0) {
+            return { id, series };
+        }
+    }
+    throw new Error("published kandigital zip has no series with videos");
+}
+
+function quietDayFor(seriesId, days = 3) {
+    const quiet = new Date(Date.UTC(2026, 0, 1));
+    while (KanDigitalScraper.seriesDueForRefresh(seriesId, { now: quiet, forceRefreshDays: days })) {
+        quiet.setTime(quiet.getTime() + 86400000);
+    }
+    return quiet;
+}
+
+test("nightly mode=full reuses a published series; force-full and KAN_DIGITAL_FORCE_FULL do not", async () => {
+    const data = loadPublishedDigitalCatalog();
+    const { id, series } = pickPublishedSeries(data);
+    const videoCount = series.meta.videos.length;
+    const quiet = quietDayFor(id);
+    const firstReleased = series.meta.videos[0].released;
+
+    const nightly = new KanDigitalScraper();
+    nightly.scrapeMode = "full";
+    nightly.incrementalMode = nightly.determineScrapeMode("full");
+    assert.equal(nightly.incrementalMode, true);
+    nightly.refreshClock = quiet;
+    nightly.previousCatalogOverride = { data: { [id]: series } };
+    await nightly.seedPreviousCatalog();
+    assert.equal(nightly.shouldReuseCachedSeries(id), true);
+    const result = await nightly.processOneDigitalSeries({
+        Url: series.link,
+        Image: "",
+        ImageAlt: series.name || "",
+        Description: ""
+    }, "kan11_lobby");
+    assert.equal(result.cached, true);
+    assert.equal(nightly.getJsonObject()[id].meta.videos.length, videoCount);
+    assert.equal(nightly.getJsonObject()[id].meta.videos[0].released, firstReleased);
+
+    const forced = new KanDigitalScraper();
+    forced.scrapeMode = "force-full";
+    forced.incrementalMode = forced.determineScrapeMode("force-full");
+    assert.equal(forced.incrementalMode, false);
+    forced.refreshClock = quiet;
+    forced.previousCatalogOverride = { data: { [id]: series } };
+    await forced.seedPreviousCatalog();
+    assert.equal(forced.shouldReuseCachedSeries(id), false);
+
+    const previous = process.env.KAN_DIGITAL_FORCE_FULL;
+    process.env.KAN_DIGITAL_FORCE_FULL = "1";
+    try {
+        const envForced = new KanDigitalScraper();
+        envForced.scrapeMode = "full";
+        envForced.incrementalMode = envForced.determineScrapeMode("full");
+        assert.equal(envForced.incrementalMode, false);
+        envForced.refreshClock = quiet;
+        envForced.previousCatalogOverride = { data: { [id]: series } };
+        await envForced.seedPreviousCatalog();
+        assert.equal(envForced.shouldReuseCachedSeries(id), false);
+    } finally {
+        if (previous === undefined) delete process.env.KAN_DIGITAL_FORCE_FULL;
+        else process.env.KAN_DIGITAL_FORCE_FULL = previous;
+    }
 });

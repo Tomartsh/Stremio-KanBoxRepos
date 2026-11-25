@@ -27,21 +27,21 @@ test("kanDigital slow mode is the 20 hour profile", () => {
     const pacing = resolvePacing("kanDigital", {}, {});
     assert.equal(pacing.slow, true);
     assert.equal(pacing.minIntervalMs, 0);
-    assert.equal(pacing.requestDelayMinMs, 45000);
-    assert.equal(pacing.requestDelayMaxMs, 90000);
-    assert.equal(pacing.pauseEveryPages, 40);
+    assert.equal(pacing.requestDelayMinMs, 8000);
+    assert.equal(pacing.requestDelayMaxMs, 15000);
+    assert.equal(pacing.pauseEveryPages, 0);
     assert.equal(pacing.pauseMinMs, 10 * 60 * 1000);
     assert.equal(pacing.pauseMaxMs, 20 * 60 * 1000);
-    assert.equal(pacing.blockBackoffMinMs, 60 * 60 * 1000);
-    assert.equal(pacing.blockBackoffMaxMs, 90 * 60 * 1000);
+    assert.equal(pacing.blockBackoffMinMs, 5 * 60 * 1000);
+    assert.equal(pacing.blockBackoffMaxMs, 10 * 60 * 1000);
     assert.equal(pacing.budgetMs, 20 * HOUR);
     assert.equal(pacing.maxRetries, null);
     const line = formatPacing(pacing);
     assert.match(line, /slow=true/);
-    assert.match(line, /requestDelay=45s-1m 30s/);
-    assert.match(line, /pauseEvery=40 pages/);
+    assert.match(line, /requestDelay=8s-15s/);
+    assert.match(line, /pauseEvery=0 pages/);
     assert.match(line, /pause=10m-20m/);
-    assert.match(line, /blockBackoff=1h-1h 30m/);
+    assert.match(line, /blockBackoff=5m-10m/);
     assert.match(line, /budget=20h/);
     assert.match(line, /maxRetries=unlimited/);
 });
@@ -60,8 +60,8 @@ test("other kan.org.il scrapers stay on the fast defaults until opted in", () =>
 test("--slow copies kanDigital timings; --no-slow returns to the fast defaults", () => {
     const opted = resolvePacing("kan88", { slow: true }, {});
     assert.equal(opted.slow, true);
-    assert.equal(opted.requestDelayMinMs, 45000);
-    assert.equal(opted.pauseEveryPages, 40);
+    assert.equal(opted.requestDelayMinMs, 8000);
+    assert.equal(opted.pauseEveryPages, 0);
     assert.equal(opted.budgetMs, 20 * HOUR);
     assert.equal(opted.maxRetries, null);
 
@@ -81,7 +81,7 @@ test("env and CLI numeric overrides win, and KAN_SLOW=0 restores the fast pace",
     assert.equal(fromEnv.slow, true);
     assert.equal(fromEnv.budgetMs, 18 * HOUR);
     assert.equal(fromEnv.pauseEveryPages, 10);
-    assert.equal(fromEnv.requestDelayMinMs, 45000);
+    assert.equal(fromEnv.requestDelayMinMs, 8000);
 
     const disabled = resolvePacing("kanDigital", {}, { KAN_SLOW: "0", KAN_BUDGET_HOURS: "2" });
     assert.equal(disabled.slow, false);
@@ -92,7 +92,7 @@ test("env and CLI numeric overrides win, and KAN_SLOW=0 restores the fast pace",
     assert.equal(cli.slow, true);
     assert.equal(cli.budgetMs, 6 * HOUR);
     assert.equal(cli.maxRetries, 4);
-    assert.equal(cli.requestDelayMaxMs, 90000);
+    assert.equal(cli.requestDelayMaxMs, 15000);
 });
 
 test("CLI and query strings parse the same knobs", () => {

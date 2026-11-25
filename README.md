@@ -157,9 +157,9 @@ The file is checked when the process starts. A missing scraper, an unknown field
 
 `kanDigital` is slow by default, sized for a 20-hour window:
 
-- 45–90 seconds between `kan.org.il` requests
-- 10–20 minute pause every 40 pages
-- 60–90 minute wait on a 403, then resume that same page (the scrape does not start over)
+- 8–15 seconds between `kan.org.il` requests
+- no periodic pause (`pauseEveryPages` is 0)
+- 5–10 minute wait on a 403, then resume that same page (the scrape does not start over)
 - 20-hour budget. When the budget is spent the run stops and does not publish
 - the 85% video gate still refuses a thinner catalog
 
@@ -171,14 +171,14 @@ Environment (only the variables you set are applied):
 KAN_SLOW=1
 KAN_BUDGET_HOURS=20
 KAN_BUDGET_MS=72000000
-KAN_REQUEST_DELAY_MIN_MS=45000
-KAN_REQUEST_DELAY_MAX_MS=90000
+KAN_REQUEST_DELAY_MIN_MS=8000
+KAN_REQUEST_DELAY_MAX_MS=15000
 KAN_MIN_INTERVAL_MS=0
-KAN_PAUSE_EVERY_PAGES=40
+KAN_PAUSE_EVERY_PAGES=0
 KAN_PAUSE_MIN_MS=600000
 KAN_PAUSE_MAX_MS=1200000
-KAN_BLOCK_BACKOFF_MIN_MS=3600000
-KAN_BLOCK_BACKOFF_MAX_MS=5400000
+KAN_BLOCK_BACKOFF_MIN_MS=300000
+KAN_BLOCK_BACKOFF_MAX_MS=600000
 KAN_MAX_RETRIES=unlimited
 ```
 
@@ -193,12 +193,11 @@ curl "http://localhost:49999/run?scraper=kanTeens&slow=1&budgetHours=20"
 Slow-mode logs look like this:
 
 ```text
-KanDigital pacing: slow=true minInterval=0s requestDelay=45s-1m 30s pauseEvery=40 pages pause=10m-20m blockBackoff=1h-1h 30m budget=20h maxRetries=unlimited governHttp=false maxPerMinute=domain-default
-kan slow: page 40 done (https://www.kan.org.il/...). elapsed 1h 12m. budget left 18h 48m. ETA 2026-10-17T05:00:00.000Z. pausing now.
-kan slow: sleeping 12m 4s (pause after 40 pages). pages 40. budget left 18h 36m.
+KanDigital pacing: slow=true minInterval=0s requestDelay=8s-15s pauseEvery=0 pages pause=10m-20m blockBackoff=5m-10m budget=20h maxRetries=unlimited governHttp=false maxPerMinute=domain-default
+kan slow: page 40 done (https://www.kan.org.il/...). elapsed 8m. budget left 19h 52m. ETA 2026-10-17T05:00:00.000Z.
 CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... Opening the browser before any long backoff.
 CLOUDFLARE CHALLENGE cleared for https://www.kan.org.il/.... Reusing this browser for the rest of the scrape.
-CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... kan slow: sleeping 1h 12m then resuming this page (not restarting). retry 1. pages 41. budget left 17h 20m.
+CLOUDFLARE CHALLENGE kan.org.il HTTP 403 on https://www.kan.org.il/.... kan slow: sleeping 7m then resuming this page (not restarting). retry 1. pages 41. budget left 19h 44m.
 ```
 
 ### Standalone kanDigital on the Windows station
