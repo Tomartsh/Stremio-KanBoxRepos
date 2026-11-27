@@ -1,0 +1,130 @@
+{
+  "buildId": "test-build",
+  "props": {
+    "pageProps": {
+      "page": {
+        "Header": {
+          "mainMenu": [
+            {
+              "title": "חדשות 13",
+              "url": "/news/",
+              "children": []
+            },
+            {
+              "title": "תוכניות רשת 13",
+              "url": "/allshows/",
+              "children": [
+                {
+                  "title": "ווארט",
+                  "url": "/shows/vort/",
+                  "children": []
+                },
+                {
+                  "title": "הארץ המובטחת",
+                  "url": "/shows/the-promised-land/",
+                  "children": []
+                },
+                {
+                  "title": "המקור",
+                  "url": "/news/hamakor/",
+                  "children": []
+                },
+                {
+                  "title": "הדו\"ח היומי",
+                  "url": "/daytime/daily-report/",
+                  "children": []
+                },
+                {
+                  "title": "הצינור",
+                  "url": "/entertainment/hatzinor/",
+                  "children": []
+                },
+                {
+                  "title": "הישרדות",
+                  "url": "/mood/survivor/",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "mainMenuMobile": [
+            {
+              "title": "תוכניות",
+              "url": "/allshows/",
+              "children": [
+                {
+                  "title": "ווארט",
+                  "url": "/shows/vort/",
+                  "children": []
+                }
+              ]
+            }
+          ],
+          "subMenu": [
+            {
+              "title": "VOD ראשי",
+              "link": "/all-shows/"
+            },
+            {
+              "title": "כל התוכניות",
+              "link": "/all-shows/all-shows-list/"
+            },
+            {
+              "title": "הארץ המובטחת",
+              "link": "/all-shows/the-promised-land/"
+            },
+            {
+              "title": "חדשות 13",
+              "link": "/all-shows/news/"
+            },
+            {
+              "title": "ריאליטי",
+              "link": "/all-shows/reality/"
+            },
+            {
+              "title": "קומדיה",
+              "link": "/all-shows/comedy/"
+            },
+            {
+              "title": "דרמה",
+              "link": "/all-shows/drama/"
+            }
+          ]
+        },
+        "Content": {
+          "PageGrid": [
+            {
+              "grid_type": "AllShows",
+              "shows": [
+                {
+                  "id": "1",
+                  "title": "הארץ המובטחת",
+                  "url": "/all-shows/the-promised-land/",
+                  "poster": "https://example.com/promised.jpg"
+                },
+                {
+                  "id": "2",
+                  "title": "אסנהיים",
+                  "url": "/all-shows/assenheim/",
+                  "poster": ""
+                },
+                {
+                  "id": "3",
+                  "title": "דירה מנצחת",
+                  "url": "",
+                  "poster": ""
+                },
+                {
+                  "id": "4",
+                  "title": "חצות ועוד יותר",
+                  "url": "/?page_id=903952262",
+                  "poster": ""
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}
