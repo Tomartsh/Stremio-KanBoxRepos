@@ -1,0 +1,477 @@
+{
+  "pageProps": {
+    "page": {
+      "Content": {
+        "PageGrid": [
+          {
+            "grid_type": "VodPlaylist",
+            "vodShowName": "ווארט",
+            "vodShowId": 904047957,
+            "portalLink": "/shows/vort/",
+            "episodesSeasonsMap": {
+              "1": {
+                "name": "עונה 2",
+                "episodes": [
+                  {
+                    "id": "904909708",
+                    "title": "ווארט, עונה 2, פרק 22: פרק סיום העונה",
+                    "secondaryTitle": "החתונה האחרונה של העונה! רגע לפני החופה, הלחץ משתלט על החתונה הסוערת של ישראל ומעיין | \"ווארט\", לצפייה ישירה",
+                    "air_date": "30/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904909708",
+                    "video": {
+                      "kalturaId": "1_ngrj0bow",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1767127655/uploads/2025/904911000.jpg",
+                      "name": "shows-vort-season-02-episodes-22-full"
+                    }
+                  },
+                  {
+                    "id": "904906214",
+                    "title": "ווארט, עונה 2, פרק 21: החתונה של אסתר ואריאל",
+                    "secondaryTitle": "היום הגדול של אריאל ואסתר הגיע, והם צועדים יחד לחופה. וגם: מה קרה למשה ואביגיל בפגישה שבה הם כיבו את המצלמות? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "28/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904906214",
+                    "video": {
+                      "kalturaId": "1_3sl1b05s",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1766951094/uploads/2025/904907803.jpg",
+                      "name": "shows-vort-season-02-episodes-21-full"
+                    }
+                  },
+                  {
+                    "id": "904900654",
+                    "title": "ווארט, עונה 2, פרק 20: האם יצילו את הווארט?",
+                    "secondaryTitle": "בפעם הראשונה בתולדות התוכנית זוג אחד יבטל את הווארט. מי מהזוגות ייפרד רגע לפני החתונה? ומה באמת קרה שם? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "23/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904900654",
+                    "video": {
+                      "kalturaId": "1_hfja34c0",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1766560258/uploads/2025/904902070.jpg",
+                      "name": "shows-vort-season-02-episodes-20-full"
+                    }
+                  },
+                  {
+                    "id": "904898000",
+                    "title": "ווארט, עונה 2, פרק 19: הטעות של משה",
+                    "secondaryTitle": "המפגש הראשון של משה עם המשפחה של אביגיל התחיל מושלם, אבל אז משה עושה טעות ענקית ומסתבך | \"ווארט\", לצפייה ישירה",
+                    "air_date": "21/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904898000",
+                    "video": {
+                      "kalturaId": "1_vcbqanqd",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1766347936/uploads/2025/904898992.jpg",
+                      "name": "shows-vort-season-02-episodes-19-full"
+                    }
+                  },
+                  {
+                    "id": "904892049",
+                    "title": "ווארט, עונה 2, פרק 18: החתונה של שימי ואדל",
+                    "secondaryTitle": "אחרי שחיכו לזה והתפללו לזה, היום הגדול של שימי ואדל מגיע. חתונה חסידית כמו שלא ראיתם. וגם: וידוי מרגש ששווה לחכות לו | \"ווארט\", לצפייה ישירה",
+                    "air_date": "16/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904892049",
+                    "video": {
+                      "kalturaId": "1_6j7dkn4z",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1765918269/uploads/2025/904893079.jpg",
+                      "name": "shows-vort-season-02-episodes-18-full"
+                    }
+                  },
+                  {
+                    "id": "904888748",
+                    "title": "ווארט, עונה 2, פרק 17: הצעת נישואים מפתיעה",
+                    "secondaryTitle": "יעקב הולך להציע נישואים להלל. אבל, האם זה מוקדם מדי או שהלל תסכים להצעה? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "14/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904888748",
+                    "video": {
+                      "kalturaId": "1_czxy3pj8",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1765745720/uploads/2025/904890168.jpg",
+                      "name": "shows-vort-season-02-episodes-17-full"
+                    }
+                  },
+                  {
+                    "id": "904880198",
+                    "title": "ווארט, עונה 2, פרק 15: הצעת הנישואים של אריאל",
+                    "secondaryTitle": "אריאל הולך עם הלב עד הסוף ומחליט להציע נישואים לאסתר, האם היא תגיד כן? וגם: שימי ואדל במשבר. האם החתונה בסכנה? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "07/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904880198",
+                    "video": {
+                      "kalturaId": "1_drpsxo3j",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1765138240/uploads/2025/904881649.jpg",
+                      "name": "shows-vort-season-02-episodes-15-full"
+                    }
+                  },
+                  {
+                    "id": "904873463",
+                    "title": "ווארט, עונה 2, פרק 14: האמבוש שנגמר בדרמה",
+                    "secondaryTitle": "רגע לפני ההחלטה הגורלית, אריאל מגיע לפגוש את ההורים של אסתר. מה קרה בין אסתר ואריאל שיכול לשנות הכול? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "02/12/2025",
+                    "link": "/all-shows/vort/season-1/episode-904873463",
+                    "video": {
+                      "kalturaId": "1_ok6gvzol",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1764708098/uploads/2025/904874686.jpg",
+                      "name": "shows-vort-season-02-episodes-14-full"
+                    }
+                  },
+                  {
+                    "id": "904869985",
+                    "title": "ווארט, עונה 2, פרק 13: המפגש שהסעיר את אסתר",
+                    "secondaryTitle": "הקשר בין אסתר ואריאל הולך ומתקדם, אבל מכשול אחד עדיין מחכה להם, מפגש גורלי שיכול לחרוץ גורלות. מה קרה במפגש שהסעיר את אסתר - ולמה הוא נגמר בדמעות? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "30/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904869985",
+                    "video": {
+                      "kalturaId": "1_bxk6sxsy",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1764531291/uploads/2025/904871326.jpg",
+                      "name": "shows-vort-season-02-episodes-13-full"
+                    }
+                  },
+                  {
+                    "id": "904864185",
+                    "title": "ווארט, עונה 2, פרק 12: השידוך שכולם ידברו עליו",
+                    "secondaryTitle": "אביגיל, הרווקה שמוכרת בכל בני ברק, זוכה לשידוך מפתיע במיוחד שעומד להדהים אותה, ועל השידוך הזה כל בני ברק תדבר. וגם: יוסי ומזל בהחלטה גורלית - חתונה או פרידה? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "25/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904864185",
+                    "video": {
+                      "kalturaId": "1_6bbcy7li",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1764100071/uploads/2025/904864974.jpg",
+                      "name": "shows-vort-season-02-episodes-12-full"
+                    }
+                  },
+                  {
+                    "id": "904860398",
+                    "title": "ווארט, עונה 2, פרק 11: הסוף של הלל ויעקב?",
+                    "secondaryTitle": "יעקב רואה עתיד ורוד עם הלל, אבל ברגע האמת היא לא עומדת בלחץ ומבקשת לעזוב. האם זה הסוף שלהם? וגם: ישראל מפתיע את מעיין ברגע ההחלטה | \"ווארט\", לצפייה ישירה",
+                    "air_date": "23/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904860398",
+                    "video": {
+                      "kalturaId": "1_kgcogc6c",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1763930679/uploads/2025/904861813.jpg",
+                      "name": "shows-vort-season-02-episodes-season-01-vort-11-full"
+                    }
+                  },
+                  {
+                    "id": "904852705",
+                    "title": "ווארט, עונה 2, פרק 10: מכשול אחרון לווארט",
+                    "secondaryTitle": "לישראל ומעיין יש אהבה כל כך גדולה והכול נראה סגור בדרך לווארט, אבל מכשול אחד ענק עדיין מחכה להם. וגם: מה הטריף את מזל בדייט שלה עם יוסי? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "18/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904852705",
+                    "video": {
+                      "kalturaId": "1_xn40ak9d",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1763496742/uploads/2025/904855346.jpg",
+                      "name": "shows-vort-season-02-episodes-10-full"
+                    }
+                  },
+                  {
+                    "id": "904850432",
+                    "title": "ווארט, עונה 2, פרק 9: השידוך שהסתבך",
+                    "secondaryTitle": "מזל ויוסי יוצאים לדייט שני, אבל יותר מדי סטוריז ויותר מדי פרסום גורמים ליוסי לפתוח חזק מדי. האם הדייט השני יהיה האחרון? וגם: אדל ושימי נלחמים בפחדים שלהם - ומה יחליטו הלל ויעקב? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "16/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904850432",
+                    "video": {
+                      "kalturaId": "1_w2vuq4wz",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1763323482/uploads/2025/904851823.jpg",
+                      "name": "shows-vort-season-02-episodes-09-full"
+                    }
+                  },
+                  {
+                    "id": "904843997",
+                    "title": "ווארט, עונה 2, פרק 8: הדייט שיצא משליטה",
+                    "secondaryTitle": "גורו הבריאות של המגזר מחפשת נסיך מהאגדות ובדרך נס זה בדיוק מה שמועצת השדכנים משדכת לה! אבל, מה קורה כשמגיע הדייט והיא לא מפסיקה לצחוק ולצחוק ולצחוק? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "11/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904843997",
+                    "video": {
+                      "kalturaId": "1_5fh9bxce",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1762893554/uploads/2025/904845161.jpg",
+                      "name": "shows-vort-season-02-episodes-08-full"
+                    }
+                  },
+                  {
+                    "id": "904834624",
+                    "title": "ווארט, עונה 2, פרק 7: האם ייסגר ווארט?",
+                    "secondaryTitle": "שימי ואדל מגיעים לרגע האמת שלהם - האם הם מתחתנים או נפרדים? במעמד ההחלטה הדרמה מגיעה לשיא כששימי קם ועוצר הכול - האם יהיה לנו ווארט ראשון? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "09/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904834624",
+                    "video": {
+                      "kalturaId": "1_vc8753pt",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1762722139/uploads/2025/904841482.jpg",
+                      "name": "shows-vort-season-02-episodes-full-07"
+                    }
+                  },
+                  {
+                    "id": "904831128",
+                    "title": "ווארט, עונה 2, פרק 6: דייט עם אימא",
+                    "secondaryTitle": "היחסים בין שימי ואדל עולים שלב, ועכשיו מגיע הרגע הכי חשוב במערכת היחסים, פגישה עם אימא של שימי, ויש לה הרבה מה להגיד. האם אדל תעמוד במבחן? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "04/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904831128",
+                    "video": {
+                      "kalturaId": "1_yntgd10m",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1762288197/uploads/2025/904833654.jpg",
+                      "name": "shows-vort-season-02-episodes-06-full-2511042200"
+                    }
+                  },
+                  {
+                    "id": "904828423",
+                    "title": "ווארט, עונה 2, פרק 5: שידוך לתאומות",
+                    "secondaryTitle": "השדכנים מקבלים אתגר כפול וראשון מסוגו, למצוא שידוך לתאומות! לראשונה אי פעם, מועצת השדכנים שוקלת מהלך נועז, לשדך להן זוג תאומים, אבל משהו מסתבך בדרך | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "02/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904828423",
+                    "video": {
+                      "kalturaId": "1_w0nhuieg",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1762114001/uploads/2025/904830125.jpg",
+                      "name": "shows-vort-season-02-episodes-05-full"
+                    }
+                  },
+                  {
+                    "id": "904824537",
+                    "title": "ווארט, עונה 2, פרק 4: אהבה בסכנה",
+                    "secondaryTitle": "שימי כבר יודע כמה הוא רוצה, הוא רק שכח לספר את זה לאדל. האם בגלל קצר קטן בתקשורת הוא יפסיד אותה בענק? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "01/11/2025",
+                    "link": "/all-shows/vort/season-1/episode-904824537",
+                    "video": {
+                      "kalturaId": "1_9a233lpt",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1762027659/uploads/2025/904828148.jpg",
+                      "name": "shows-vort-season-02-episodes-04-full"
+                    }
+                  },
+                  {
+                    "id": "904822683",
+                    "title": "ווארט, עונה 2, פרק 3: הסוד של הלל",
+                    "secondaryTitle": "הלל חולמת על אהבה, אבל האם הסוד שלה חוסם אותה? והאם היא תבחר לגלות אותו בדייט הראשון? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "28/10/2025",
+                    "link": "/all-shows/vort/season-1/episode-904822683",
+                    "video": {
+                      "kalturaId": "1_dbp16hcq",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1761674434/uploads/2025/904823184.jpg",
+                      "name": "shows-vort-season-02-episodes-03-full"
+                    }
+                  },
+                  {
+                    "id": "904819811",
+                    "title": "ווארט, עונה 2, פרק 2: הזדמנות נוספת לאהבה",
+                    "secondaryTitle": "ישראל כבר מצא את האחת שלו, אבל פספס אותה בגדול ומאז היא לא יוצאת לו מהראש. בפרק הזה הוא יגלה בהפתעה שהיא השידוך שלו. איך הוא יגיב - והאם אהבה של פעם בחיים יכולה לחזור בפעם השנייה? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "27/10/2025",
+                    "link": "/all-shows/vort/season-1/episode-904819811",
+                    "video": {
+                      "kalturaId": "1_y5f6wq5u",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1761596881/uploads/2025/904821618.jpg",
+                      "name": "shows-vort-season-02-episodes-02-full"
+                    }
+                  },
+                  {
+                    "id": "904813288",
+                    "title": "ווארט, עונה 2, פרק 1: פרק הבכורה",
+                    "secondaryTitle": "הקסם של ווארט חוזר עם שידוכים חדשים שהופכים לסיפורי אהבה גדולים מהחיים, ואפילו נגמרים מתחת לחופה. מוכנים להתאהב? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "25/10/2025",
+                    "link": "/all-shows/vort/season-1/episode-904813288",
+                    "video": {
+                      "kalturaId": "1_9ty09vb6",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1761424510/uploads/2025/904818158.jpg",
+                      "name": "shows-vort-season-02-episodes-01-full"
+                    }
+                  }
+                ]
+              },
+              "2": {
+                "name": "עונה 1",
+                "episodes": [
+                  {
+                    "id": "904290745",
+                    "title": "ווארט, עונה 1, פרק 11: היום שאחרי",
+                    "secondaryTitle": "הרווקים, הרווקות ושדכני התוכנית נפגשים שוב יחד עם יקי ושרה, לאחר צילומי התוכנית, לשיחה על החיים שאחרי. הפגישה מרגשת מאוד והופכה במהרה לסוערת במיוחד | \"ווארט\", לצפייה ישירה",
+                    "air_date": "14/10/2024",
+                    "link": "/all-shows/vort/season-2/episode-904290745",
+                    "video": {
+                      "kalturaId": "1_mopogzv0",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1728935433/uploads/2024/904297044.jpg",
+                      "name": "shows-vort-season-01-episodes-12-full"
+                    }
+                  },
+                  {
+                    "id": "904150044",
+                    "title": "ווארט, עונה 1, פרק 10: החתונה, פרק הסיום",
+                    "secondaryTitle": "הרגע שלו כולנו חיכינו הגיע - חתונתם של ציפי ויעקב. אחרי נתק של שבוע השניים נפגשים לראשונה תחת החופה, בפרק סיום מרגש במיוחד. וגם: האם תהיה שמחה כפולה וצביאור ונשמה יסגרו ווארט? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "16/07/2024",
+                    "link": "/all-shows/vort/season-2/episode-904150044",
+                    "video": {
+                      "kalturaId": "1_5y5kkcmk",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1721160744/uploads/2024/904152952.jpg",
+                      "name": "shows-vort-season-01-episodes-10-full"
+                    }
+                  },
+                  {
+                    "id": "904138750",
+                    "title": "ווארט, עונה 1, פרק 9: רגע לפני החתונה",
+                    "secondaryTitle": "צביאור ונשמה יוצאים לדייט נוסף הכולל ביקור בקברי צדיקים בשעת לילה ונתקלים בקשיי ניווט, ציפי ויעקב בהכנות אחרונות לפני החתונה, הכוללות טבילה במקווה והדרכת חתן וכלה לקראת ליל הכלולות | \"ווארט\", לצפייה ישירה",
+                    "air_date": "09/07/2024",
+                    "link": "/all-shows/vort/season-2/episode-904138750",
+                    "video": {
+                      "kalturaId": "1_doi1p909",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1720551877/uploads/2024/904141904.jpg",
+                      "name": "shows-vort-season-01-episodes-09-full"
+                    }
+                  },
+                  {
+                    "id": "904121873",
+                    "title": "ווארט, עונה 1, פרק 8: עולמות הפוכים נפגשים",
+                    "secondaryTitle": "דובי, חסיד גור ותומר, חוזרת בתשובה, נפגשים לדייט ראשון. האם השידוך יוצא הדופן יצליח? כמו כן, ההכנות לקראת החתונה עולות שלב, וציפי ויעקב הנרגשים, מנתקים קשר כנהוג לפני החתונה | \"ווארט\", לצפייה ישירה",
+                    "air_date": "02/07/2024",
+                    "link": "/all-shows/vort/season-2/episode-904121873",
+                    "video": {
+                      "kalturaId": "1_5ttwywxr",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1719946877/uploads/2024/904130501.webp",
+                      "name": "shows-vort-season-01-episodes-08-full"
+                    }
+                  },
+                  {
+                    "id": "904115164",
+                    "title": "ווארט, עונה 1, פרק 7: אתגר חסידות גור",
+                    "secondaryTitle": "מועצת השדכנים עומדת בפני אתגר גדול, למצא לדובי, המגיע מחסידות גור המחמירה, שידוך. נשמה וצביאור בדייט נוסף ורגע לפני ההחלטה הגורלית, אלון חושף מידע מעברו ומפתיע את הודיה. האם אלון והודיה יסגרו ווארט? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "24/06/2024",
+                    "link": "/all-shows/vort/season-2/episode-904115164",
+                    "video": {
+                      "kalturaId": "1_5lgm0tuy",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1719258233/uploads/2024/904117948.jpg",
+                      "name": "shows-vort-season-01-episodes-07-full"
+                    }
+                  },
+                  {
+                    "id": "904107829",
+                    "title": "ווארט, עונה 1, פרק 6: ההחלטה הגורלית",
+                    "secondaryTitle": "הודיה בצעד מפתיע מיד בתחילת הדייט עם אלון, נשמה רוצה שצביאור יפגין יותר בקיאות בתורה, ציפי ויעקב בהדרכת חתן וכלה, וגיל וליאת הגיעו למעמד ההכרעה הגורלית - האם הם ימשיכו לווארט? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "18/06/2024",
+                    "link": "/all-shows/vort/season-2/episode-904107829",
+                    "video": {
+                      "kalturaId": "1_sn72lhcw",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1718736835/uploads/2024/904108823.jpg",
+                      "name": "shows-vort-season-01-episodes-06-full"
+                    }
+                  },
+                  {
+                    "id": "904075917",
+                    "title": "ווארט, עונה 1, פרק 5: ההחלטה של גיל וליאת",
+                    "secondaryTitle": "גיל וליאת יוצאים לדייט הלא מצולם, אך דברים לא הולכים חלק. ציפי ויעקב מוצאים אולם, וצביאור ונשמה לדייט ראשון | \"ווארט\", לצפייה ישירה",
+                    "air_date": "03/06/2024",
+                    "link": "/all-shows/vort/season-2/episode-904075917",
+                    "video": {
+                      "kalturaId": "1_fuuh9zax",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1717445165/uploads/2024/904085143.jpg",
+                      "name": "shows-vort-season-01-episodes-05-full"
+                    }
+                  },
+                  {
+                    "id": "904072388",
+                    "title": "ווארט, עונה 1, פרק 4: נשמה",
+                    "secondaryTitle": "הודיה ואלון יכירו לראשונה בדייט, גיל וליאת ממשיכים את הדייט בחיפה כשבסופו הם מקבלים החלטה מפתיעה. ונשמה, משודכת חדשה, מגיעה ומרגשת את כולם - מי יהיה בן הזוג שהמועצה תמצא לה? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "28/05/2024",
+                    "link": "/all-shows/vort/season-2/episode-904072388",
+                    "video": {
+                      "kalturaId": "1_ty91cpik",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1716929319/uploads/2024/904076510.webp",
+                      "name": "shows-vort-season-01-episodes-04-full"
+                    }
+                  },
+                  {
+                    "id": "904069371",
+                    "title": "ווארט, עונה 1, פרק 3: האם יש ווארט?",
+                    "secondaryTitle": "ציפי ויעקב יוצאים לפגישה גורלית בה יחליטו, האם הם סוגרים ווארט? גיל וליאת יוצאים לדייט בחיפה, והודיה, משודכת חדשה, נכנסת לשרה ללב והיא מחליטה לקחת אותה תחת חסותה | \"ווארט\", לצפייה ישירה",
+                    "air_date": "27/05/2024",
+                    "link": "/all-shows/vort/season-2/episode-904069371",
+                    "video": {
+                      "kalturaId": "1_xvwje8vr",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1716837623/uploads/2024/904074654.jpg",
+                      "name": "shows-vort-season-01-episodes-03-full"
+                    }
+                  },
+                  {
+                    "id": "904063825",
+                    "title": "ווארט, עונה 1, פרק 2: פגישה חלומית",
+                    "secondaryTitle": "רות ויהודה נפגשים לפגישה חלומית, אבל אז החשש הגדול של יהודה מתממשים. בעזרת השדכנים גיל וליאת יוצאים לפגישה שנייה ומפתיעה - ומי הוא הזוג החדש ויוצא הדופן שמגיע לבקש את עזרת השדכנים? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "22/05/2024",
+                    "link": "/all-shows/vort/season-2/episode-904063825",
+                    "video": {
+                      "kalturaId": "1_qi3hodbs",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1716406618/uploads/2024/904068407.jpg",
+                      "name": "shows-vort-season-01-episodes-02-full"
+                    }
+                  },
+                  {
+                    "id": "904061569",
+                    "title": "ווארט, עונה 1, פרק 1: פרק הבכורה",
+                    "secondaryTitle": "דוקו-ריאליטי שיחשוף לראשונה את עולם השידוכים במגזר החרדי. בכל פרק מיטב השדכנים והשדכניות במגזר יתאימו בין הזוגות החרדים וילוו אותם בכל מהלך השידוך עד לשאלה הגורלית: האם יהיה פה ווארט? | \"ווארט\", לצפייה ישירה",
+                    "air_date": "20/05/2024",
+                    "link": "/all-shows/vort/season-2/episode-904061569",
+                    "video": {
+                      "kalturaId": "1_jevzf1wo",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1716235173/uploads/2024/904064747.jpg",
+                      "name": "shows-vort-season-01-episodes-01-full"
+                    }
+                  }
+                ]
+              },
+              "3": {
+                "name": "עונה 3",
+                "episodes": [
+                  {
+                    "id": "905480442",
+                    "title": "ווארט, עונה 3, פרק 5: השידוך הנועז",
+                    "secondaryTitle": "עונה חדשה לתוכנית השידוכים שכבשה את המדינה. והערב: דבר כזה לא נראה מחוץ לעולם החרדי. מהו השידוך הכי נועז בתולדות \"ווארט\" - ומיהי הכלה המיועדת? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "24/11/2026",
+                    "link": "/all-shows/vort/season-3/episode-905480442",
+                    "video": {
+                      "kalturaId": "1_85dmpnjv",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1795549720/uploads/2026/905482149.jpg",
+                      "name": "shows-vort-season-03-episodes-05-full"
+                    }
+                  },
+                  {
+                    "id": "905475462",
+                    "title": "ווארט, עונה 3, פרק 4: אלי ולופז בסימן שאלה",
+                    "secondaryTitle": "עונה חדשה לתוכנית השידוכים שכבשה את המדינה. והערב: אלי ולופז מגלים שאחרי ההתלהבות וההתאמה, יש גם שאלות שיכולות להעמיד את היחסים בסכנה | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "22/11/2026",
+                    "link": "/all-shows/vort/season-3/episode-905475462",
+                    "video": {
+                      "kalturaId": "1_wbpaqvxk",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1795377740/uploads/2026/905477385.jpg",
+                      "name": "shows-vort-season-03-episodes-04-full"
+                    }
+                  },
+                  {
+                    "id": "905466159",
+                    "title": "ווארט, עונה 3, פרק 3: השד העדתי מתפוצץ",
+                    "secondaryTitle": "עונה חדשה לתוכנית השידוכים שכבשה את המדינה. והערב: באמצע דייט מושלם יהודה מפיל פצצה ומוציא את השד העדתי מהבקבוק - איך מיכל תקבל את זה? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "17/11/2026",
+                    "link": "/all-shows/vort/season-3/episode-905466159",
+                    "video": {
+                      "kalturaId": "1_ahdp61qs",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1794944288/uploads/2026/905467896.jpg",
+                      "name": "shows-vort-season-03-episodes-03-full"
+                    }
+                  },
+                  {
+                    "id": "905461500",
+                    "title": "ווארט, עונה 3, פרק 2: סערת השידוך הספרדי",
+                    "secondaryTitle": "עונה חדשה לתוכנית השידורים שכבשה את המדינה. האם השידוך שנראה בלתי אפשרי יכול להפוך לסיפור אהבה? | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "15/11/2026",
+                    "link": "/all-shows/vort/season-3/episode-905461500",
+                    "video": {
+                      "kalturaId": "1_594y29tl",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1794773424/uploads/2026/905463129.jpg",
+                      "name": "shows-vort-season-03-episodes-02-full"
+                    }
+                  },
+                  {
+                    "id": "905450925",
+                    "title": "ווארט, עונה 3, פרק 1: פרק הבכורה",
+                    "secondaryTitle": "תוכנית השידוכים שסחפה מדינה שלמה חוזרת בעונה חדשה, שתיכנס אל הלב של כולנו. בואו לגלות כמה מפתיעה הדרך אל החופה | \"ווארט\", לצפייה ישירה ",
+                    "air_date": "10/11/2026",
+                    "link": "/all-shows/vort/season-3/episode-905450925",
+                    "video": {
+                      "kalturaId": "1_gx7npaoj",
+                      "poster": "https://media3.reshet.tv/image/upload/t_vod-player-poster/v1794338443/uploads/2026/905453967.jpg",
+                      "name": "shows-vort-season-03-episodes-01-full"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

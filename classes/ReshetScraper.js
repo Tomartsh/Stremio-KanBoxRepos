@@ -9,6 +9,12 @@ const {
 const {writeLog, extractReleaseDate, DeltaTracker, updateDatabaseFromJSON} = require("./utilities.js");
 const { parseIsraeliDate } = require("./ScraperHelpers.js");
 const { normalizeSeriesLink, stableSlugToken } = require("./seriesIdentity.js");
+const {
+    loadReshetExtraShows,
+    discoverReshetShows,
+    pageHasVodPlaylist,
+    showSlugFromUrl
+} = require("./reshetDiscovery.js");
 const log4js = require("log4js");
 const BaseScraper = require("./BaseScraper.js");
 const TmdbHelper = require("./TmdbHelper.js");
@@ -126,11 +132,18 @@ class ReshetScraper extends BaseScraper {
 
         var seriesListJson =  await this.getJson(RESHET.URL_VOD);
         this._buildId = seriesListJson["buildId"];
-        const shows = seriesListJson["props"]["pageProps"]["page"]["Content"]["PageGrid"][0]["shows"];
+        // all-shows-list omits some featured shows (for example ווארט).
+        // Merge that list with a small extras seed and with header/mobile
+        // menu links that map to an /all-shows/{slug}/ VodPlaylist page.
+        const discovered = await discoverReshetShows(seriesListJson, {
+            extras: loadReshetExtraShows(),
+            isVodPlaylist: async (candidate) => this.reshetPageIsVodPlaylist(candidate.slug)
+        });
+        const shows = discovered.shows;
 
         // Process series using batch processor. The id comes from the show
         // URL, not from this list position.
-        logger.info(`crawlVOD => Found ${shows.length} Reshet series to process`);
+        logger.info(`crawlVOD => Found ${shows.length} Reshet series to process (listed ${discovered.listedCount}, extras ${discovered.fromExtras.length}, menu ${discovered.fromMenu.length})`);
         await this.processBatch(
             shows,
             async (series) => {
@@ -141,6 +154,22 @@ class ReshetScraper extends BaseScraper {
 
         logger.info("crawlVOD() => Exiting");
         //writeLog("TRACE","ReshetScraper-crawl() => Exiting");
+    }
+
+    /**
+     * True when /all-shows/{slug}/ is a VOD show page, not a category grid.
+     */
+    async reshetPageIsVodPlaylist(slug) {
+        const token = String(slug || "").trim();
+        if (!token) return false;
+        const link = RESHET.URL_BASE + "/all-shows/" + token + "/";
+        try {
+            const pageJson = await this.getJson(link);
+            return pageHasVodPlaylist(pageJson);
+        } catch (error) {
+            logger.warn(`reshetPageIsVodPlaylist => ${link} is not a VOD show page: ${error && error.message ? error.message : error}`);
+            return false;
+        }
     }
 
     /**
@@ -475,3 +504,7 @@ module.exports.reshetSeriesId = reshetSeriesId;
 module.exports.parseReshetGenreXml = parseReshetGenreXml;
 module.exports.genresFromKalturaResponse = genresFromKalturaResponse;
 module.exports.rankSeriesGenres = rankSeriesGenres;
+module.exports.loadReshetExtraShows = loadReshetExtraShows;
+module.exports.discoverReshetShows = discoverReshetShows;
+module.exports.pageHasVodPlaylist = pageHasVodPlaylist;
+module.exports.showSlugFromUrl = showSlugFromUrl;
